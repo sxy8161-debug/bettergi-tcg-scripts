@@ -1,0 +1,12 @@
+{
+  "name": "bettergi-tcg-scripts",
+  "version": "1.5.0",
+  "private": true,
+  "scripts": {
+    "test": "node tests/repository-release.cjs",
+    "build": "node tools/build-release.cjs --output dist"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

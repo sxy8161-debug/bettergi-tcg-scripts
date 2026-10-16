@@ -1,0 +1,182 @@
+// Shared rules fragments. Inlined at build time; no runtime dependency.
+
+// @fragment tcg-rules.strategyRegistry
+(function (T) {
+  const strategies = new Map();
+  T.registerStrategy = function (id, choose) {
+    if (!/^[a-z][a-z0-9-]*$/.test(id) || typeof choose !== "function" || strategies.has(id))
+      throw new Error("策略标识无效、重复或缺少决策函数：" + id);
+    strategies.set(id, choose);
+  };
+  T.selectStrategy = function (id) {
+    if (!strategies.has(id)) throw new Error("未注册策略：" + id);
+    T.choose = strategies.get(id);
+    T.activeStrategy = id;
+  };
+  T.availableStrategies = function () { return [...strategies.keys()]; };
+})(globalThis.TCG);
+// @endfragment tcg-rules.strategyRegistry
+
+// @fragment tcg-rules.OpeningFlow
+class OpeningFlow {
+    constructor(entry) {
+      if (!["opening", "pick", "roll", "board"].includes(entry)) throw new Error("请在起手、首次选人、首次掷骰或未行动的新开局牌桌启动");
+      this.entry = entry;
+      this.route = [entry];
+      this.opened = false;
+      this.picked = false;
+      this.rolled = false;
+      this.complete = false;
+    }
+    record(stage) {
+      const property = { opening: "opened", pick: "picked", roll: "rolled" }[stage];
+      if (!property || this.complete || this[property]) throw new Error("开局阶段已确认或已结束，不重复执行：" + stage);
+      this[property] = true;
+      if (this.route[this.route.length - 1] !== stage) this.route.push(stage);
+    }
+    enterBoard(memory) {
+      if (this.complete) return null;
+      if (!known(memory.round) || memory.round > 1) throw new Error("开局回合状态不一致，不接管中途对局");
+      const seeded = memory.round === 0;
+      if (seeded) nextRound(memory);
+      this.complete = true;
+      if (this.route[this.route.length - 1] !== "board") this.route.push("board");
+      return { entry: this.entry, route: this.route.slice(), round: memory.round, roundSeeded: seeded, midgameRestore: false };
+    }
+  }
+// @endfragment tcg-rules.OpeningFlow
+
+// @fragment tcg-rules.actionKey
+function actionKey(action) {
+    return action.type + ":" + (action.id || (["skill","probe"].includes(action.type) ? action.who + ":" + action.skill : action.target));
+  }
+// @endfragment tcg-rules.actionKey
+
+// @fragment tcg-rules.alive
+const alive = (c) => !!c && c.dead === false && known(c.hp) && c.hp > 0;
+// @endfragment tcg-rules.alive
+
+// @fragment tcg-rules.bag
+function bag(hand) {
+    const out = {};
+    for (const h of hand || []) out[h.id] = (out[h.id] || 0) + 1;
+    return out;
+  }
+// @endfragment tcg-rules.bag
+
+// @fragment tcg-rules.cardCountDecreased
+function cardCountDecreased(before, after, id) {
+    // Unrelated hand growth or sent input cannot prove this card was consumed.
+    return Array.isArray(before) && Array.isArray(after) &&
+      (bag(before)[id] || 0) > (bag(after)[id] || 0);
+  }
+// @endfragment tcg-rules.cardCountDecreased
+
+// @fragment tcg-rules.boardKey
+function boardKey(s) {
+    return JSON.stringify([s.active,diceOrder.map(e=>s.dice?.[e]||0),s.characters,
+      (s.hand||[]).map(h=>h.id),s.enemies,s.quicken||null,s.supportCounts||null,s.eye||null,s.dendroCore||null]);
+  }
+// @endfragment tcg-rules.boardKey
+
+// @fragment tcg-rules.characterName
+function characterName(text) {
+  const title=norm(text),canonical=characterAliases[title]||title;
+  return team.findIndex(c=>norm(c.name)===norm(canonical));
+}
+// @endfragment tcg-rules.characterName
+
+// @fragment tcg-rules.diceOrder
+const diceOrder = ["Pyro","Hydro","Anemo","Electro","Dendro","Cryo","Geo","Omni"];
+// @endfragment tcg-rules.diceOrder
+
+// @fragment tcg-rules.enemyCount
+function enemyCount(s) {
+    const es=s?.enemies;
+    if(!Array.isArray(es) || !es.length || !es.every(e=>e.dead===true || alive(e)))return null;
+    return es.filter(alive).length;
+  }
+// @endfragment tcg-rules.enemyCount
+
+// @fragment tcg-rules.freshActionBoard
+function freshActionBoard(s) {
+    // Visible checks reject obvious midgame positions, but cannot prove that
+    // a zero-cost hidden status was never played. An explicit user declaration
+    // is additionally required by main before admitting a board entry.
+    return !!s && s.phase === "board" && ["user", "enemy"].includes(s.turn) &&
+      legalState({ ...s, turn: "user", hand: [] }) && total(s.dice) === 8 &&
+      s.characters.every((c, i) => c.hp === team[i].maxHp && c.energy === 0 && c.dead === false && c.frozen === false);
+  }
+// @endfragment tcg-rules.freshActionBoard
+
+// @fragment tcg-rules.handCardKnown
+function handCardKnown(h) {
+    if (!h || typeof h.id !== "string") return false;
+    if (byId[h.id]) return h.supported !== false;
+    const parsed = observedCard(h.name, h.index);
+    return h.supported === false && parsed && parsed.supported === false && parsed.id === h.id;
+  }
+// @endfragment tcg-rules.handCardKnown
+
+// @fragment tcg-rules.identify
+function identify(text) {
+  const title = norm(text);
+  // User-approved two-glyph anchor. Other titles remain exact aliases only.
+  if (title.includes("运筹") && byId.draw) return byId.draw;
+  const canonical = cardTitleAliases[title] || title;
+  return cards.find(c => norm(c.name) === norm(canonical)) || null;
+}
+// @endfragment tcg-rules.identify
+
+// @fragment tcg-rules.indexedHand
+function indexedHand(hand) {
+    if (!Array.isArray(hand) || !hand.every(handCardKnown)) throw new Error("手牌缓存身份不完整");
+    return hand.map((h, index) => ({ ...h, index }));
+  }
+// @endfragment tcg-rules.indexedHand
+
+// @fragment tcg-rules.known
+const known = n => Number.isInteger(n) && n >= 0;
+// @endfragment tcg-rules.known
+
+// @fragment tcg-rules.norm
+const norm = (t) =>
+    String(t || "")
+      .replace(/[\s:：·!！。，,（）()「」『』【】\[\]“”"‘’']/g, "")
+      .replace(/迴/g, "回");
+// @endfragment tcg-rules.norm
+
+// @fragment tcg-rules.observedCard
+function observedCard(text, index) {
+    const name = String(text || "").trim(), t = norm(name), c = identify(name);
+    if (c) return { index, id: c.id, name: c.name, supported: true };
+    if (t.length < 2 || t.length > 24 || !/[\u3400-\u9fffA-Za-z]/.test(t) ||
+        !/^[\u3400-\u9fffA-Za-z0-9「」『』\-—]+$/.test(t) ||
+        /^(初始手牌|请选择要替换的手牌|确定|取消|出战角色|回合结束|元素调和)$/.test(t)) return null;
+    return { index, id: "unsupported:" + t, name, supported: false };
+  }
+// @endfragment tcg-rules.observedCard
+
+// @fragment tcg-rules.removedOne
+function removedOne(before, after, id) {
+    const b = bag(before), a = bag(after);
+    return before.length === after.length + 1 && Object.keys({ ...b, ...a }).every(k => (b[k] || 0) - (a[k] || 0) === (k === id ? 1 : 0));
+  }
+// @endfragment tcg-rules.removedOne
+
+// @fragment tcg-rules.rerollCounter
+function rerollCounter(text) {
+    const t=norm(text),values=[];
+    for(const match of t.matchAll(/(?:还可重投([12])轮|(?:可重投次数|剩余重投次数|剩余次数)([12]))/g))
+      values.push(Number(match[1]||match[2]));
+    return values.length===1?values[0]:null;
+  }
+// @endfragment tcg-rules.rerollCounter
+
+// @fragment tcg-rules.size
+const size = cost => (cost.n || 0) + (cost.any || 0) + (cost.aligned || 0);
+// @endfragment tcg-rules.size
+
+// @fragment tcg-rules.total
+const total = dice => Object.values(dice || {}).reduce((sum, n) => sum + n, 0);
+// @endfragment tcg-rules.total

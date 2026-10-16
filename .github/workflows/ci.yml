@@ -1,0 +1,35 @@
+# Install in the source repository as .github/workflows/ci.yml.
+name: Source build check (offline)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Check repository format and build standalone packages (offline only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_SHA=$(git rev-parse HEAD)
+          SOURCE_DATE=$(git show -s --format=%cI HEAD)
+          node tests/repository-release.cjs
+          node tools/build-release.cjs --output dist --source-sha "$SOURCE_SHA" --source-date "$SOURCE_DATE"

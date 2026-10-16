@@ -1,0 +1,280 @@
+(function (root) {
+  "use strict";
+  const T = root.TCG;
+  /* @include src/shared/lifecycle.inc.js#lifecycle.BOARD_RETRIES */
+  /* @include src/shared/lifecycle.inc.js#lifecycle.INPUT_REFRESHES */
+  /* @include src/shared/lifecycle.inc.js#lifecycle.BUDGET_FIELDS */
+  /* @include src/shared/lifecycle.inc.js#lifecycle.ELEMENT_NAMES */
+  const CARD_PURPOSES = {
+    woven: "补充雷骰",
+    voltage: "补充未满的角色充能",
+    stars: "补充出战角色充能",
+    calx: "转移后台充能",
+    draw: "补充手牌，抽牌后重新规划",
+    thundergrass: "选择后续使用的雷草祝佑",
+    shatterbolt: "为后续元素爆发准备减费",
+    sharpkernel: "为后续元素战技准备减费",
+    lost: "接续本轮阵亡后的行动",
+    toss: "重新投掷不合用的骰子",
+    companion: "将骰子转为万能骰",
+    sweet: "恢复目标角色生命",
+    hashbrown: "恢复目标角色生命",
+    lotus: "为下一次受伤提供减伤",
+    smoked: "为下一次普通攻击减费",
+    mint: "为本回合普通攻击减费",
+  };
+
+  const OPENING_DEFAULT = "全部保留";
+  /* @include src/shared/lifecycle.inc.js#lifecycle.playerOptions */
+
+  function planSteps(action) {
+    return (action.planning?.sequence || []).flatMap((key) => {
+      if (typeof key !== "string") return [];
+      let match = /^skill:([0-2]):(NA|E|Q)$/.exec(key);
+      if (match) return [{ type: "skill", who: Number(match[1]), skill: match[2] }];
+      match = /^switch:([0-2])$/.exec(key);
+      if (match) return [{ type: "switch", target: Number(match[1]) }];
+      match = /^(card|tune):(.+)$/.exec(key);
+      return match ? [{ type: match[1], id: match[2] }] : [];
+    });
+  }
+  // Reuse the strategy's existing estimate; no extra search, OCR or mutation.
+  // This hit's direct damage and the selected whole plan are different claims.
+  function attackPurpose(state, memory, who, skill) {
+    const estimate = T.damageEstimate(state, memory, who, skill),
+      enemy = estimate.target,
+      reasons = [];
+    if (enemy && estimate.direct > 0 && Number.isFinite(enemy.hp) && estimate.direct >= enemy.hp)
+      reasons.push(`敌方出战剩${enemy.hp}点生命，按当前伤害估计尝试主动补刀`);
+    if (enemy?.auraKnown === true && estimate.consumed) {
+      const reaction =
+        estimate.element === "Electro"
+          ? { Pyro: "超载", Cryo: "超导", Hydro: "感电", Dendro: "激化" }[estimate.consumed]
+          : { Electro: "激化", Pyro: "燃烧", Hydro: "绽放" }[estimate.consumed];
+      if (reaction)
+        reasons.push(`敌方已有${ELEMENT_NAMES[estimate.consumed]}附着，尝试${reaction}`);
+    }
+    if (skill === "NA" && !reasons.length) {
+      reasons.push("用普攻压低血线");
+      if (state.characters[who]?.energy < T.team[who].maxEnergy) reasons.push("积累充能");
+    }
+    if (skill === "E") {
+      if (who === 0) reasons.push("召唤恶曜之眼，为后续结束阶段伤害与大招增伤做准备");
+      else if (who === 1) reasons.push("尝试挂草并积累充能");
+      else
+        reasons.push(
+          state.hand?.some((h) => h.id === "wedge")
+            ? "消耗雷楔获得雷附魔"
+            : "生成雷楔，为后续切回刻晴做准备",
+        );
+    }
+    if (skill === "Q")
+      reasons.push(
+        [
+          "为存活后台角色补充充能，准备接力大招",
+          "召唤柯里安巴，准备结束阶段草伤",
+          "同时压低敌方出战和后台血线",
+        ][who],
+      );
+    return reasons.join("，");
+  }
+  function switchPurpose(action, state, memory) {
+    const sequence = planSteps(action).slice(1),
+      boundary = sequence.findIndex((a) => a.type === "switch");
+    const next = boundary < 0 ? sequence : sequence.slice(0, boundary);
+    const skill =
+      next.find((a) => a.type === "skill" && a.who === action.target) ||
+      next
+        .filter((a) => a.type === "card")
+        .map((a) =>
+          a.id === "talent"
+            ? { who: 1, skill: "E" }
+            : ["penance", "wedge"].includes(a.id)
+              ? { who: 2, skill: "E" }
+              : null,
+        )
+        .find((a) => a?.who === action.target);
+    if (skill) {
+      const tuned = next.some((a) => a.type === "tune"),
+        name = { NA: "普攻", E: "战技", Q: "大招" }[skill.skill];
+      const repeated =
+        next.filter((a) => a.type === "skill" && a.who === skill.who && a.skill === skill.skill)
+          .length > 1;
+      return (
+        `计划${tuned ? "补" + ELEMENT_NAMES[T.team[action.target].element] + "骰后" : ""}${repeated ? "连续" : ""}接${name}，` +
+        attackPurpose(state, memory, action.target, skill.skill)
+      );
+    }
+    const weapon = T.cards.find(
+      (card) => card.type === "weapon" && card.weaponTarget === action.target,
+    );
+    return memory.weapons[action.target] && weapon
+      ? `让持有「${weapon.name}」的角色接力，后续按实际牌面重算`
+      : "转交出战位置，后续按实际牌面重算";
+  }
+
+  // Formatter adapted from Iansan/Gaming/Sayu 0.1.9. Estimates are labelled;
+  // observed facts, selected intentions and successful effects stay separate.
+  function actionCommentary(action, state, memory) {
+    const who = T.team[action.who]?.name || "角色",
+      target = T.team[action.target]?.name || "角色";
+    const skill = { NA: "普通攻击", E: "元素战技", Q: "元素爆发" }[action.skill] || "技能";
+    const card =
+      T.byId[action.id]?.name || state.hand?.find((h) => h.id === action.id)?.name || "手牌";
+    const sequence = planSteps(action),
+      boundary = sequence.slice(1).findIndex((a) => a.type === "switch");
+    const next = boundary < 0 ? sequence.slice(1) : sequence.slice(1, 1 + boundary);
+    const followup = next.find((a) => a.type === "skill");
+    const finish = action.planning?.terminal === true ? "，按所选后续计划尝试收尾" : "";
+    switch (action.type) {
+      case "skill": {
+        const ready =
+          action.skill === "Q" && T.skillLegal(state, action, memory) ? "骰子与充能满足，" : "";
+        const purpose = attackPurpose(state, memory, action.who, action.skill);
+        return (
+          ready +
+          who +
+          "准备" +
+          (action.skill === "NA" ? "进行" : "释放") +
+          skill +
+          (purpose ? "，" + purpose : "") +
+          finish +
+          "。"
+        );
+      }
+      case "probe":
+        return "确认" + who + "的" + skill + "费用，再决定后续行动。";
+      case "switch": {
+        const current = state.characters[state.active],
+          fragile =
+            T.alive(current) && current.hp <= 3
+              ? `${T.team[state.active].name}仅剩${current.hp}点生命，`
+              : "";
+        return (
+          fragile +
+          "准备切换" +
+          target +
+          "，" +
+          switchPurpose(action, state, memory) +
+          finish +
+          "。"
+        );
+      }
+      case "card":
+        if (action.id === "wedge")
+          return (
+            "准备使用「雷楔」，切换刻晴并发动战技，" +
+            attackPurpose(state, memory, 2, "E") +
+            finish +
+            "。"
+          );
+        if (["talent", "penance"].includes(action.id))
+          return (
+            "准备为" +
+            target +
+            "装备「" +
+            card +
+            "」并发动战技，" +
+            attackPurpose(state, memory, action.id === "talent" ? 1 : 2, "E") +
+            finish +
+            "。"
+          );
+        if (["weapon", "artifact"].includes(T.byId[action.id]?.type))
+          return (
+            "准备为" +
+            target +
+            "装备「" +
+            card +
+            "」，" +
+            (T.byId[action.id].type === "weapon"
+              ? "提升后续技能伤害"
+              : action.id === "gambler"
+                ? "为击倒后的返骰做准备"
+                : "为大招后补充后台充能做准备") +
+            finish +
+            "。"
+          );
+        if (["shift", "fast"].includes(action.id)) {
+          const nextSwitch = sequence.slice(1).some((a) => a.type === "switch");
+          return (
+            "准备使用「" +
+            card +
+            "」" +
+            (nextSwitch
+              ? action.id === "shift"
+                ? "，为接下来的切换减费"
+                : "，准备快速切换"
+              : "") +
+            finish +
+            "。"
+          );
+        }
+        return (
+          "准备使用「" +
+          card +
+          "」" +
+          (CARD_PURPOSES[action.id] ? "，" + CARD_PURPOSES[action.id] : "") +
+          finish +
+          "。"
+        );
+      case "tune": {
+        const element = ELEMENT_NAMES[action.element],
+          goal =
+            followup &&
+            followup.who === state.active &&
+            T.team[state.active]?.element === action.element
+              ? { NA: "普攻", E: "战技", Q: "大招" }[followup.skill]
+              : null;
+        return (
+          (element && goal
+            ? "为" + T.team[state.active].name + goal + "补" + element + "骰："
+            : "") +
+          "调和「" +
+          card +
+          "」" +
+          (!goal && element ? "，补充" + element + "骰" : "") +
+          finish +
+          "。"
+        );
+      }
+      case "end":
+        return "结束回合，等待下一轮。";
+      default:
+        return "按当前牌面继续行动。";
+    }
+  }
+
+  // One owner for lifecycle/progress. Host owns native evidence and input;
+  // strategy owns the next plan. Recovery never replays a submitted action.
+  class Player {
+    /* @include src/shared/lifecycle.inc.js#lifecycle.constructor */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.progress */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.notice */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.checkStalled */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.defer */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.finishOpening */
+    reportResult(p) { log.info(p.result === "win" ? "对局胜利" : "对局失败"); }
+    /* @include src/shared/lifecycle.inc.js#lifecycle.admitActionHand */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.enter */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.opening */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.choice */
+    planOpening(stage) {
+      this.memory.openingTarget=0;
+      this.host.trace("opening-character-plan",{target:0,stage:stage||"initial-pick",openingIds:this.memory.openingIds||[]});
+      return {target:0};
+    }
+    /* @include src/shared/lifecycle.inc.js#lifecycle.replacement */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.pick */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.roll */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.observe */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.rejectUnchangedTune */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.recoverRejectedInput */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.awaitConfirmation */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.awaitObservation */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.recoverBeforeConfirmation */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.execute */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.act */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.run */
+  }
+  root.TCGPlayer = { Player, playerOptions, actionCommentary };
+})(globalThis);
