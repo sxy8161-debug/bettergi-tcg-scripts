@@ -1,5 +1,5 @@
 "use strict";
-const modules=["iansan-confirmation-review","iansan-projection-review","moon-review","raiden-review","refusal-review"];
+const modules=["iansan-confirmation-review","iansan-projection-review","moon-review","raiden-review","refusal-review","review251"];
 async function run(test){for(const name of modules)await require("./business/"+name+".cjs")(test);}
 if(require.main===module){
   let passed=0,failed=0;

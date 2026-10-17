@@ -77,8 +77,8 @@ module.exports=async function(test){
     assert.equal(m.garden,true);assert.equal(m.freeSwitch,true);assert.equal(m.manchai,2);
     b.dice={Electro:2};assert.equal(T.skillLegal(b,{type:"skill",who:0,skill:"E"},m),false);
     const a=T.choose(b,m);assert.equal(a.type,"probe");assert.equal(a.skill,"E");
-    m.probeKeys.push(a.key);assert.notEqual(T.choose(b,m).key,a.key);
-    m.costEvidence={source:"native-skill-preview",key:T.boardKey(b),who:0,skill:"E",n:1};
+    T.recordSkillCost(b,m,a,null);assert.notEqual(T.choose(b,m).key,a.key);
+    T.recordSkillCost(b,m,a,1);
     assert.equal(T.skillLegal(b,{type:"skill",who:0,skill:"E"},m),true);
   });
 };

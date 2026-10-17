@@ -897,6 +897,8 @@ async inputHand(action,before,memory,prepared=null) {
       const targeted = action.type === "card" && action.target !== null;
       this.consumptionReceipt={id:action.id,index:action.index,target:action.target??null,
         beforeKey:TCG.boardKey(before),inputSent:false,
+        ...(action.type==="card"&&TCG.byId[action.id]?.type==="draw"?
+          {sourceInstanceIds:h.instanceIds?.slice()||[],cost:TCG.drawPayment(before,action,memory)}:{}),
         ...(sourceCount?{sourceCountProof:sourceCount}:{})};
       await this.drag(x, 945, action.type === "tune" ? 1867 : targeted ? charX[action.target] : x,
         action.type === "tune" ? 518 : targeted ? 720 : 595);

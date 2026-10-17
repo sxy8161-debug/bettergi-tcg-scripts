@@ -402,7 +402,7 @@
       }
       const planned=T.size(T.skillCost(a.who,"T",memory,before));
       if(preview.fee!==planned){
-        memory.costEvidence={source:"native-technique-preview",key:T.boardKey(before),who:a.who,technique:a.technique,n:preview.fee};
+        T.recordSkillCost(before,memory,a,preview.fee,"native-technique-preview");
         await this.reset();const e=Error("特技实际费用变化，按真实费用重选动作");e.code="TCG_STATE_REFRESH";throw e;
       }
       this.clickAt(x,957);this.trace("skill-confirm-clicked",{who:a.who,skill:"T",technique:a.technique,fee:preview.fee});

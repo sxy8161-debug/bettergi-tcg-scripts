@@ -111,6 +111,7 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           if (TCG.confirmationReady && !TCG.confirmationReady(action, before, after)) {
             await waitForSample(250); continue;
           }
+          await this.provePaidDraw(action,before,after,memory);
           const verified = TCG.verify(action, before, after, session.transition);
           const budgetMatches = this.diceBudgetMatches(after);
           // Begin observing immediately after submission. A positive effect may
@@ -153,6 +154,7 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           if (TCG.confirmationReady && !TCG.confirmationReady(action, before, after)) {
             await waitForSample(250); continue;
           }
+          await this.provePaidDraw(action,before,after,memory);
           const confirmed = TCG.verifyResynchronized(action, before, after, session.transition);
           this.adoptObservedState(after, "post-action-resync");
           this.trace("state-resynced", { action, confirmed, after });
@@ -167,6 +169,43 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
       error.phase = lastPhase;
       error.elapsedMs = session.submittedAt === null ? null : Date.now() - session.submittedAt;
       throw error;
+    }
+    async provePaidDraw(action,before,after,memory) {
+      const r=this.consumptionReceipt,h=before.hand?.[action.index],cost=r?.cost,p=r?.sourceCountProof;
+      if(TCG.drawConsumptionProven(action,before,after))return true;
+      if(action.type!=="card"||TCG.byId[action.id]?.type!=="draw"||after.handRead!=="full"||
+          this.confirmationSession?.key!==TCG.actionKey(action)+"/"+TCG.boardKey(before)||
+          this.confirmationSession.transition||
+          !TCG.legalState(after)||before.diceKnown!==true||after.diceKnown!==true||this.autoRisk||
+          after.active!==before.active||JSON.stringify(after.characters)!==JSON.stringify(before.characters)||
+          JSON.stringify(after.enemies)!==JSON.stringify(before.enemies)||!r?.inputSent||
+          r.beforeKey!==TCG.boardKey(before)||r.id!==action.id||r.index!==action.index||r.target!==(action.target??null)||
+          h?.id!==action.id||!h.instanceIds?.length||JSON.stringify(r.sourceInstanceIds)!==JSON.stringify(h.instanceIds)||
+          p?.count!==before.hand.length||p.stableReads!==2||
+          !["native-badge","full-cost-layout","full-rim-layout"].includes(p.source)||
+          !cost||TCG.size(cost)<=0)return false;
+      // An exact legal payment, not an arbitrary total decrease or a growing hand.
+      // Refunded/unknown-fee draw effects deliberately supply no drawPayment.
+      const current=TCG.drawPayment(before,action,memory);
+      if(!current||JSON.stringify(current)!==JSON.stringify(cost))return false;
+      const spent=Object.fromEntries(TCG.diceOrder.map(e=>[e,(before.dice[e]||0)-(after.dice[e]||0)]));
+      if(Object.values(spent).some(n=>!Number.isInteger(n)||n<0)||TCG.total(spent)!==TCG.size(cost)||
+          !TCG.payment(spent,cost,TCG.team[before.active].element))return false;
+      const decreased=after.hand.filter(h=>h.id===action.id).length<before.hand.filter(h=>h.id===action.id).length;
+      // Ordinary confirmed consumption needs no extra dice OCR. Only the
+      // same-name ambiguity adds the existing independent resource proof.
+      if(!decreased||!TCG.verify(action,before,after)){
+        const native=await this.observedResourceProof(after);if(!native)return false;
+        after.drawConsumption={kind:"native-paid-draw",...r,cost:TCG.size(cost),stableReads:2,
+          revision:native.revision,diceKey:JSON.stringify(TCG.diceOrder.map(e=>after.dice[e]||0))};
+      }
+      // Remove the selected old item, never every possible origin of another copy.
+      const retained=before.hand.filter((_,i)=>i!==action.index);
+      after.hand=TCG.reconcileHand(retained,after.hand.map(({instanceIds,instanceAmbiguous,...card})=>card),false,
+        (memory.refusedActions||[]).filter(a=>a.uncertain&&a.round===memory.round));
+      this.handProvenance=retained;
+      this.trace("draw-consumption-proven",{id:action.id,index:action.index,proof:after.drawConsumption||"native-source-count-decrease"});
+      return true;
     }
 // @endfragment bgi-host.confirmPending
 

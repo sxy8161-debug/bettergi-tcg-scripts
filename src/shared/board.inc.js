@@ -204,7 +204,8 @@ diceBudgetMatches(state) {
           gambler?.remaining > 0 && state.active === gambler.owner
             ? 2 * Math.min(gambler.remaining, defeats)
             : 0;
-        return extra === 0 || extra > 0 && extra % 2 === 0 && extra <= refund;
+        return extra === 0 || extra > 0 && Array.from({length:refund/2},(_,i)=>
+          Math.min(16,this.expectedDice+2*(i+1))-this.expectedDice).includes(extra);
       }
       return true;
     }

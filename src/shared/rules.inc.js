@@ -202,6 +202,30 @@ function handInstanceFacts(h) {
     return [h.currentCost ?? null, ...["empowered", "noTuning", "effectless", "reduction", "increase"]
       .map(k => h.attachments?.[k] ?? null)];
   }
+// Quotes and failed attempts belong to one observed board, not a whole round.
+// Card-fact probeKeys are independent and are never cleared here.
+function skillQuoteKey(a) { return [a.who,a.skill,a.technique ?? null].join("/"); }
+function skillQuote(s,m,a) {
+    return m.skillCosts?.key === boardKey(s) ? m.skillCosts.entries[skillQuoteKey(a)] : undefined;
+  }
+function skillProbeAttempted(s,m,a) { return skillQuote(s,m,a) !== undefined; }
+function recordSkillCost(s,m,a,n,source="native-skill-preview") {
+    const key=boardKey(s);
+    if(m.skillCosts?.key!==key)m.skillCosts={key,entries:{}};
+    m.skillCosts.entries[skillQuoteKey(a)]={n,source};
+  }
+function clearSkillCosts(m) { m.skillCosts=null; }
+function refreshSkillCosts(m,s) {
+    if(m?.skillCosts&&m.skillCosts.key!==boardKey(s))clearSkillCosts(m);
+  }
+function drawConsumptionProven(a,b,s) {
+    const r=s?.drawConsumption,h=b?.hand?.[a?.index];
+    return a?.type==="card"&&byId[a.id]?.type==="draw"&&s.phase==="board"&&s.turn==="user"&&
+      r?.kind==="native-paid-draw"&&r.beforeKey===boardKey(b)&&r.id===a.id&&r.index===a.index&&
+      r.target===(a.target??null)&&r.inputSent===true&&r.stableReads===2&&r.cost>0&&
+      h?.id===a.id&&r.sourceInstanceIds?.length>0&&JSON.stringify(r.sourceInstanceIds)===JSON.stringify(h.instanceIds)&&
+      r.diceKey===JSON.stringify(diceOrder.map(e=>s.dice?.[e]||0));
+  }
 // Positive native rejection proves that input did not mutate the hand. Only
 // that recovery may bind an unchanged complete ordered row directly. Else use
 // native cost/attachment distinctions; indistinguishable copies stay ambiguous.

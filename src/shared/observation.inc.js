@@ -93,6 +93,7 @@ finishObservation(state, pendingAction, handRead, observedAt = Date.now()) {
         error.code = "TCG_BOARD_RETRY"; throw error;
       }
       let resynchronized = false;
+      TCG.refreshSkillCosts(this.memory,state);
       if (!pendingAction) {
         if (!this.diceBudgetMatches(state)) {
           this.trace("state-resync", { reason: "observation-budget", expectedDice: this.expectedDice, observedDice: TCG.total(state.dice) });

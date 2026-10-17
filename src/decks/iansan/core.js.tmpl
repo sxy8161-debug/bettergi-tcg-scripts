@@ -146,7 +146,7 @@
       extraMaxHp: [0, 0, 0],
       uncertainActions: [],
       refusedActions: [],
-      costEvidence: null,
+      skillCosts: null,
       probeKeys: [],
       thundergrassSupport: null,
       route: "接力轴",
@@ -169,7 +169,7 @@
     m.firstCard = true;
     m.uncertainActions = [];
     m.refusedActions = [];
-    m.costEvidence = null;
+    m.skillCosts = null;
     m.probeKeys = [];
     m.talentDrawUsed=false;m.gildedDrawUsed=[0,0,0];
     m.relayTask = null;
@@ -227,13 +227,10 @@
       reduction -= n;
     }
     base.n = Math.max(0, base.n - reduction);
-    const e = m.costEvidence;
+    const e = s && skillQuote(s,m,{who,skill});
     if (
       s &&
       e?.source === "native-skill-preview" &&
-      e.key === boardKey(s) &&
-      e.who === who &&
-      e.skill === skill &&
       known(e.n) &&
       e.n <= 3
     ) {
@@ -615,7 +612,7 @@
       if (who === 1 && a.skill === "E" && after.active === 1) m.gamingReturn = false;
       noteBoard(m, after, damageOwner ?? m.enemyLastActive);
     }
-    m.costEvidence = null;
+    m.skillCosts = null;
   }
   const safeFood = (b) => b.characters.map((c) => alive(c));
   function deferUncertain(m, a, before) {
@@ -629,7 +626,7 @@
     // Invalidate only effects this action can consume or establish. Null is
     // unknown, not an observed absence; fee readers use the undiscounted upper
     // bound unless a matching native fee quote is available.
-    m.costEvidence = null;
+    m.skillCosts = null;
     const who = a.type === "skill" ? a.who : a.type === "card" && a.id === "skivingNewAndImproved" ? 2 : null;
     if (a.type === "switch" || who !== null) {
       m.passiveHealEvidence = { status: "uncertain" };
@@ -677,13 +674,14 @@
     if (a.type === "card" && a.id === "skivingNewAndImproved") m.talent = null;
   }
   function rejectAction(m, a, before) {
+    clearSkillCosts(m);
     // A positive rejection consumes no effect. Invalidate the transient fee
     // quote, not unrelated buffs already established by confirmed actions.
     blockAction(m,a,before);
     // A proven failed tune did not play a card, spend dice or consume any
     // confirmed buffs. Block only the owned instance/target/conditions.
     if (a.type === "tune") return;
-    m.costEvidence = null;
+    m.skillCosts = null;
   }
   /* @include src/shared/rules.inc.js#tcg-rules.bag */
   /* @include src/shared/rules.inc.js#tcg-rules.cardCountDecreased */
@@ -744,7 +742,7 @@
     if (!confirmationReady(a, b, after)) return false;
     const consumed = (bag(b.hand)[a.id] || 0) > (bag(after.hand)[a.id] || 0);
     if (["draw", "revel", "sing"].includes(a.id))
-      return cardCountDecreased(b.hand, after.hand, a.id);
+      return drawConsumptionProven(a,b,after) || cardCountDecreased(b.hand, after.hand, a.id);
     if (a.id === "lyre") return consumed && after.hand.length === b.hand.length;
     if (a.id === "skivingNewAndImproved")
       return (
@@ -949,6 +947,8 @@
     reconcileHand,
     actionRefused,
     blockAction,
+    skillQuote,skillProbeAttempted,recordSkillCost,clearSkillCosts,refreshSkillCosts,drawConsumptionProven,
+    drawPayment:(s,a,m)=>byId[a.id]?.type==="draw"?cardCost(a.id,a.target,m,s):null,
     refusalCost: (s,m,a) => a.type === "card" ? cardCost(a.id,a.target,m,s) :
       a.type === "skill" ? skillCost(a.who,a.skill,m,s) : a.type === "switch" ? switchCost(m) : {},
     characterName,

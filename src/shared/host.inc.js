@@ -227,9 +227,7 @@
       }
       // A fee probe NEVER casts. Cancel, then prove unchanged real resources.
       this.boardReady=false;await this.reset();await this.requireUnchangedBoard(before);
-      if(!memory.probeKeys.includes(action.key))memory.probeKeys.push(action.key);
-      memory.costEvidence=fee===null?null:{source:"native-skill-preview",key:TCG.boardKey(before),
-        who:action.who,skill:action.skill,n:fee};
+      TCG.recordSkillCost(before,memory,action,fee);
       this.trace("skill-fee-probed",{who:action.who,skill:action.skill,fee,unchanged:true,castInputs:0});
       return {...before,confirmed:false,probed:true};
     }
