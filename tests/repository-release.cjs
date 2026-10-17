@@ -1,5 +1,5 @@
 "use strict";
-const assert=require("node:assert/strict"),fs=require("node:fs"),B=require("../tools/build.cjs"),S=require("../tools/public-assets.cjs"),R=require("../tools/build-release.cjs");
+const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("node:path"),B=require("../tools/build.cjs"),S=require("../tools/public-assets.cjs"),R=require("../tools/build-release.cjs");
 let passed=0;
 function test(name,fn){fn();passed++;console.log("PASS "+name);}
 function references(bank){
@@ -10,6 +10,14 @@ function references(bank){
 }
 test("semantic names preserve original pixels, compatibility aliases and every non-path bank field",()=>{
  for(const id of Object.keys(B.config.players)){
+  const dir=path.join(B.base,B.config.players[id].recognition),source=JSON.parse(fs.readFileSync(path.join(dir,"sources.json"))),compact=B.recognitionFiles(id);
+  const png=[...compact].filter(([name])=>name.endsWith(".png"));
+  assert.equal(new Set(png.map(([,bytes])=>B.sha(bytes))).size,png.length,id+" has duplicate runtime templates");
+  const pixels=(value,hash)=>typeof value==="string"?hash(value)||value:Array.isArray(value)?value.map(v=>pixels(v,hash)):value&&typeof value==="object"?Object.fromEntries(Object.entries(value).map(([k,v])=>[k,pixels(v,hash)])):value;
+  for(const key of ["hand-bank.json","opening-bank.json"]){
+   const original=JSON.parse(fs.readFileSync(path.join(dir,key))),packed=JSON.parse(compact.get(key));
+   assert.deepEqual(pixels(packed,name=>name.endsWith(".png")&&compact.has(name)?B.sha(compact.get(name)):null),pixels(original,name=>name.endsWith(".png")?source.runtimeFiles[name]:null));
+  }
   const raw=B.packageFiles(id).files,{files,names}=S.semanticAssets(raw);assert.equal(raw.size,files.size);
   for(const [rel,bytes]of raw)if(!names.has(rel)&&!rel.endsWith("-bank.json"))assert.ok(bytes.equals(files.get(rel)),rel);
   for(const [old,rel]of names){assert.ok(raw.get(old).equals(files.get(rel)));assert.match(rel,/^assets\/(hand|opening|expanded)\/[\p{L}\p{N}_-]+-v\d+-p\d+\.png$/u);}
@@ -44,7 +52,7 @@ test("release tree uses compatible JS leaf nodes, complete standalone packages a
  assert.equal(index.time,"20261017080000");assert.ok(index.url.endsWith("/refs/heads/release.zip"));
  assert.equal(Object.keys(manifest.files).length+1,files.size);for(const [n,sha]of Object.entries(manifest.files))assert.equal(B.sha(files.get(n)),sha);
  assert.ok(require("node:zlib").gunzipSync(files.get("repo.json.gz")).equals(files.get("repo.json")));
- assert.equal([...files.keys()].filter(n=>n.startsWith("repo/")).length,756);
+ assert.equal([...files.keys()].filter(n=>n.startsWith("repo/")).length,Object.keys(B.config.players).reduce((n,id)=>n+B.packageFiles(id,{semanticAssets:true}).files.size,0));
 });
 test("release inputs and relative paths reject traversal, drive paths and missing commit identity",()=>{
  for(const rel of ["../bad","/bad","a/../bad","C:/bad","a\\b",".git/config",".Git/config","a//b","a\nb"])assert.equal(R.safeRel(rel),false,rel);

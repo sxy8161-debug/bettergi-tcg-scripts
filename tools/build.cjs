@@ -91,6 +91,20 @@ function recognitionFiles(id,directory=config.players[id].recognition){
   for(const entry of [...bank.entries,...(bank.expanded?.entries||[])])for(const view of entry.views||[{patches:entry.patches}])
    for(const asset of view.patches)if(!result.has(asset))throw Error("Unpackaged recognition asset: "+asset);
  }
+ // Preserve every view and patch position; only identical image bytes share a path.
+ const images=new Map(),aliases=new Map();
+ for(const [rel,bytes]of result)if(rel.endsWith(".png")){
+  const hash=sha(bytes),first=images.get(hash);
+  if(first){aliases.set(rel,first);result.delete(rel);}else images.set(hash,rel);
+ }
+ if(aliases.size)for(const name of ["hand-bank.json","opening-bank.json"]){
+  const bank=JSON.parse(result.get(name)),resolve=rel=>aliases.get(rel)||rel;
+  for(const part of [bank,bank.expanded].filter(Boolean))for(const entry of part.entries){
+   if(entry.patches)entry.patches=entry.patches.map(resolve);
+   for(const view of entry.views||[])view.patches=view.patches.map(resolve);
+  }
+  result.set(name,Buffer.from(JSON.stringify(bank,null,2)+"\n"));
+ }
  return result;
 }
 function writeFiles(target,files) {
@@ -130,15 +144,31 @@ function assertGeneratedClean(id,files,previous) {
  const p=config.players[id],source=path.resolve(base,p.source);
  const baseline=previous?.players[id]?.files;
  const initial=p.baselineSource?path.resolve(base,p.baselineSource):null;
- assertTargetClean(id,source,files,baseline,initial,"Generated source changed outside shared layer");
+ return assertTargetClean(id,source,files,baseline,initial,"Generated source changed outside shared layer");
+}
+const templatePath=/^assets\/(?:hand|opening|expanded)\/[\p{L}\p{N}_-]+\.png$/u;
+function retiredTemplateFiles(files,baseline){
+ const retained=new Set([...files].filter(([rel])=>templatePath.test(rel)).map(([,bytes])=>sha(bytes)));
+ return new Map(Object.entries(baseline||{}).filter(([rel,hash])=>!files.has(rel)&&templatePath.test(rel)&&retained.has(hash)));
+}
+function retireTemplates(target,retired,backup){
+ const root=path.resolve(target);
+ for(const [rel,hash]of retired){
+  const current=path.resolve(root,rel),saved=path.resolve(backup,rel);
+  if(!templatePath.test(rel)||!current.startsWith(root+path.sep)||fs.lstatSync(current).isSymbolicLink()||sha(fs.readFileSync(current))!==hash||fs.existsSync(saved))
+   throw Error("Retired template changed or backup exists: "+current);
+  fs.mkdirSync(path.dirname(saved),{recursive:true});fs.renameSync(current,saved);
+ }
 }
 function assertTargetClean(id,target,files,baseline,initial,label){
+ const retired=retiredTemplateFiles(files,baseline);
  for(const rel of new Set([...Object.keys(baseline||{}),...files.keys()])){
   const oldPath=initial?path.join(initial,rel):null,reference=baseline?baseline[rel]:oldPath&&fs.existsSync(oldPath)?sha(fs.readFileSync(oldPath)):null;
   const current=path.join(target,rel),exists=fs.existsSync(current);
-  if(reference?(!files.has(rel)||!exists||sha(fs.readFileSync(current))!==reference):exists)
+  if(reference?(!files.has(rel)&&!retired.has(rel)||!exists||sha(fs.readFileSync(current))!==reference):exists)
    throw Error(label+": "+id+"/"+rel+". Reconcile it before writing.");
  }
+ return retired;
 }
 function build(){
  const args=process.argv.slice(2),targetedProof=targetedProofArg(args);
@@ -146,15 +176,19 @@ function build(){
  const statePath=path.join(base,"build-state.json"),previous=fs.existsSync(statePath)?JSON.parse(fs.readFileSync(statePath)):null,report={sharedRevision:config.sharedRevision,players:{}};
  const packages=Object.fromEntries(Object.keys(config.players).map(id=>[id,packageFiles(id)]));
  if(targetedProof)report.validation={scope:"targeted",proof:targetedProof};
- if(args.includes("--sync")){assertTested(packages,targetedProof);for(const [id,{files}]of Object.entries(packages))assertGeneratedClean(id,files,previous);}
+ const retired={};
+ if(args.includes("--sync")){assertTested(packages,targetedProof);for(const [id,{files}]of Object.entries(packages))retired[id]=assertGeneratedClean(id,files,previous);}
  for(const id of Object.keys(config.players)) {
   const p=config.players[id],{files,dependencies}=packages[id],source=path.resolve(base,p.source);
   if(args.includes("--check"))for(const [rel,bytes] of files){if(!fs.existsSync(path.join(source,rel))||sha(fs.readFileSync(path.join(source,rel)))!==sha(bytes))throw new Error("Generated source drift: "+id+"/"+rel);}
-  else {writeFiles(path.join(base,"build",id),files);if(args.includes("--sync"))writeFiles(source,files);}
+  else {writeFiles(path.join(base,"build",id),files);if(args.includes("--sync")){
+   if(retired[id].size){report.retiredBackup??=path.resolve(base,"../../backups","tcg-template-sync-"+new Date().toISOString().replace(/[:.]/g,"-"));retireTemplates(source,retired[id],path.join(report.retiredBackup,id));}
+   writeFiles(source,files);
+  }}
   report.players[id]={version:p.version,files:Object.fromEntries([...files].map(([n,b])=>[n,sha(b)])),dependencies};
  }
  if(!args.includes("--check")){fs.writeFileSync(path.join(base,"build-manifest.json"),JSON.stringify(report,null,2)+"\n");if(args.includes("--sync"))fs.writeFileSync(statePath,JSON.stringify(report,null,2)+"\n");}
  console.log(JSON.stringify({checked:args.includes("--check"),synced:args.includes("--sync"),players:Object.fromEntries(Object.entries(report.players).map(([id,p])=>[id,{version:p.version,files:Object.keys(p.files).length,sharedFragments:p.dependencies.length}]))}));return report;
 }
 if(require.main===module)build();
-module.exports={base,config,sha,packageFiles,packageHashes,recognitionFiles,writeFiles,build,render,assertTested,targetedProofArg,assertGeneratedClean,assertTargetClean,commonAssets};
+module.exports={base,config,sha,packageFiles,packageHashes,recognitionFiles,writeFiles,build,render,assertTested,targetedProofArg,assertGeneratedClean,assertTargetClean,retiredTemplateFiles,retireTemplates,commonAssets};
