@@ -46,6 +46,7 @@ enlargedOcrRows(f, roi, scale) {
 
 // @fragment bgi-host.frame
 frame(fn) {
+      this.requireMatchTime();
       const started = Date.now(),
         previousMemo = this.frameMemo;
       const f = captureGameRegion();
@@ -55,7 +56,10 @@ frame(fn) {
       this.frameMemo = new WeakMap();
       try {
         requireCaptureSize(captureSize(f));
-        return fn(f);
+        this.requireMatchTime();
+        const result = fn(f);
+        this.requireMatchTime();
+        return result;
       } finally {
         this.metrics.frameWorkMs += Date.now() - captured;
         this.frameMemo = previousMemo;
@@ -153,8 +157,27 @@ reportStop(reason) {
 // @fragment bgi-host.trace
 trace(event, data) {
       const text = JSON.stringify({ at: new Date().toISOString(), event, data });
-      if (!file.writeTextSync(this.path, text + "\n", true))
+      if (this.logAppend === null) {
+        const indexPath = "logs/tcg-log-index.json";
+        let next = 0;
+        if (file.isExists(indexPath)) {
+          try {
+            const index = JSON.parse(file.readTextSync(indexPath));
+            if (Number.isInteger(index?.next) && index.next >= 0 && index.next < 10) next = index.next;
+            else log.warn("日志轮转索引无效，从第一个日志槽继续。");
+          } catch (e) {
+            if (!(e instanceof SyntaxError)) throw e;
+            log.warn("日志轮转索引损坏，从第一个日志槽继续。");
+          }
+        }
+        this.path = "logs/run-slot-" + String(next + 1).padStart(2, "0") + ".log";
+        if (!file.writeTextSync(indexPath, JSON.stringify({ next: (next + 1) % 10 }), false))
+          throw new Error("无法写入日志轮转索引：" + indexPath);
+        this.logAppend = false;
+      }
+      if (!file.writeTextSync(this.path, text + "\n", this.logAppend))
         throw new Error("无法写入对局日志：" + this.path);
+      this.logAppend = true;
     }
 // @endfragment bgi-host.trace
 

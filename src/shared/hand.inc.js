@@ -867,3 +867,36 @@ async titleAt(
       return kind === "character" || expected !== null ? lastStable : "";
     }
 // @endfragment tcg-ui.titleAt
+// @fragment bgi-host.inputHand
+async inputHand(action,before,memory,prepared=null) {
+      const current = before.hand;
+      const h = current.find(c => c.index === action.index);
+      if (!h || h.id !== action.id) throw new Error("执行前重新核对卡名失败");
+      const selected = prepared && !prepared.viewOnly;
+      if (prepared?.viewOnly && !this.handFanReady) await this.requireUnchangedBoard(before);
+      const priceIndex = action.type==="card"&&this.checkCardInput?action.index:null;
+      // Non-selected inputs always enter inspectHandCard below. Its fresh
+      // pre-click phase owns the boundary; quantity reads stay independent.
+      let sourceCount=selected?prepared.sourceCount:await this.prepareHandInput(before.hand.length,priceIndex,false,true);
+      if (prepared?.viewOnly && !sourceCount) {
+        // No title/drag has been sent for this target. Unknown new quantity
+        // cannot authorize bypassing the ordinary complete-board preflight.
+        await this.requireUnchangedBoard(before);
+        sourceCount=await this.prepareHandInput(before.hand.length,priceIndex,false,true);
+      }
+      const x = selected?prepared.x:this.handPoints(current.length)[action.index];
+      if (!selected) await this.inspectHandCard(action, x);
+      await this.checkCardInput?.(action,before,x,memory);
+      if(this.phase().turn!=="user")throw new Error("拖牌前回合已改变");
+      const targeted = action.type === "card" && action.target !== null;
+      this.consumptionReceipt={id:action.id,index:action.index,target:action.target??null,
+        beforeKey:TCG.boardKey(before),inputSent:false,
+        ...(sourceCount?{sourceCountProof:sourceCount}:{})};
+      await this.drag(x, 945, action.type === "tune" ? 1867 : targeted ? charX[action.target] : x,
+        action.type === "tune" ? 518 : targeted ? 720 : 595);
+      this.consumptionReceipt.inputSent=true;
+      if (action.type === "tune") await this.confirmTune();
+      else await this.cardConfirm(action,before);
+    }
+// @endfragment bgi-host.inputHand
+

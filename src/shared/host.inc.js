@@ -29,8 +29,10 @@
       this.options = options;
       this.templates = new Map();
       this.roCache = new Map();
-      // BetterGI LimitedFile accepts .log but rejects .jsonl. Contents remain one JSON object per line.
-      this.path = "logs/run-" + new Date().toISOString().replace(/[:.]/g, "-") + ".log";
+      // Ten reusable slots: LimitedFile can overwrite, but has no delete API.
+      // Select a slot lazily on the first event, not merely on construction.
+      this.path = "logs/run-slot-01.log";
+      this.logAppend = null;
       this.emptyHandProven = false;
       this.expectedDice = null;
       this.gamblerBudget = null;
@@ -59,6 +61,13 @@
       this.consumptionReceipt = null;
       this.pendingHandEvidence = null;
       file.createDirectory("logs");
+    }
+    requireMatchTime() {
+      if (Date.now() >= (this.matchDeadline ?? Infinity)) {
+        const error = new Error("达到单局时间上限，不再开始观察或发送输入");
+        error.code = "TCG_MATCH_TIMEOUT";
+        throw error;
+      }
     }
     /* @include src/shared/input.inc.js#tcg-ui.clickAt */
     /* @include src/shared/input.inc.js#bgi-host.moveTo */
@@ -317,6 +326,7 @@
       const start = mousePoint(x, y), end = mousePoint(toX, toY);
       this.moveTo(start[0], start[1]);
       await sleep(60);
+      this.requireMatchTime();
       leftButtonDown();
       this.inputRevision++;
       this.handPositionProof = null;
@@ -335,6 +345,7 @@
     /* @include src/shared/input.inc.js#bgi-host.waitForSample */
     /* @include src/shared/input.inc.js#bgi-host.cardTargetPreviewIn */
     /* @include src/shared/input.inc.js#bgi-host.cardPaymentPreviewIn */
+    /* @include src/shared/input.inc.js#bgi-host.requireStableCardPayment */
     /* @include src/shared/input.inc.js#tcg-ui.requireNoWarning */
     /* @include src/shared/input.inc.js#bgi-host.requireSwitchPreview */
     
@@ -342,36 +353,7 @@
     preInputBoardClean() { return this.boardReady; }
     /* @include src/shared/input.inc.js#tcg-ui.execute */
     
-    async inputHand(action,before,memory,prepared=null) {
-      const current = before.hand;
-      const h = current.find(c => c.index === action.index);
-      if (!h || h.id !== action.id) throw new Error("执行前重新核对卡名失败");
-      const selected = prepared && !prepared.viewOnly;
-      if (prepared?.viewOnly && !this.handFanReady) await this.requireUnchangedBoard(before);
-      const priceIndex = action.type==="card"&&this.checkCardInput?action.index:null;
-      // Non-selected inputs always enter inspectHandCard below. Its fresh
-      // pre-click phase owns the boundary; quantity reads stay independent.
-      let sourceCount=selected?prepared.sourceCount:await this.prepareHandInput(before.hand.length,priceIndex,false,true);
-      if (prepared?.viewOnly && !sourceCount) {
-        // No title/drag has been sent for this target. Unknown new quantity
-        // cannot authorize bypassing the ordinary complete-board preflight.
-        await this.requireUnchangedBoard(before);
-        sourceCount=await this.prepareHandInput(before.hand.length,priceIndex,false,true);
-      }
-      const x = selected?prepared.x:this.handPoints(current.length)[action.index];
-      if (!selected) await this.inspectHandCard(action, x);
-      await this.checkCardInput?.(action,before,x,memory);
-      if(this.phase().turn!=="user")throw new Error("拖牌前回合已改变");
-      const targeted = action.type === "card" && action.target !== null;
-      this.consumptionReceipt={id:action.id,index:action.index,target:action.target??null,
-        beforeKey:TCG.boardKey(before),inputSent:false,
-        ...(sourceCount?{sourceCountProof:sourceCount}:{})};
-      await this.drag(x, 945, action.type === "tune" ? 1867 : targeted ? charX[action.target] : x,
-        action.type === "tune" ? 518 : targeted ? 720 : 595);
-      this.consumptionReceipt.inputSent=true;
-      if (action.type === "tune") await this.confirmTune();
-      else await this.cardConfirm(action,before);
-    }
+    /* @include src/shared/hand.inc.js#bgi-host.inputHand */
     /* @include src/shared/input.inc.js#tcg-ui.confirmTune */
     /* @include src/shared/input.inc.js#bgi-host.inputSkill */
     

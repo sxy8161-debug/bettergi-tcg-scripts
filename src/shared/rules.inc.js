@@ -1,5 +1,29 @@
 // Shared rules fragments. Inlined at build time; no runtime dependency.
 
+// @fragment tcg-rules.projectionBudget
+// One synchronous decision, including nested helpers and failed projections.
+// No cross-decision cache; exhaustion is not evidence of action illegality.
+const projectionBudget = (() => {
+  let current = null;
+  return {
+    run(limit, decide) {
+      if (current) return decide();
+      current = { used: 0, limit };
+      try {
+        const result = decide();
+        return { ...result, projections: { ...current, exhausted: current.used >= current.limit } };
+      } finally { current = null; }
+    },
+    available() { return !current || current.used < current.limit; },
+    take() {
+      if (!current) return true; // Standalone rule projection, not a decision.
+      if (current.used >= current.limit) return false;
+      current.used++; return true;
+    },
+  };
+})();
+// @endfragment tcg-rules.projectionBudget
+
 // @fragment tcg-rules.strategyRegistry
 (function (T) {
   const strategies = new Map();
@@ -51,6 +75,45 @@ function actionKey(action) {
     return action.type + ":" + (action.id || (["skill","probe"].includes(action.type) ? action.who + ":" + action.skill : action.target));
   }
 // @endfragment tcg-rules.actionKey
+
+// @fragment tcg-rules.countedPaymentBody
+    const groups = Object.entries(dice || {}), need = size(cost),
+      count = groups.reduce((n, [, amount]) => n + amount, 0);
+    if (need > count || count > 16) return null;
+    if (!need) return { indices: [], remaining: { ...dice }, ...emptyPaymentWeight };
+    const counts = Array(groups.length).fill(0), offsets = [];
+    let offset = 0, best = null;
+    for (const [, amount] of groups) { offsets.push(offset); offset += amount; }
+    function visit(at, left, weight, matching, aligned) {
+      if (best && weight > best.weight) return;
+      if (left === 0) {
+        if (cost.n && matching < cost.n) return;
+        const indices = counts.flatMap((n, i) => Array.from({ length: n }, (_, j) => offsets[i] + j));
+        // Original subset enumeration chose the earliest slot list on equal
+        // weight. Count enumeration preserves that tie without identical dice subsets.
+        if (best && weight === best.weight) {
+          const different = indices.findIndex((n, i) => n !== best.indices[i]);
+          if (different < 0 || indices[different] > best.indices[different]) return;
+        }
+        const remaining = { ...dice };
+        groups.forEach(([element], i) => { remaining[element] -= counts[i]; });
+        best = { indices, remaining, weight }; return;
+      }
+      if (at === groups.length) return;
+      const [element, amount] = groups[at],
+        fee = element === "Omni" ? 10 : element === preserve ? 6 : secondaryPaymentWeights[element] || 1;
+      for (let n = 0; n <= Math.min(amount, left); n++) {
+        if (n && cost.aligned && element !== "Omni" && aligned && aligned !== element) continue;
+        counts[at] = n;
+        visit(at + 1, left - n, weight + n * fee,
+          matching + (element === cost.element || element === "Omni" ? n : 0),
+          n && element !== "Omni" ? element : aligned);
+      }
+      counts[at] = 0;
+    }
+    visit(0, need, 0, 0, null);
+    return best;
+// @endfragment tcg-rules.countedPaymentBody
 
 // @fragment tcg-rules.alive
 const alive = (c) => !!c && c.dead === false && known(c.hp) && c.hp > 0;

@@ -67,6 +67,7 @@ constructor(host, options) {
       if(T.openingContext)this.memory.openingContext=T.openingContext({});
       host.memory=this.memory;
       this.deadline = Date.now() + options.maxMinutes * 60000;
+      host.matchDeadline = this.deadline;
       this.actions = 0;
       this.lastProgress = Date.now();
       this.readyState = null;
@@ -205,6 +206,7 @@ progress() {
 
 // @fragment lifecycle.awaitConfirmation
 async awaitConfirmation(action, before, memory = this.memory) {
+      this.host.matchDeadline = this.deadline;
       while (Date.now() < this.deadline) {
         try { return await this.host.confirm(action, before, memory); }
         catch (e) {
@@ -212,7 +214,8 @@ async awaitConfirmation(action, before, memory = this.memory) {
           this.notice("pending:" + T.actionKey(action), "[等待恢复] 动作已经提交，继续核对结果，不重复输入。");
           this.host.trace("confirmation-pending", { action, code: e.code, missing: e.missing,
             phase: e.phase?.phase, turn: e.phase?.turn, elapsedMs: e.elapsedMs, reason: e.message });
-          await sleep(400);
+          const remaining = this.deadline - Date.now();
+          if (remaining > 0) await sleep(Math.min(400, remaining));
         }
       }
       throw new Error("达到单局时间上限，待确认动作未能安全恢复");

@@ -85,7 +85,7 @@
     const next = boundary < 0 ? sequence : sequence.slice(0, boundary);
     const skill =
       next.find((a) => a.type === "skill" && a.who === action.target) ||
-      (action.target === 2 && next.some((a) => a.type === "card" && a.id === "talent")
+      (action.target === 2 && next.some((a) => a.type === "card" && a.id === "skivingNewAndImproved")
         ? { who: 2, skill: "E" }
         : null);
     if (skill) {
@@ -148,7 +148,7 @@
         return `${fragile}准备切换${target}，${preserve}${switchPurpose(action, state, memory)}${finish}。`;
       }
       case "card":
-        if (action.id === "talent")
+        if (action.id === "skivingNewAndImproved")
           return `准备打出「${card}」，装备早柚天赋并发动战技，${attackPurpose(state, memory, 2, "E")}${finish}。`;
         if (action.id === "lyre")
           return `准备使用「${card}」，回收${target}的圣遗物，为下张圣遗物减费${finish}。`;

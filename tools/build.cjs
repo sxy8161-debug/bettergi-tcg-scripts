@@ -2,20 +2,22 @@
 const fs=require("node:fs"),path=require("node:path"),crypto=require("node:crypto"),vm=require("node:vm");
 const base=path.resolve(__dirname,".."),config=require("../players.json");
 const sha=b=>crypto.createHash("sha256").update(b).digest("hex");
-const includes=/\/\* @include (src\/shared\/[\w/-]+\.inc\.js)(?:#([\w.-]+))? \*\//g;
-function render(text, dependencies = [], stack = []) {
+const includes=/\/\* @include (src\/(?:shared\/[\w/-]+|decks\/[\w-]+\/[\w/-]+)\.inc\.js)(?:#([\w.-]+))? \*\//g;
+function render(text, dependencies = [], stack = [], deck = null) {
  return text.replace(includes,(_,rel,fragment)=>{
+  const owner=/^src\/decks\/([\w-]+)\//.exec(rel)?.[1];
+  if(owner && owner!==deck)throw new Error("Deck include outside current player: "+rel);
   const key=rel+(fragment?"#"+fragment:"");
   if(stack.includes(key))throw new Error("Recursive shared include: "+key);
   dependencies.push(key);
   const full=path.resolve(base,rel);
   if(!full.startsWith(base+path.sep))throw new Error("Include outside shared root");
   const source=fs.readFileSync(full,"utf8").replace(/\r\n/g,"\n");
-  if(!fragment)return render(source.trimEnd(),dependencies,[...stack,key]);
+  if(!fragment)return render(source.trimEnd(),dependencies,[...stack,key],deck);
   const begin="// @fragment "+fragment+"\n",end="\n// @endfragment "+fragment;
   const at=source.indexOf(begin),to=source.indexOf(end,at+begin.length);
   if(at<0||to<0||source.indexOf(begin,at+begin.length)>=0)throw new Error("Missing/duplicate shared fragment "+rel+"#"+fragment);
-  return render(source.slice(at+begin.length,to).trimEnd(),dependencies,[...stack,key]);
+  return render(source.slice(at+begin.length,to).trimEnd(),dependencies,[...stack,key],deck);
  });
 }
 const elements=["Pyro","Hydro","Anemo","Electro","Dendro","Cryo","Geo","Omni"];
@@ -28,7 +30,7 @@ function packageFiles(id,options={}) {
  const result=new Map(),dir=path.join(base,"src/decks",id),dependencies=[];
  for(const name of ["core","bgi","player"]){
   const t=fs.readFileSync(path.join(dir,name+".js.tmpl"),"utf8");
-  let text="// Generated from 牌手共享. Edit layered source, not this standalone output.\n"+render(t,dependencies);
+  let text="// Generated from 牌手共享. Edit layered source, not this standalone output.\n"+render(t,dependencies,[],id);
   if(name==="core")for(const module of [...(p.coreModules||[])].reverse()) {
     if(!/^[\w-]+\.js$/.test(module))throw Error("Invalid core module: "+module);
     text=fs.readFileSync(path.join(dir,module),"utf8")+'\n'+text;
@@ -39,11 +41,11 @@ function packageFiles(id,options={}) {
   if(text.includes("/* @include"))throw new Error("Unresolved include");
   new vm.Script(text,{filename:id+"/"+name+".js"}); result.set("lib/"+name+".js",Buffer.from(text));
  }
- let strategy=render(fs.readFileSync(path.join(dir,"strategy.js"),"utf8"),dependencies)+'\nglobalThis.TCG.registerStrategy("default", globalThis.TCG.choose);\n';
+ let strategy=render(fs.readFileSync(path.join(dir,"strategy.js"),"utf8"),dependencies,[],id)+'\nglobalThis.TCG.registerStrategy("default", globalThis.TCG.choose);\n';
  for(const entry of p.strategyModules||[]) {
   if(!entry.startsWith("strategies/")||!entry.endsWith(".js"))throw Error("Strategy module must live in strategies/: "+entry);
   const full=path.resolve(dir,entry);if(!full.startsWith(dir+path.sep))throw Error("Strategy module outside deck root");
-  const code=render(fs.readFileSync(full,"utf8"),dependencies);new vm.Script(code,{filename:entry});strategy+='\n'+code+'\n';
+  const code=render(fs.readFileSync(full,"utf8"),dependencies,[],id);new vm.Script(code,{filename:entry});strategy+='\n'+code+'\n';
  }
  strategy+='\nglobalThis.TCG.selectStrategy(globalThis.TCG.defaultStrategy);\n';
  result.set("lib/strategy.js",Buffer.from(strategy));

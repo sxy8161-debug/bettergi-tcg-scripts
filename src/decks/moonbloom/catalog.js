@@ -13,7 +13,7 @@
     ["canopy","「悬木人」",{},"support",2],
     ["sand","「沙中遗事」",{},"legend",1],
     ["bloom","元素幻变：绽放祝佑",{aligned:2},"support",1],
-    ["woven","元素共鸣：交织之草",{},"dice",2],
+    ["wovenWeeds","元素共鸣：交织之草",{},"dice",2],
     ["gleam","月兆·满辉",{},"attachment",2],
     ["shift","换班时间",{},"switch",1],
     ["draw","运筹帷幄",{aligned:1},"draw",2],

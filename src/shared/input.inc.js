@@ -6,7 +6,9 @@ async waitForSample(sampledAt, interval, revision = this.inputRevision) {
       // An intervening click starts a new animation boundary: keep the full
       // old post-input wait rather than charging pre-input OCR against it.
       const remaining = revision === this.inputRevision ? interval - (Date.now() - sampledAt) : interval;
-      if (remaining > 0) await sleep(remaining);
+      const wait = Math.min(remaining, (this.matchDeadline ?? Infinity) - Date.now());
+      if (wait > 0) await sleep(wait);
+      this.requireMatchTime();
     }
 // @endfragment bgi-host.waitForSample
 
@@ -54,6 +56,25 @@ cardPaymentPreviewIn(f) {
       };
     }
 // @endfragment bgi-host.cardPaymentPreviewIn
+
+// @fragment bgi-host.requireStableCardPayment
+async requireStableCardPayment(action, central, sampledAt) {
+      const banner = TCG.norm(central.banner), b = central.targets[0];
+      let stable = 1;
+      for (let attempt = 0; attempt < 6; attempt++) {
+        await this.waitForSample(sampledAt, 250); sampledAt = Date.now();
+        const current = this.frame(f => this.cardPaymentPreviewIn(f));
+        await this.requireNoWarning(current.warning);
+        const c = current.controls[0], matched = current.banner === banner && current.controls.length === 1 &&
+          current.phase.phase === "unknown" && current.phase.turn === "none" &&
+          Math.abs(c.x + c.w / 2 - b.x - b.w / 2) <= 3 && Math.abs(c.y + c.h / 2 - b.y - b.h / 2) <= 3;
+        stable = matched ? stable + 1 : 0;
+        this.trace("card-payment-preview", { id: action.id, attempt, matched, stable, ...current });
+        if (stable >= 2) return;
+        if (attempt === 5) throw new Error("中央出牌确认控件未连续核实");
+      }
+    }
+// @endfragment bgi-host.requireStableCardPayment
 
 // @fragment bgi-host.cardPaymentControlsIn
 cardPaymentControlsIn(f) {
@@ -158,6 +179,7 @@ emptySkillPreview(p) {
 // @fragment bgi-host.moveTo
 moveTo(x, y) {
       const point = mousePoint(x, y);
+      this.requireMatchTime();
       moveMouseTo(point[0], point[1]);
       return point;
     }
@@ -273,6 +295,7 @@ warnings(frame = null) {
 // @fragment tcg-ui.clickAt
 clickAt(x, y) {
       const point = mousePoint(x, y);
+      this.requireMatchTime();
       this.boardReady = false;
       click(point[0], point[1]);
       this.inputRevision++;

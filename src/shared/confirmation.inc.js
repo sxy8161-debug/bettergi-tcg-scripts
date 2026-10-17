@@ -27,17 +27,17 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
       const session = this.confirmationSession || { key, transition: false, submittedAt: this.actionSubmittedAt ?? null,
         plan: action.type === "end" ? null : { ...TCG.handPlan(action, before, memory), action, before } };
       this.confirmationSession = session;
-      const deadline = Date.now() + 45000;
+      const deadline = Math.min(Date.now() + 45000, this.matchDeadline ?? Infinity);
       let lastPhase = null;
       let sampledAt = 0;
       // Polling intervals include this cycle's OCR/observation work. This does
       // not shorten the input helpers' animation waits or replay an input.
       const waitForSample = async interval => {
-        const remaining = interval - (Date.now() - sampledAt);
+        const remaining = Math.min(interval - (Date.now() - sampledAt), deadline - Date.now());
         if (remaining > 0) await sleep(remaining);
       };
       const combat = ["skill", "switch", "end"].includes(action.type) ||
-        action.type === "card" && ["talent", "wedge", "penance"].includes(action.id);
+        action.type === "card" && ["floralSidewinder", "skivingNewAndImproved", "wedge", "penance"].includes(action.id);
       // The existing combat flag also owns switch/end recovery. This new
       // refresh policy is only for casts, not ordinary fast/manual switches.
       const effectAction = combat && !["switch", "end"].includes(action.type);

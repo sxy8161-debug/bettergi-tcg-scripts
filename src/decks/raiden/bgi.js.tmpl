@@ -174,7 +174,7 @@
         const activeScope=["stars","voltage","calx","lost"].includes(action.id) && banner==="对我方出战角色生效";
         const namedEvent=["dice","draw","switch","energy","support","reroll","recovery"].includes(card.type) &&
           banner.startsWith("打出手牌") && TCG.identify(banner.slice(4))?.id===action.id;
-        const talentWho=action.id==="penance"?2:action.id==="talent"?1:null;
+        const talentWho=action.id==="penance"?2:action.id==="floralSidewinder"?1:null;
         const activeTalent=talentWho!==null && action.target===talentWho && before?.active===talentWho &&
           TCG.alive(before.characters?.[talentWho]) && !before.characters[talentWho].frozen &&
           banner==="装备给出战中的"+TCG.norm(TCG.team[talentWho].name);
@@ -200,19 +200,7 @@
         // Talent wearers and a wedge's returning Keqing are already selected.
         // Confirm the observed payment button once; the card invokes the skill.
         // Never add a target click or a separate skill cast here.
-        let stable=1,sampledAt=centralSampledAt;
-        for(let attempt=0;attempt<6;attempt++) {
-          await this.waitForSample(sampledAt,250);sampledAt=Date.now();
-          const current=this.frame(f=>this.cardPaymentPreviewIn(f));
-          await this.requireNoWarning(current.warning);
-          const c=current.controls[0],matched=current.banner===banner && current.controls.length===1 &&
-            current.phase.phase==="unknown" && current.phase.turn==="none" &&
-            Math.abs(c.x+c.w/2-b.x-b.w/2)<=3 && Math.abs(c.y+c.h/2-b.y-b.h/2)<=3;
-          stable=matched?stable+1:0;
-          this.trace("card-payment-preview",{id:action.id,attempt,matched,stable,...current});
-          if(stable>=2)break;
-          if(attempt===5)throw new Error("中央出牌确认控件未连续核实");
-        }
+        await this.requireStableCardPayment(action,central,centralSampledAt);
         const point = this.clickAt(b.x+b.w/2,b.y+b.h/2);
         this.trace("card-confirm-clicked", { id:action.id, point, layout:"central", banner:central.banner });
         this.markNativeCardConfirmation(action,"central");
@@ -264,7 +252,7 @@
         action.type === "switch" ? (memory.freeSwitch ? 0 : 1) :
         action.type === "card" ? TCG.size(TCG.byId[action.id].cost) : 0;
       this.expectedDice = action.type === "end" ? null : TCG.total(before.dice) - cost +
-        (action.type === "card" ? (action.id === "woven" || action.id === "lost" ? 1 : action.id === "companion" ? 2 : 0) : 0);
+        (action.type === "card" ? (action.id === "wovenThunder" || action.id === "lost" ? 1 : action.id === "companion" ? 2 : 0) : 0);
       const wearer=action.type==="switch"?action.target:action.type==="skill"?action.who:
         action.type==="card"&&action.id==="wedge"?2:before.active;
       this.gamblerBudget=memory.artifactKinds?.[wearer]==="gambler" ?

@@ -6,7 +6,7 @@
   /* @include src/shared/lifecycle.inc.js#lifecycle.BUDGET_FIELDS */
   /* @include src/shared/lifecycle.inc.js#lifecycle.ELEMENT_NAMES */
   const CARD_PURPOSES = {
-    woven: "补充雷骰",
+    wovenThunder: "补充雷骰",
     voltage: "补充未满的角色充能",
     stars: "补充出战角色充能",
     calx: "转移后台充能",
@@ -87,7 +87,7 @@
       next
         .filter((a) => a.type === "card")
         .map((a) =>
-          a.id === "talent"
+          a.id === "floralSidewinder"
             ? { who: 1, skill: "E" }
             : ["penance", "wedge"].includes(a.id)
               ? { who: 2, skill: "E" }
@@ -168,14 +168,14 @@
             finish +
             "。"
           );
-        if (["talent", "penance"].includes(action.id))
+        if (["floralSidewinder", "penance"].includes(action.id))
           return (
             "准备为" +
             target +
             "装备「" +
             card +
             "」并发动战技，" +
-            attackPurpose(state, memory, action.id === "talent" ? 1 : 2, "E") +
+            attackPurpose(state, memory, action.id === "floralSidewinder" ? 1 : 2, "E") +
             finish +
             "。"
           );
