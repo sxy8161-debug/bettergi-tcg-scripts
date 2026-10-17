@@ -85,7 +85,7 @@
       eyeRound: -10, dendroRound: -10, keqingInfusion: null, resolve:0,
       food: [false, false, false], normalDiscount: [0, 0, 0],
       freeSwitch: false, fastSwitch: false, artifacts: [false, false, false],
-      weapons: [false, false, false], talent: false, uncertainActions: [], defeated: [false,false,false], thundergrassSupport:null,
+      weapons: [false, false, false], talent: false, uncertainActions: [], refusedActions: [], defeated: [false,false,false], thundergrassSupport:null,
       sproutRound:-1,sproutUsedRound:-1,sproutUncertainRound:-1,
       artifactKinds:[null,null,null],exileUsedRound:[-1,-1,-1],gamblerUsed:[0,0,0],
       enemyAliveCount:null,enemyLastActive:null,penance:false,legendUsed:false,
@@ -95,13 +95,12 @@
     m.round++;
     m.food = [false, false, false];
     m.normalDiscount = [0, 0, 0];
-    m.uncertainActions = [];
+    m.uncertainActions = []; m.refusedActions = [];
     m.blessingUsed=0;m.costEvidence=null;m.probeKeys=[];
     // Switch discounts survive round boundaries (they are not oneDuration).
   }
-  function rejectAction(m, action) {
-    const key = actionKey(action);
-    if (!m.uncertainActions.includes(key)) m.uncertainActions.push(key);
+  function rejectAction(m, action, before) {
+    blockAction(m, action, before);
     // A proven rejection consumes neither the card nor confirmed equipment.
     if (action.type === "tune") return;
     m.costEvidence = null;
@@ -280,7 +279,7 @@
     // cost dice/energy/talent actions already outrank tuning. If missing other
     // cards, even a valuable card may unlock a fully reachable burst/skill.
     return s.hand.filter(h=>handCardKnown(h) &&
-      !(m.uncertainActions||[]).includes(actionKey({type:"tune",id:h.id})))
+      !actionRefused(s,m,{type:"tune",id:h.id,index:h.index,element:team[a].element}))
       .sort((x,y)=>(values[x.id]??50)-(values[y.id]??50));
   }
   function tuningPlan(s,m,goal) {
@@ -332,14 +331,14 @@
   function switchPreparationReachable(s,m,goal) {
     const goals=[goal,{who:goal.who,skill:"E"},{who:goal.who,skill:"NA"}];
     if(goals.some(g=>followupReachable(s,m,g)))return true;
-    const hh=s.hand||[],uncertain=m.uncertainActions||[];
-    const shift=hh.find(h=>h.id==="shift");
-    if(!m.freeSwitch && shift && hh.length>1 && !uncertain.includes(actionKey({type:"card",id:"shift"}))) {
+    const hh=s.hand||[];
+    const shift=hh.find(h=>h.id==="shift"&&!actionRefused(s,m,{type:"card",id:h.id,index:h.index,target:null}));
+    if(!m.freeSwitch && shift && hh.length>1) {
       const local={...s,hand:hh.filter(h=>h!==shift)};
       if(goals.some(g=>followupReachable(local,{...m,freeSwitch:true},g)))return true;
     }
-    const companion=hh.find(h=>h.id==="companion"),pay=companion&&payment(s.dice,byId.companion.cost,team[s.active].element);
-    if(pay && !uncertain.includes(actionKey({type:"card",id:"companion"}))) {
+    const companion=hh.find(h=>h.id==="companion"&&!actionRefused(s,m,{type:"card",id:h.id,index:h.index,target:null})),pay=companion&&payment(s.dice,byId.companion.cost,team[s.active].element);
+    if(pay) {
       const local={...s,hand:hh.filter(h=>h!==companion),dice:{...pay.remaining,Omni:(pay.remaining.Omni||0)+2}};
       if(goals.some(g=>followupReachable(local,m,g)))return true;
     }
@@ -380,7 +379,7 @@
     const skill = wanted && wanted.who === a ? wanted.skill : null;
     const candidates = [];
     function offer(action, score, reason) {
-      if (!(m.uncertainActions || []).includes(actionKey(action))) candidates.push({ ...action, score, reason });
+      if (!actionRefused(s,m,action)) candidates.push({ ...action, score, reason });
     }
     const desiredCost = wanted ? skillCost(wanted.who, wanted.skill, m,s) : { any: 3 };
     const reserve = size(desiredCost) + (wantSwitch && !m.freeSwitch ? 1 : 0);
@@ -566,12 +565,10 @@
   }
   /* @include src/shared/rules.inc.js#tcg-rules.actionKey */
   /* @include src/shared/combat.inc.js#tcg-rules.damageAgainst */
-  function deferUncertain(m, action) {
+  function deferUncertain(m, action, before) {
     // Do not replay an outcome-unknown action in the same round. A food might
     // already have resolved, so conservatively reserve that target's food slot.
-    const key = actionKey(action);
-    if (!m.uncertainActions) m.uncertainActions = [];
-    if (!m.uncertainActions.includes(key)) m.uncertainActions.push(key);
+    blockAction(m, action, before, true);
     if (action.type === "card" && byId[action.id]?.type === "food") m.food[action.target] = true;
     if(action.type==="skill"&&action.skill==="Q")m.resolve=null;
     const cast=sproutCast(action);
@@ -682,6 +679,8 @@
   }
   root.TCG = { projectionBudget, openingContext, openingPlan, team, cards, byId, norm, identify, observedCard, handCardKnown, characterName, total, size, payment, rerollPlan,
     openingSetting, known, alive, freshMemory, nextRound, OpeningFlow, freshActionBoard, skillCost, skillLegal, cardLegal, cardInputError, intent, survivorIntent, followupReachable, switchPreparationReachable, replacement, noteBoard, tuningPlan, legalState, choose, verify, commit, emptyHandEffect, diceOrder,
-    indexedHand, handPlan, verifyResynchronized, actionKey, rejectAction, deferUncertain, removalEffect, blessingChoice,boardKey,burnableHand,
+    indexedHand, reconcileHand, actionRefused, blockAction,
+    refusalCost:(s,m,a)=>a.type==="card"?byId[a.id]?.cost:a.type==="skill"?skillCost(a.who,a.skill,m,s):null,
+    handPlan, verifyResynchronized, actionKey, rejectAction, deferUncertain, removalEffect, blessingChoice,boardKey,burnableHand,
     actionRerollGoal,rerollCounter,enemyCount,gamblerRemaining,skillElement,dendroReaction,sproutAvailable,activeKeqingInfusion,damageAgainst };
 })(globalThis);

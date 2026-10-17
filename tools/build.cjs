@@ -106,13 +106,14 @@ function targetedProofArg(args) {
  if(proofs.length>1||proofs.some(a=>!a.slice(17)))throw Error("Specify one nonempty --targeted-proof path");
  return proofs[0]?.slice(17);
 }
-function assertTested(packages,targetedProof=null) {
+function assertTested(packages,targetedProof=null,{allowFullReport=false}={}) {
  const reportPath=path.resolve(base,targetedProof||"reports/shared-latest.json");
  if(!fs.existsSync(reportPath))throw new Error("Run npm test before synchronizing/deploying");
  const report=JSON.parse(fs.readFileSync(reportPath));
  if(report.proofSchema!==1)throw new Error("Tested-byte proof missing; run npm test before synchronizing/deploying");
  const accepted=targetedProof
-   ?report.full===false&&report.scope==="targeted"&&report.authorization?.skipFullRegression===true&&
+   ?allowFullReport&&report.full===true ||
+     report.full===false&&report.scope==="targeted"&&report.authorization?.skipFullRegression===true&&
      typeof report.authorization.instruction==="string"&&report.authorization.instruction.length>0&&report.passed>0
    :report.full;
  if(report.failed!==0||!accepted||report.sharedVersion!==config.sharedRevision)throw new Error("Current validation has not passed for the requested scope");

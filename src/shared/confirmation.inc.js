@@ -14,6 +14,7 @@ async confirm(action, before, memory = TCG.freshMemory()) {
           this.actionSubmittedAt = null;
           this.consumptionReceipt = null;
           this.pendingHandEvidence = null;
+          this.soupReceipt = null;
         }
       }
     }
@@ -55,9 +56,9 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
             this.trace("choice-deferred", { action, reason: e.message }); await waitForSample(300); continue; }
           // A verified payment/target exit is not a generated-card choice.
           // Keep simple removal only when this action owns the completed exit.
-          const receipt = this.choiceReceipt;
+          const receipt = this.soupReceipt || this.choiceReceipt;
           if (!(session.plan?.mode === "remove" && receipt?.origin === session.key &&
-              receipt.exited === true && ["payment", "target"].includes(receipt.kind)))
+              receipt.exited === true && (this.soupReceipt === receipt || ["payment", "target"].includes(receipt.kind))))
             session.plan = { mode: "full", action, before, expectedCount: this.handCountHint,
               retainedHand: session.plan?.retainedHand,retainedVariantFamilies:session.plan?.retainedVariantFamilies };
           continue;
@@ -105,6 +106,11 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
             this.trace("confirmation-deferred", { action, phase: after.phase, turn: after.turn });
             await waitForSample(450); continue;
           }
+          // Consumed source can precede a late soup page. Keep its owner even
+          // after a complete resync; neither success nor uncertain exit closes it.
+          if (TCG.confirmationReady && !TCG.confirmationReady(action, before, after)) {
+            await waitForSample(250); continue;
+          }
           const verified = TCG.verify(action, before, after, session.transition);
           const budgetMatches = this.diceBudgetMatches(after);
           // Begin observing immediately after submission. A positive effect may
@@ -143,6 +149,9 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           }
           if (!TCG.legalState(after)) {
             await waitForSample(400); continue;
+          }
+          if (TCG.confirmationReady && !TCG.confirmationReady(action, before, after)) {
+            await waitForSample(250); continue;
           }
           const confirmed = TCG.verifyResynchronized(action, before, after, session.transition);
           this.adoptObservedState(after, "post-action-resync");

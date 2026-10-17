@@ -9,7 +9,11 @@ handCostMarkersIn(f, roi) {
 
 // @fragment bgi-host.acceptHand
 acceptHand(hand, reason) {
-      this.handCache = TCG.indexedHand(hand);
+      this.handCache = TCG.reconcileHand(this.handProvenance, hand, false,
+        (this.memory?.refusedActions || []).filter(r => r.uncertain && r.round === this.memory.round));
+      // Publish the same provenance into the observation returned to planning.
+      hand.forEach((card, index) => Object.assign(card, this.handCache[index]));
+      this.handProvenance = this.handCache;
       this.trace("hand-cache-updated", { reason, count: this.handCache.length });
     }
 // @endfragment bgi-host.acceptHand
@@ -476,7 +480,9 @@ async observedHand(plan = null, scan = { titles: 0 }) {
         scan.retainedVariantFamilies = plan.retainedVariantFamilies;
         scan.settling = true;
         this.invalidateHand("generated-drawn-or-replaced-card");
-        const hand = await this.readHand(plan.expectedCount ?? null, null, scan);
+        let hand = await this.readHand(plan.expectedCount ?? null, null, scan);
+        if (plan.rejectedHand && !this.autoRisk)
+          hand = TCG.reconcileHand(plan.rejectedHand, hand, true);
         if (session) session.handObservation = { hand: TCG.indexedHand(hand), revision: this.inputRevision };
         return hand;
       }

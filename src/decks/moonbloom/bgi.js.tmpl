@@ -397,7 +397,7 @@
       if(stable<2){
         // This is an unavailable action, not proof that the game rejected payment.
         // Suppress it for this round and let the existing refresh owner replan.
-        T.rejectAction(memory,a);await this.reset();
+        T.rejectAction(memory,a,before);await this.reset();
         const e=Error("特技原生标题/类型/费用未核实，本回合改用其他合法动作");e.code="TCG_STATE_REFRESH";throw e;
       }
       const planned=T.size(T.skillCost(a.who,"T",memory,before));

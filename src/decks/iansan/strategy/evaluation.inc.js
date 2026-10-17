@@ -30,6 +30,10 @@
   }
   const DAMAGE_VALUE = 0.7, DEFEAT_VALUE = 1.8, DIE_VALUE = 0.18;
   const enemyHealth = s => (s.enemies || []).filter(T.alive).reduce((n, e) => n + e.hp, 0);
+  function combatTarget(s) {
+    const targets = (s.enemies || []).filter(e => T.alive(e) && e.active === true);
+    return targets.length === 1 ? targets[0] : null;
+  }
   function summonValue(s, m) {
     if (!m.sayuSummon || !T.enemyCount(s)) return 0;
     const injured = s.characters.flatMap((c, i) => T.alive(c) ? [{
@@ -50,6 +54,7 @@
       const r = reaction("Anemo", i === 0 && enemy(shadow)?.auraKnown ? enemy(shadow).aura : []),
         hit = applyDamage(shadow, { direct: 1 + r.bonus,
           reaction: r, element: "Anemo", elemental: true });
+      if (!hit) break;
       value += (hit.dealt * DAMAGE_VALUE + hit.kills * DEFEAT_VALUE +
         heal * (target?.confidence || 0) * 0.65) * (i === 0 ? 0.55 : 0.3);
       if (target) target.missing -= heal;
@@ -104,17 +109,18 @@
       c.hp > s.characters[s.active].hp && c.hp > pressureEstimate(m) ? [i] : []);
   }
   function followupReachable(s, m, g) {
-    if (!g || !T.alive(s.characters[g.who]) || s.characters[g.who].frozen ||
-        m.uncertainActions.includes(T.actionKey({ type: "skill", ...g }))) return false;
+    if (!g || !T.alive(s.characters[g.who]) || s.characters[g.who].frozen) return false;
     let dice = s.dice;
     if (g.who !== s.active) {
       // Use the same estimated switch payment as simulate. A different
       // preserved element can invent a followup that loses its only die.
+      if (T.actionRefused(s, m, { type: "switch", target: g.who })) return false;
       const p = T.payment(dice, T.switchCost(m), T.team[s.active].element);
       if (!p) return false;
       dice = p.remaining;
     }
     const local = { ...s, active: g.who, dice };
+    if (T.actionRefused(local, m, { type: "skill", ...g })) return false;
     return T.skillLegal(local, g, m) || !!tuningPlan(local, m, g);
   }
   function activeOutputReachable(s, m) {
@@ -149,7 +155,8 @@
       };
     return s.hand
       .filter(T.handCardKnown)
-      .filter((h) => !m.uncertainActions.includes(T.actionKey({ type: "tune", id: h.id })))
+      .filter((h) => !T.actionRefused(s, m,
+        { type: "tune", id: h.id, index: h.index, element: T.team[s.active].element }))
       .slice()
       .sort((a, b) => (values[a.id] ?? 15) - (values[b.id] ?? 15));
   }
@@ -223,8 +230,8 @@
     };
   }
   function applyDamage(next, d) {
-    const e = enemy(next);
-    if (!e) return { dealt: d.direct * 0.5, kills: 0 };
+    const e = combatTarget(next);
+    if (!e) return null;
     const targets=next.enemies.filter(T.alive),backgrounds=targets.filter(x=>x!==e);
     let dealt=0,complete=true;
     const hit=(x,amount,element,piercing=false)=>{
@@ -347,7 +354,7 @@
       .concat(endCoverTargets(s, m));
     return s.characters.flatMap((c, target) =>
       target !== s.active && T.alive(c) && !c.frozen &&
-      !m.uncertainActions.includes(T.actionKey({type:"switch",target})) &&
+      !T.actionRefused(s, m, { type: "switch", target }) &&
       T.payment(s.dice,T.switchCost(m),T.team[target].element) &&
       (["E","Q","NA"].some(skill => followupReachable(s,m,{who:target,skill})) ||
         target===1 && m.gamingReturn || covers.includes(target)) ? [target] : []);

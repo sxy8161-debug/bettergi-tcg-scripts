@@ -6,7 +6,7 @@
       carry = outputRole(s, m),
       n = T.total(s.dice);
     const add = (x) => {
-      if (!m.uncertainActions.includes(T.actionKey(x))) out.push(x);
+      if (!T.actionRefused(s, m, x)) out.push(x);
     };
     for (const skill of ["E", "Q", "NA"])
       if (T.skillLegal(s, { who: a, skill }, m)) add({ type: "skill", who: a, skill });
@@ -101,6 +101,7 @@
   }
   function simulate(s, m, a) {
     if (!T.projectionBudget.take()) return null;
+    if (T.actionRefused(s, m, a)) return null;
     const next = copy(s),
       mem = copy(m),
       pay = T.payment(s.dice, actionCost(a, s, m), T.team[s.active].element);
@@ -146,28 +147,21 @@
       if (a.target === 1 && m.gamingReturn) {
         const d = damageEstimate(next, m, 1, "P");
         const hit = applyDamage(next, d);
+        if (!hit) return null;
         benefit += hit.dealt * 0.7 + hit.kills * 1.8;
         if(hit.guaranteedKills&&m.artifactKinds[1]==="gambler")
-          next.dice.Omni=(next.dice.Omni||0)+2*Math.min(hit.guaranteedKills,T.gamblerRemaining(m,1));
+          T.generateDice(next.dice, "Omni", 2 * Math.min(hit.guaranteedKills, T.gamblerRemaining(m, 1)));
         next.characters[1].energy = Math.min(3, next.characters[1].energy + 1);
         leaf = true; // Native automatic plunge owns the next combat timing.
       }
     }
     if (a.type === "card") {
-      const c = T.byId[a.id];
       next.hand = T.indexedHand(next.hand.filter((_, i) => i !== a.index));
       // Equipment is paid for and credited through realised subsequent damage,
       // payment or refund. Do not reward the same weapon once at entry and
       // again on every attack, nor credit moving a free Heart as engine profit.
-      if (a.id === "gilded")
-        next.dice[T.team[a.target].element] = (next.dice[T.team[a.target].element] || 0) + 2;
-      if (
-        ["weapon", "artifact"].includes(c.type) &&
-        m.boar > 0 &&
-        (c.type === "weapon" ? m.weapons[a.target] : m.artifacts[a.target])
-      ) {
-        next.dice.Omni = (next.dice.Omni || 0) + 1;
-      }
+      for (const [element, count] of Object.entries(T.cardRefund(a, m, s)))
+        T.generateDice(next.dice, element, count);
       if (a.id === "lyre") {
         const returned = T.byId[m.artifactKinds[a.target]];
         next.hand.push({
@@ -177,9 +171,7 @@
           supported: true,
         });
       }
-      if (a.id === "companion") next.dice.Omni = (next.dice.Omni || 0) + 2;
       if (a.id === "lost") {
-        next.dice.Omni = (next.dice.Omni || 0) + 1;
         active.energy = Math.min(T.team[s.active].maxEnergy, active.energy + 1);
         benefit = 0.5;
       }
@@ -217,38 +209,40 @@
             return r;
           }, {});
           const refund = (counts.weapon > 1 ? 1 : 0) + (counts.artifact > 1 ? 1 : 0);
-          next.dice.Omni = (next.dice.Omni || 0) + refund;
+          T.generateDice(next.dice, "Omni", refund);
         }
       }
     }
     if (a.type === "skill" || (a.type === "card" && a.id === "skivingNewAndImproved")) {
       const who = a.id === "skivingNewAndImproved" ? 2 : a.who,
         skill = a.id === "skivingNewAndImproved" ? "E" : a.skill,
-        d = damageEstimate(s, m, who, skill),
-        e = enemy(next);
+        d = damageEstimate(s, m, who, skill);
       const original = enemy(s),
         n = T.enemyCount(s),
         carry = outputRole(s, m);
       combat = true;
       const healing = who === 2 && skill === "E" ? passiveHealing(s, m, a) : 0;
-      const hit=applyDamage(next,d),{dealt,kills}=hit;
+      const hit = applyDamage(next, d);
+      if (!hit) return null;
+      const { dealt, kills } = hit;
       if(!hit.complete)leaf=true;
-      if (d.prepared && !hit.replacementRequired) {
-        const future = enemy(next),
+      if (d.prepared && !hit.replacementRequired && combatTarget(next)) {
+        const future = combatTarget(next),
           r = reaction(d.preparedElement, future?.auraKnown ? future.aura : []);
         // Opponent gets an action between hits. No instant prepared kill,
         // Gambler refund or subsequent free manual E in this projected node.
         const shadow = copy(next),
           weapon = m.weapons[who] ? (m.weaponKinds[who] === "wolf" && future?.hp <= 6 ? 3 : 1) : 0,
           direct = 2 + weapon + d.preparedBuff + (m.soupDamage[who] > 1 ? 1 : 0) + r.bonus,
-          hit = future ? applyDamage(shadow, { direct, reaction: r,
-            element: d.preparedElement, elemental: true }) : { dealt: 0, kills: 0 };
+          hit = applyDamage(shadow, { direct, reaction: r,
+            element: d.preparedElement, elemental: true });
+        if (!hit) return null;
         prepared = hit.dealt * DAMAGE_VALUE + hit.kills * DEFEAT_VALUE;
         boundary = { kind: "prepared", state: shadow };
         leaf = true;
       }
       if (hit.guaranteedKills && m.artifactKinds[who] === "gambler")
-        next.dice.Omni = (next.dice.Omni || 0) + 2 * Math.min(hit.guaranteedKills, T.gamblerRemaining(m, who));
+        T.generateDice(next.dice, "Omni", 2 * Math.min(hit.guaranteedKills, T.gamblerRemaining(m, who)));
       benefit =
         dealt * 0.7 +
         kills * 1.8 +
@@ -296,7 +290,11 @@
         next.characters[next.active].hp <= pressureEstimate(mem)) leaf = true;
     if (T.total(next.dice) > 16) return null;
     if (T.enemyCount(s) > 0 && T.enemyCount(next) === 0) leaf = true;
+    // Replacement belongs to the opponent. Keep this hit/draw's value, but
+    // do not invent its next active target across any valuation boundary.
+    if (!combatTarget(next)) { leaf = true; boundary = null; }
     if (!boundary && unknownDraw && T.enemyCount(next) > 0 &&
+        combatTarget(next) &&
         !(exposureRisk(next, mem) > 0 && next.characters[next.active].hp <= pressureEstimate(mem)))
       boundary = { kind: "unknown-draw", state: next };
     return { state: next, memory: mem, benefit, combat, leaf, payoff, boundary };

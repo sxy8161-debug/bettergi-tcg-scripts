@@ -29,7 +29,7 @@ async observe(pendingAction = false, plan = null) {
           TCG.emptyHandEffect(
             plan.action,
             plan.before,
-            { ...settled, selectedSoup: this.selectedSoup },
+            settled,
             plan.transitionPassed === true,
           )
         ) {

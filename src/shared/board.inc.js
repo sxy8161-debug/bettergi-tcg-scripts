@@ -314,7 +314,10 @@ characterIn(f, who, enemy = false, enemyLayoutCount = 3, readAura = false) {
         ? 99
         : TCG.team[who].maxHp +
           (this.memory?.extraMaxHp?.[who] || 0) +
-          (this.selectedSoup === "maxhp" && this.currentAction?.target === who ? 1 : 0);
+          (this.soupReceipt?.effect === "maxhp" && this.soupReceipt.exited === true &&
+            this.soupReceipt.origin === this.confirmationSession?.key &&
+            this.confirmationSession?.plan?.action?.target === who &&
+            this.soupReceipt.target === who ? 1 : 0);
       const validHp = (value) => value !== null && value >= 1 && value <= maxHp;
       const raisedValid = validHp(raised),
         loweredValid = validHp(lowered);

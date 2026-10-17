@@ -33,7 +33,6 @@
       !["E", "Q", "NA"].includes(g.skill) ||
       !T.alive(s.characters[g.who]) ||
       s.characters[g.who].frozen ||
-      m.uncertainActions.includes(T.actionKey({ type: "skill", ...g })) ||
       (g.skill === "Q" && s.characters[g.who].energy < T.team[g.who].maxEnergy)
     )
       return null;
@@ -42,9 +41,10 @@
       path = [],
       parts = [];
     const apply = (a) => {
+      if (T.actionRefused(local, mem, a)) return null;
       const p = step(local, mem, a);
       if (!p) return null;
-      path.push(a);
+      path.push(handInstanceAction(local, a));
       parts.push(p);
       local = p.state;
       mem = p.memory;
@@ -53,7 +53,7 @@
     if (g.who !== local.active) {
       const a = { type: "switch", target: g.who };
       if (
-        mem.uncertainActions.includes(T.actionKey(a)) ||
+        T.actionRefused(local, mem, a) ||
         !T.payment(local.dice, T.switchCost(mem))
       )
         return null;
@@ -83,15 +83,16 @@
     const skills = s.characters[0].energy === 1 ? ["E", "Q"] : ["E", "NA", "Q"],
       exposures = skills.length + (s.active !== 0 && !m.fastSwitch ? 1 : 0);
     if (s.characters[0].hp <= pressureEstimate(m) * exposures) return false;
-    const variants = [null], moon = s.hand.find((h) => h.id === "moon");
-    if (moon && !m.weapons[0]) variants.push({ type: "card", id: "moon", index: moon.index, target: 0 });
+    const variants = [null];
+    if (!m.weapons[0]) for (const moon of s.hand.filter(h => h.id === "moon"))
+      variants.push({ type: "card", id: "moon", index: moon.index, target: 0 });
     // A late investment may still be good, but must reach the actual burst
     // with existing resources and withstand the whole relay/E(A)Q chain.
     // This small certificate cannot borrow a next-round die or unknown draw.
     for (const gear of variants) {
       let local = s, mem = m;
       if (gear) {
-        if (!T.cardLegal(local, gear, mem) || mem.uncertainActions.includes("card:moon")) continue;
+        if (!T.cardLegal(local, gear, mem) || T.actionRefused(local, mem, gear)) continue;
         const p = simulate(local, mem, gear);
         if (!p) continue;
         local = p.state; mem = p.memory;
@@ -109,11 +110,10 @@
   function discountPreparation(s, m, a) {
     if (a.type !== "card" || !["weapon", "artifact"].includes(T.byId[a.id]?.type)) return null;
     const original = T.size(T.cardCost(a.id, a.target, m, s));
-    for (const id of ["garden", "house"]) {
-      const h = s.hand.find((x) => x.id === id);
-      if (!h || m.uncertainActions.includes("card:" + id)) continue;
+    for (const id of ["garden", "house"]) for (const h of s.hand.filter(x => x.id === id)) {
       const setup = { type: "card", id, index: h.index, target: null };
       if (
+        T.actionRefused(s, m, setup) ||
         !T.cardLegal(s, setup, m) ||
         (id === "garden" && m.garden) ||
         (id === "house" && m.houses.length >= 2)
@@ -121,18 +121,21 @@
         continue;
       const p = simulate(s, m, setup);
       if (!p) continue;
-      const lowered = T.size(T.cardCost(a.id, a.target, p.memory, p.state));
+      const lowered = T.size(T.cardCost(a.id, a.target, p.memory, p.state)),
+        after = { ...a, index: a.index - (h.index < a.index ? 1 : 0) };
       if (
         lowered < original &&
-        T.cardLegal(
-          p.state,
-          { ...a, index: p.state.hand.findIndex((x) => x.id === a.id) },
-          p.memory,
-        )
+        !T.actionRefused(p.state, p.memory, after) &&
+        T.cardLegal(p.state, after, p.memory)
       )
         return setup;
     }
     return null;
+  }
+  function handInstanceAction(s, a) {
+    if (!["card", "tune"].includes(a.type)) return a;
+    const origins=s.hand[a.index]?.instanceIds;
+    return origins?.length ? { ...a, instanceIds: origins.slice() } : a;
   }
   function replaySequence(s, m, sequence) {
     let local = copy(s),
@@ -141,9 +144,17 @@
       parts = [];
     for (const input of sequence) {
       const a = { ...input };
-      // Same-name copies are interchangeable, but numeric indices are NOT:
-      // an inserted/removed preparation card shifts every subsequent slot.
-      if (["card", "tune"].includes(a.type)) a.index = local.hand.findIndex((h) => h.id === a.id);
+      // A preparation can shift slots, but never authorizes another same-name
+      // copy. Planned actions carry exact origins from their own pre-action hand.
+      if (["card", "tune"].includes(a.type)) {
+        if (a.instanceIds?.length) {
+          const matches = local.hand.filter(h => h.id === a.id &&
+            h.instanceIds?.length === a.instanceIds.length &&
+            a.instanceIds.every(id => h.instanceIds.includes(id)));
+          if (matches.length !== 1) return null;
+          a.index = matches[0].index;
+        } else if (local.hand[a.index]?.id !== a.id) return null;
+      }
       if (
         (["card", "tune"].includes(a.type) && a.index < 0) ||
         (a.type === "switch" &&
@@ -154,14 +165,14 @@
       )
         return null;
       if (
-        mem.uncertainActions.includes(T.actionKey(a)) ||
+        T.actionRefused(local, mem, a) ||
         (a.type === "card" && !T.cardLegal(local, a, mem)) ||
         (a.type === "skill" && !T.skillLegal(local, a, mem))
       )
         return null;
       const p = simulate(local, mem, a);
       if (!p) return null;
-      path.push(a);
+      path.push(handInstanceAction(local, a));
       parts.push(p);
       local = p.state;
       mem = p.memory;
@@ -180,9 +191,9 @@
       m.openingRevel || (m.openingDraws || 0) >= openingDrawLimit(m)
     )
       return null;
-    const sing = s.hand.find((h) => h.id === "sing"),
-      draw = s.hand.find((h) => h.id === "draw"),
-      revel = s.hand.find((h) => h.id === "revel");
+    const usable = id => s.hand.find(h => h.id === id &&
+      !T.actionRefused(s, m, { type: "card", id, index: h.index, target: null })),
+      sing = usable("sing"), draw = usable("draw"), revel = usable("revel");
     const entering = !!sing && m.singCharges === 0 && (m.openingDraws || 0) === 0,
       continuing = m.singCharges === 2 && [1, 2].includes(m.openingDraws);
     if (!entering && !continuing) return null;
@@ -200,7 +211,7 @@
     for (const h of candidates) {
       if (!h || s.hand.length > (h.id === "sing" ? 7 : 9)) continue;
       const a = { type: "card", id: h.id, index: h.index, target: null };
-      if (!T.cardLegal(s, a, m) || m.uncertainActions.includes(T.actionKey(a))) continue;
+      if (!T.cardLegal(s, a, m) || T.actionRefused(s, m, a)) continue;
       const p = simulate(s, m, a);
       // Only this ONE draw is chosen. Pay first, then reserve a known-funded
       // Iansan E. Never borrow identities/refunds from its unknown new cards.
@@ -225,7 +236,7 @@
     // Retain an ordinary legal root candidate before helpers can spend the
     // scope. This is not another simulator or a queued future action.
     const currentSkill = ["Q", "E", "NA"].map(skill => ({ type: "skill", who: s.active, skill }))
-      .find(a => T.skillLegal(s, a, m) && !m.uncertainActions.includes(T.actionKey(a)));
+      .find(a => T.skillLegal(s, a, m) && !T.actionRefused(s, m, a));
     const direct = terminalChecked ? null : terminalFinisher(s, m);
     if (direct)
       return {
@@ -395,7 +406,7 @@
       const child = {
         state: p.state,
         memory: p.memory,
-        path: node.path.concat(a),
+        path: node.path.concat(handInstanceAction(node.state, a)),
         score: node.score + benefit * 0.91 ** node.combat,
         combat: node.combat + (p.combat ? 1 : 0) + (prepared ? 1 : 0),
         risk: (node.risk || 0) + risk,
@@ -412,6 +423,7 @@
     function valueBoundary(node, boundary) {
       // Value-only continuation, never an executable sequence across a draw or
       // automatic skill. Only existing cards/dice can pay; no delayed refunds.
+      if (!combatTarget(boundary.state)) return;
       const local = copy(boundary.state), mem = copy(node.memory),
         prior = Math.max(0, node.exposures[local.active] - 1),
         confidence = preparedReliability(local, mem, prior),
@@ -490,7 +502,7 @@
             done.combat < window && !q.parts[q.parts.length - 1].leaf &&
             done.state.active === 0 &&
             T.skillLegal(done.state, { who: 0, skill: "Q" }, done.memory) &&
-            !done.memory.uncertainActions.includes("skill:0:Q")
+            !T.actionRefused(done.state, done.memory, { type: "skill", who: 0, skill: "Q" })
           ) {
             const a = { type: "skill", who: 0, skill: "Q" },
               hit = equipmentStep(done.state, done.memory, a);
@@ -542,7 +554,7 @@
     if (
       m.used[0] === 0 &&
       T.skillLegal(s, { who: 0, skill: "E" }, m) &&
-      !m.uncertainActions.includes("skill:0:E")
+      !T.actionRefused(s, m, { type: "skill", who: 0, skill: "E" })
     ) {
       const a = { type: "skill", who: 0, skill: "E" },
         p = equipmentStep(s, m, a);
@@ -629,7 +641,7 @@
               child.state.active === 0 &&
               !child.memory.iansanBurst &&
               T.skillLegal(child.state, { who: 0, skill: "Q" }, child.memory) &&
-              !child.memory.uncertainActions.includes("skill:0:Q") &&
+              !T.actionRefused(child.state, child.memory, { type: "skill", who: 0, skill: "Q" }) &&
               T.projectionBudget.available()
             ) {
               expanded++;

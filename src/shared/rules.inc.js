@@ -192,9 +192,69 @@ function identify(text) {
 // @endfragment tcg-rules.identify
 
 // @fragment tcg-rules.indexedHand
+let handInstanceSerial = 0;
 function indexedHand(hand) {
     if (!Array.isArray(hand) || !hand.every(handCardKnown)) throw new Error("手牌缓存身份不完整");
-    return hand.map((h, index) => ({ ...h, index }));
+    return hand.map((h, index) => ({ ...h, index,
+      instanceIds: h.instanceIds?.length ? h.instanceIds.slice() : [++handInstanceSerial] }));
+  }
+function handInstanceFacts(h) {
+    return [h.currentCost ?? null, ...["empowered", "noTuning", "effectless", "reduction", "increase"]
+      .map(k => h.attachments?.[k] ?? null)];
+  }
+// Positive native rejection proves that input did not mutate the hand. Only
+// that recovery may bind an unchanged complete ordered row directly. Else use
+// native cost/attachment distinctions; indistinguishable copies stay ambiguous.
+function reconcileHand(previous, observed, unchanged = false, uncertainRecords = []) {
+    const next = indexedHand(observed), prior = previous || [],
+      continuous = unchanged && prior.length === next.length && prior.every((h, i) => h.id === next[i].id),
+      compatible = (a, b) => handInstanceFacts(a).every((v, i) => v === null || handInstanceFacts(b)[i] === null || v === handInstanceFacts(b)[i]);
+    return next.map((h, index) => {
+      if (continuous && prior[index].instanceIds?.length) return { ...h,
+        instanceIds: prior[index].instanceIds.slice(), ...(prior[index].instanceAmbiguous ? {instanceAmbiguous:true} : {}) };
+      const old = prior.filter(c => c.id === h.id && (compatible(c, h) ||
+        uncertainRecords.some(r => r.id === c.id && (!r.instanceIds || r.instanceIds.some(id => c.instanceIds?.includes(id)))))),
+        origins = [...new Set(old.flatMap(c => c.instanceIds || []))];
+      if (!origins.length || h.instanceIds.every(id => origins.includes(id))) return h;
+      if (old.length === 1 && next.filter(c => c.id === h.id && compatible(c, old[0])).length === 1)
+        return { ...h, instanceIds: origins, ...(old[0].instanceAmbiguous ? {instanceAmbiguous:true} : {}) };
+      return { ...h, instanceIds: [...new Set([...origins, ...h.instanceIds])], instanceAmbiguous: true };
+    });
+  }
+function refusalScope(s, action, m) {
+    const a = action.cardAction || action,
+      handAction = ["card", "tune"].includes(a.type) || a.type === "probe" && a.scope === "card",
+      card = handAction && s?.hand?.[a.index], actor = s?.characters?.[a.who ?? s.active],
+      target = s?.characters?.[a.target], cost = s && root.TCG.refusalCost?.(s,m,a);
+    return { type: a.type, id: a.id ?? null, target: a.target ?? null,
+      who: a.who ?? null, skill: a.skill ?? null, technique: a.technique ?? null,
+      element: a.type === "tune" ? a.element ?? team[s?.active]?.element ?? null : null,
+      active: a.type === "card" && a.target == null ? s?.active ?? null : null,
+      handAction, instanceIds: card?.id === a.id ? card.instanceIds?.slice() || null : null,
+      conditions: s ? JSON.stringify([cost ? Object.keys(cost).sort().map(k => [k,cost[k]]) : null,
+        diceOrder.map(e => s.dice?.[e] || 0), actor?.frozen, actor?.dead,
+        a.skill === "Q" ? actor?.energy : null, target && [target.hp,target.dead,target.frozen],
+        card ? handInstanceFacts(card) : null]) : null };
+  }
+function blockAction(m, action, before, uncertain = false) {
+    const key = actionKey(action), scope = refusalScope(before, action, m);
+    m.uncertainActions ||= [];
+    if (!m.uncertainActions.includes(key)) m.uncertainActions.push(key);
+    m.refusedActions ||= [];
+    const record = { key, round: m.round, uncertain, ...scope };
+    if (!m.refusedActions.some(r => JSON.stringify(r) === JSON.stringify(record))) m.refusedActions.push(record);
+  }
+function actionRefused(s, m, action) {
+    const key = actionKey(action);
+    const records = (m.refusedActions || []).filter(r => r.round === m.round && r.key === key);
+    // Old callers may still supply display-only blocks. New records are never
+    // interpreted as a name-wide ban through this compatibility path.
+    if (!records.length) return (m.uncertainActions || []).includes(key);
+    const scope = refusalScope(s, action, m);
+    return records.some(r => ["type", "id", "target", "who", "skill", "technique", "element", "active"]
+      .every(k => r[k] === scope[k] || ["active", "element"].includes(k) && (r[k] === null || scope[k] === null)) &&
+      (!r.handAction || !r.instanceIds || !scope.instanceIds || r.instanceIds.some(id => scope.instanceIds.includes(id))) &&
+      (r.uncertain || r.conditions === null || scope.conditions === null || r.conditions === scope.conditions));
   }
 // @endfragment tcg-rules.indexedHand
 
