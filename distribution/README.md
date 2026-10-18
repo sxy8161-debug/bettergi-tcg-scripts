@@ -8,7 +8,7 @@ BetterGI 七圣召唤 PVE 全自动牌手，提供雷神柯莱刻晴、伊安珊
 
 ## 使用
 
-使用 BetterGI 0.66.0 或更新版本、简体中文界面、1920×1080 游戏画面。在 BetterGI 的脚本仓库设置中选择自定义源，填写发布仓库地址：
+使用 BetterGI 0.66.0 或更新版本、简体中文界面，支持1920×1080、2560×1440和2560×1600游戏客户区。开局前设置好分辨率，整局保持不变；切换后先重启 BetterGI 捕获器再启动牌手。在 BetterGI 的脚本仓库设置中选择自定义源，填写发布仓库地址：
 
 ```text
 https://github.com/sxy8161-debug/bettergi-tcg-scripts-release

@@ -7,7 +7,7 @@ auraIn(f, hpX, hpY) {
       const roi = [hpX + 60, hpY - 70, 95, 62],
         hits = [];
       for (const element of ["Cryo", "Hydro", "Pyro", "Electro", "Dendro"])
-        for (const r of this.matches(f, "state/State" + element, roi, 0.8, true))
+        for (const r of this.matches(f, "state/State" + element, this.roi("board", roi), 0.8, true))
           hits.push({ ...r, element });
       if (
         hits.some((a, i) =>
@@ -25,9 +25,21 @@ auraIn(f, hpX, hpY) {
 // @fragment bgi-host.diceCountIn
 diceCountIn(f) {
       // Official MyDiceCountRect. A missing badge is unknown, never zero.
-      const raw = this.numericAt(f, [68, 642, 25, 31], 4),
+      const raw = this.numericAt(f, this.roi("board", [68, 642, 25, 31]), 4),
         count = number(raw);
-      return count !== null && count <= 16 ? count : null;
+      if (count !== null) return count <= 16 ? count : null;
+      // Keep the 1080 path unchanged. Only a bound 1440 client may retry an
+      // unreadable single zero at another scale, in this very same frame/ROI.
+      const actual = this.captureGeometry?.actualSize;
+      if (actual?.width === 2560 && [1440,1600].includes(actual.height)) {
+        const retry = this.numericAt(f, this.roi("board", [68, 642, 25, 31]), 3);
+        if (retry === "0") {
+          this.trace("dice-zero-recovered", { raw, retry, scale: 3, roi: [68, 642, 25, 31],
+            proof: "same-frame-exact-native-zero", actualSize: actual });
+          return 0;
+        }
+      }
+      return null;
     }
 // @endfragment bgi-host.diceCountIn
 
@@ -42,16 +54,17 @@ diceIn(f, roll = false, expectedRollCount = 8, actionLayout = false) {
       // BetterGI0.66.0 uses COLOR dice assets and thresholds0.73/0.7,
       // not DSTCG gray crops at0.9. Keep the two asset/mode pairs together.
       const threshold = roll ? 0.73 : 0.7;
+      const area=this.roi(roll ? "rollDice" : "mainDice",roi), mapped=area.rect;
       let items = [];
       for (const e of elements) {
         for (const r of this.matches(
           f,
           "dice/Native" + (roll ? "Roll" : "Main") + e,
-          roi,
+          area,
           threshold,
           true,
         )) {
-          const [x, y] = mousePoint(r.x + r.w / 2, r.y + r.h / 2);
+          const [x, y] = mousePoint(r.x + r.w / 2, r.y + r.h / 2, this.captureGeometry?.frameSize);
           items.push({ element: e, x, y });
         }
       }
@@ -83,7 +96,7 @@ diceIn(f, roll = false, expectedRollCount = 8, actionLayout = false) {
               best = group.find((d) => d.element === e);
             for (let probe = 0; probe < 6; probe++) {
               const threshold = (low + high) / 2;
-              const hits = this.matches(f, "dice/NativeMain" + e, localROI, threshold, true)
+              const hits = this.matches(f, "dice/NativeMain" + e, this.observedRoi("board", localROI), threshold, true)
                 .map((r) => {
                   const [x, y] = mousePoint(r.x + r.w / 2, r.y + r.h / 2);
                   return { element: e, x, y };
@@ -130,9 +143,9 @@ diceIn(f, roll = false, expectedRollCount = 8, actionLayout = false) {
         // Counting8 alone could hide a missing slot plus a side-face duplicate.
         const slots = new Set();
         for (const die of items) {
-          const col = Math.floor((die.x - roi[0]) / (roi[2] / 4));
-          const row = die.y < 540 ? 0 : 1;
-          if (col < 0 || col > 3 || die.y < roi[1] || die.y >= roi[1] + roi[3])
+          const col = Math.floor((die.x - mapped[0]) / (mapped[2] / 4));
+          const row = die.y < this.point("rollDice",960,540)[1] ? 0 : 1;
+          if (col < 0 || col > 3 || die.y < mapped[1] || die.y >= mapped[1] + mapped[3])
             fail("重投骰子位置超出已验证的八格布局");
           die.slot = row * 4 + col;
           if (slots.has(die.slot))
@@ -168,8 +181,8 @@ normalHpProfileIn(f, characters, enemies) {
       const at = (x, raisedY, loweredY, c, raised) => {
         if (c.dead === true) return true;
         if (!TCG.alive(c) || typeof raised !== "boolean") return false;
-        const a = number(this.numericAt(f, [x + 8, raisedY, 44, 40], 3)),
-          b = number(this.numericAt(f, [x + 8, loweredY, 44, 40], 3));
+        const a = number(this.numericAt(f, this.roi("board", [x + 8, raisedY, 44, 40]), 3)),
+          b = number(this.numericAt(f, this.roi("board", [x + 8, loweredY, 44, 40]), 3));
         return raised ? a === c.hp && b === null : b === c.hp && a === null;
       };
       return (
@@ -303,7 +316,7 @@ characterIn(f, who, enemy = false, enemyLayoutCount = 3, readAura = false) {
       // Do not OCR two empty/covered HP crops only to discard both results.
       // An absent marker still requires both native HP positions; never use
       // a prior death, cached HP, or a missing number as this proof.
-      const dead = this.has(f, "disable", [stateX, stateY, 167, 382], 0.9);
+      const dead = this.has(f, "disable", this.roi("board", [stateX, stateY, 167, 382]), 0.9);
       const rawRaised = dead ? null : this.hpAt(f, hpX, enemy ? 170 : 600);
       const rawLowered = dead ? null : this.hpAt(f, hpX, enemy ? 212 : 640);
       const raised = number(rawRaised),
@@ -352,7 +365,7 @@ characterIn(f, who, enemy = false, enemyLayoutCount = 3, readAura = false) {
       if (enemy) {
         // Positive aura matches only. Missing templates do NOT prove no aura.
         const aura = readAura && !dead ? this.auraIn(f, hpX, loweredValid ? 212 : 170) : [];
-        const frozen=!dead&&this.has(f,"state/StateFreeze",[stateX,stateY,167,382],0.9);
+        const frozen=!dead&&this.has(f,"state/StateFreeze",this.roi("board", [stateX,stateY,167,382]),0.9);
         return {
           hp,
           dead: dead ? true : hp === null ? null : false,
@@ -363,14 +376,14 @@ characterIn(f, who, enemy = false, enemyLayoutCount = 3, readAura = false) {
         };
       }
       const cx = [812, 1022, 1233][who];
-      const charged = this.matches(f, "charge", [cx, 612, 32, 180], 0.86).length;
-      const empty = this.matches(f, "uncharge", [cx, 612, 32, 180], 0.86).length;
+      const charged = this.matches(f, "charge", this.roi("board", [cx, 612, 32, 180]), 0.86).length;
+      const empty = this.matches(f, "uncharge", this.roi("board", [cx, 612, 32, 180]), 0.86).length;
       const energy = charged + empty === TCG.team[who].maxEnergy ? charged : null;
       const statusROI = [stateX, stateY, 167, 382];
       const frozen =
-        this.has(f, "state/StateFreeze", statusROI, 0.9) ||
+        this.has(f, "state/StateFreeze", this.roi("board", statusROI), 0.9) ||
         ["角色状态_冻结", "角色状态_冻结2", "角色状态_水泡"].some((name) =>
-          this.has(f, "core/" + name, statusROI, 0.9),
+          this.has(f, "core/" + name, this.roi("board", statusROI), 0.9),
         );
       return {
         hp,
@@ -448,10 +461,10 @@ hpAt(f, x, y) {
       // Recovery profile adds horizontal context, not overlapping vertical HP
       // slots. Saved-pixel 11-HP stress test: wide4=9/9, original=7/9.
       const roi = this.precisionBoard ? [x + 2, y, 56, 40] : [x + 8, y, 44, 40];
-      const raw = this.numericAt(f, roi, this.precisionBoard ? 4 : 3);
+      const raw = this.numericAt(f, this.roi("board", roi), this.precisionBoard ? 4 : 3);
       if (number(raw) !== null || !this.precisionBoard) return raw;
       // Same-frame, read-only retry with vertical context. Saved 1-HP / empty
       // regions were stress-tested; no cached-health or digit substitution.
-      return this.numericAt(f, [x, y - 6, 62, 52], 4);
+      return this.numericAt(f, this.roi("board", [x, y - 6, 62, 52]), 4);
     }
 // @endfragment tcg-ui.hpAt

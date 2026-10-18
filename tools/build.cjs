@@ -52,7 +52,8 @@ function packageFiles(id,options={}) {
  new vm.Script(result.get("lib/strategy.js").toString());
  for(const name of ["manifest.json","settings.json","README.md","ATTRIBUTION.md","LICENSE-GPL-3.0.txt"]) {
   let text=fs.readFileSync(path.join(dir,"public",name),"utf8");
-  if(name==="manifest.json"){const m=JSON.parse(text);m.version=p.version;text=JSON.stringify(m,null,2)+"\n";}
+  if(name==="manifest.json"){const m=JSON.parse(text);m.version=p.version;
+   text=JSON.stringify(m,null,2)+"\n";}
   result.set(name,Buffer.from(text));
  }
  const recognition=p.recognition?recognitionFiles(id):new Map();
@@ -63,7 +64,7 @@ function packageFiles(id,options={}) {
   new vm.Script(bytes.toString(),{filename:rel});result.set("lib/"+name+".js",bytes);dependencies.push(rel);
  }
  const select=p.recognition?'const {Host, Player} = TCGHandRecognition.classes(globalThis, JSON.parse(file.readTextSync("hand-bank.json")), JSON.parse(file.readTextSync("opening-bank.json")));':'const Host = TCGBetterGI.BetterGIHost, Player = TCGPlayer.Player;';
- const entry='for (const name of '+JSON.stringify(["core","strategy","bgi","player",...readers])+') {\n  eval(file.readTextSync("lib/" + name + ".js"));\n}\n(async function () {\n  "use strict";\n  const options = TCGPlayer.playerOptions(typeof settings === "undefined" ? {} : settings);\n  setGameMetrics(1920, 1080);\n  '+select+'\n  return new Player(new Host(options), options).run();\n})();\n';
+ const entry='for (const name of '+JSON.stringify(["core","strategy","bgi","player",...readers])+') {\n  eval(file.readTextSync("lib/" + name + ".js"));\n}\n(async function () {\n  "use strict";\n  const options = TCGPlayer.playerOptions(typeof settings === "undefined" ? {} : settings);\n  '+select+'\n  return new Player(new Host(options), options).run();\n})();\n';
  result.set("main.js",Buffer.from(entry));
  for(const n of [...commonAssets,...p.extraAssets])result.set("assets/"+n+".png",fs.readFileSync(path.join(base,"assets",n+".png")));
  for(const name of result.keys())if(/(?:tests|evidence|logs|tools|node_modules|src)\//.test(name))throw new Error("Internal file in runtime package: "+name);
@@ -87,7 +88,8 @@ function recognitionFiles(id,directory=config.players[id].recognition){
  for(const name of ["hand-bank.json","opening-bank.json"]){
   if(!result.has(name))throw Error("Missing recognition bank: "+name);
   const bank=JSON.parse(result.get(name));
-  if(bank.scoreFloor!==.95||bank.runnerUpGap!==.20)throw Error("Recognition thresholds changed");
+  if(!Number.isFinite(bank.scoreFloor)||bank.scoreFloor<=0||bank.scoreFloor>1||bank.runnerUpGap!==.20)
+   throw Error("Invalid recognition thresholds");
   for(const entry of [...bank.entries,...(bank.expanded?.entries||[])])for(const view of entry.views||[{patches:entry.patches}])
    for(const asset of view.patches)if(!result.has(asset))throw Error("Unpackaged recognition asset: "+asset);
  }

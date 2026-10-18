@@ -4,19 +4,19 @@
   const {charX,number,mousePoint}=root.TCGBetterGI;
   class BetterGIHost extends root.TCGBetterGI.BetterGIHost {
     choiceIn(f) {
-      const header=TCG.norm(this.ocr(f,[700,155,520,130]));
+      const header=TCG.norm(this.ocr(f,this.roi("header", [700,155,520,130])));
       if(!header.includes("挑选卡牌") || !header.includes("请选择一张卡牌"))return null;
       // Native supplied 1920x1080 screenshot: names below the two cards at
       // y=742, cards centred at y=540. Anchor to exact OCR title rectangles,
       // not a fixed left/right preference or a guessed generic choice page.
-      const rows=this.ocrRows(f,[450,705,1030,90]),options=[];
+      const rows=this.ocrRows(f,this.roi("choice", [450,705,1030,90])),options=[];
       for(const r of rows) {
         const card=TCG.identify(r.text);
         if(!card || !["shatterbolt","sharpkernel"].includes(card.id))continue;
-        const point=[r.x+r.w/2,r.y+r.h/2-200];
+        const point=[r.x+r.w/2,r.y+r.h/2-200], reference=this.referencePoint("choice",...point);
         if(![r.x,r.y,r.w,r.h,...point].every(Number.isFinite) || r.w<=0 || r.h<=0 ||
-            point[0]<450 || point[0]>1480 || point[1]<470 || point[1]>600)continue;
-        options.push({id:card.id,point:mousePoint(...point),title:r.text});
+            reference[0]<450 || reference[0]>1480 || reference[1]<470 || reference[1]>600)continue;
+        options.push({id:card.id,point:mousePoint(...point,this.captureGeometry?.frameSize),title:r.text});
       }
       return {phase:"choice",turn:"none",choiceKind:"thundergrass",options,
         recognized:options.length===2 && new Set(options.map(c=>c.id)).size===2};
@@ -45,26 +45,19 @@
           if(last.choiceKind!=="thundergrass" || !last.recognized) {stable=0;key="";}
           else {
             const id=TCG.blessingChoice(before||this.lastObservedState,memory),target=last.options.find(c=>c.id===id);
-            const current=JSON.stringify([id,target?.point,last.options]);stable=current===key?stable+1:1;key=current;
-            if(stable>=2 && target) {
+            if(target) {
               const oldCount=before?.hand?.length??this.handCache?.length??null;
               this.choiceSession={id,oldCount,confirmed:false};
-              this.clickAt(...target.point);this.trace("choice-selected",{id,point:target.point,proof:"two-stable-exact-card-labels-and-choice-header"});
+              this.clickAt(...target.point);this.trace("choice-selected",{id,point:target.point,proof:"native-card-labels-and-choice-header"});
               stable=0;key="";await sleep(120);
             }
           }
         } else if(!this.choiceSession.confirmed) {
           // The supplied screenshot has no confirm button before selection.
-          // Allow immediate native resolution, or an explicit selected title
-          // plus unique native confirm control; never blindly double-click.
-          // Native 0.3.8 run: choice detail is in the left panel, unlike the
-          // ordinary hand detail at x=311. Require that exact selected title
-          // and the unique bottom confirm button, not a second card click.
-          const preview=this.frame(f=>({title:TCG.identify(this.titleIn(f,[45,115,360,50]))?.id,
-            buttons:this.matches(f,"core/确定",[500,800,920,240])}));
-          const matched=preview.title===this.choiceSession.id && preview.buttons.length===1;
-          const current=matched?JSON.stringify(preview):"";stable=matched?(current===key?stable+1:1):0;key=current;
-          if(stable>=2) {
+          // The session owns the selected option. A unique confirm template
+          // authorizes one click without rereading its title.
+          const preview=this.frame(f=>({phase:this.phaseIn(f),buttons:this.matches(f,"core/确定",this.roi("bottom", [500,800,920,240]))}));
+          if(["choice","unknown"].includes(preview.phase.phase)&&preview.phase.turn==="none"&&preview.buttons.length===1) {
             const b=preview.buttons[0];this.choiceSession.confirmed=true;
             const point=this.clickAt(b.x+b.w/2,b.y+b.h/2);this.trace("choice-confirm-clicked",{id:this.choiceSession.id,point});
             stable=0;key="";await sleep(120);
@@ -85,17 +78,17 @@
       // gold badge to the right: exclude it from this narrow numeric crop.
       const roi=action.skill==="Q"?[1780,1010,36,35]:action.skill==="E"?[1698,1010,36,35]:null;
       if(!roi)return null;
-      const n=number(this.numericAt(f,roi,4)),nominal=action.skill==="Q"?(action.who===2?4:3):3;
+      const n=number(this.numericAt(f,this.roi("bottom", roi),4)),nominal=action.skill==="Q"?(action.who===2?4:3):3;
       return n!==null&&n>=1&&n<=nominal?n:null;
     }
     quickenIn(f) {
       // Saved native positives from Collei/Keqing, with separate native 1/2
       // badges. No extra UI input or OCR; absence/conflicts are UNKNOWN, not 0.
       const unknown={known:false,charges:null};
-      const icons=this.matches(f,"quicken",[640,880,630,88],0.9,true);
+      const icons=this.matches(f,"quicken",this.roi("board", [640,880,630,88]),0.9,true);
       if(icons.length!==1)return unknown;
       const {x,y}=icons[0],roi=[x+25,y+17,24,32];
-      const counts=[1,2].flatMap(n=>this.matches(f,"quicken_count"+n,roi,0.92,false).map(()=>n));
+      const counts=[1,2].flatMap(n=>this.matches(f,"quicken_count"+n,this.observedRoi("board", roi),0.92,false).map(()=>n));
       return counts.length===1?{known:true,charges:counts[0]}:unknown;
     }
     boardExtrasIn(f,phase) { return {quicken:phase.phase==="board"?this.quickenIn(f):{known:false,charges:null}}; }
@@ -131,17 +124,11 @@
         if(!Number.isInteger(action.target)||action.target<0||action.target>2)throw new Error("卡牌目标不合法");
         const layout=type==="food"?"food":"targeted";
         if(type==="food") {
-          // A visible banner alone may arrive before the selection input layer.
-          // Observe readiness twice; do not drag or click the character again.
           if(before && !TCG.alive(before.characters?.[action.target]))throw new Error("料理目标未核实");
-          await sleep(250);
-          const ready=this.frame(f=>({banner:TCG.norm(this.ocr(f,[740,510,450,65])),phase:this.phaseIn(f)}));
-          if(ready.banner!==TCG.norm(foodPage.banner)||ready.phase.phase!=="unknown"||ready.phase.turn!=="none")
-            throw new Error("料理选人页面已改变，不发送选择");
         }
-        const point=this.clickAt(charX[action.target],720);
+        const point=this.clickAt(...this.point("board",charX[action.target],720));
         this.trace("card-target-clicked",{id:action.id,target:action.target,point,layout,banner:foodPage.banner});
-        await sleep(120);let stable=0,key="";
+        await sleep(120);
         for(let attempt=0;attempt<6;attempt++){
           const sampledAt=Date.now();
           const selected=this.frame(f=>this.cardTargetPreviewIn(f));
@@ -152,12 +139,12 @@
             this.trace("card-target-resolved",{id:action.id,target:action.target,proof:"native-page-exit-only"});return;}
           const play=selected.rows.filter(r=>TCG.norm(r.text)==="打出手牌" || type==="food"&&TCG.norm(r.text)==="确定");
           const controls=selected.buttons.length?selected.buttons:play;
-          const matched=selected.banner===TCG.norm(foodPage.banner)&&controls.length===1&&
+          const otherTarget=Object.values(targetedBanners).some(labels=>labels.includes(selected.banner))&&
+            !targetedBanners[type].includes(selected.banner);
+          const matched=!otherTarget&&controls.length===1&&
             selected.phase.phase==="unknown"&&selected.phase.turn==="none";
-          const current=matched?JSON.stringify([selected.banner,controls[0]]):"";
-          stable=matched?(current===key?stable+1:1):0;key=current;
           this.trace("card-target-preview",{id:action.id,target:action.target,attempt,matched,...selected});
-          if(stable>=2){const b=controls[0];const confirmPoint=this.clickAt(b.x+b.w/2,b.y+b.h/2);
+          if(matched){const b=controls[0];const confirmPoint=this.clickAt(b.x+b.w/2,b.y+b.h/2);
             this.trace("card-confirm-clicked",{id:action.id,target:action.target,point:confirmPoint,layout});
             this.markNativeCardConfirmation(action,layout);
             return;}
@@ -185,9 +172,8 @@
       };
       const entryReused=this.inputRevision===entryRevision && foodPage.targets?.length===1 &&
         foodPage.phase.phase==="unknown" && foodPage.phase.turn==="none" && centralScopeMatches(TCG.norm(foodPage.banner));
-      const centralSampledAt=entryReused?entrySampledAt:Date.now();
       const central = entryReused?foodPage:this.frame(f => ({
-        banner:this.ocr(f,[740,510,450,65]),targets:this.cardPaymentControlsIn(f),phase:this.phaseIn(f),
+        banner:this.ocr(f,this.roi("phase", [740,510,450,65])),targets:this.cardPaymentControlsIn(f),phase:this.phaseIn(f),
       }));
       if(entryReused)this.trace("card-payment-entry-reused",{id:action.id,banner:central.banner,entrySampledAt});
       if (central.targets.length) {
@@ -200,7 +186,6 @@
         // Talent wearers and a wedge's returning Keqing are already selected.
         // Confirm the observed payment button once; the card invokes the skill.
         // Never add a target click or a separate skill cast here.
-        await this.requireStableCardPayment(action,central,centralSampledAt);
         const point = this.clickAt(b.x+b.w/2,b.y+b.h/2);
         this.trace("card-confirm-clicked", { id:action.id, point, layout:"central", banner:central.banner });
         this.markNativeCardConfirmation(action,"central");
@@ -209,30 +194,20 @@
       }
       if (action.target !== null && ["food", "artifact", "weapon", "wedge", "talent","legend"].includes(type)) {
         // Only click a target while the selected card is still displayed in its detail panel.
-        const title = this.frame(f => this.ocr(f, [311, 115, 341, 50]));
+        const title = this.frame(f => this.ocr(f, this.roi("details", [311, 115, 341, 50])));
         // A drag directly onto the intended character may already resolve the card.
         // In that case, issue no more input; the state verifier must prove acceptance.
         if (!title) return;
         if (TCG.identify(title)?.id !== action.id) throw new Error("出牌后的选目标页面未确认");
-        this.clickAt(charX[action.target], 720);
+        this.clickAt(...this.point("board",charX[action.target],720));
         await sleep(120);
       }
       // Zero-cost untargeted events can resolve immediately. Never click a skill button
       // as a fallback confirmation for those events.
-      const text = this.frame(f => this.ocr(f, [1550, 850, 360, 190]));
+      const text = this.frame(f => this.ocr(f, this.roi("bottom", [1550, 850, 360, 190])));
       if (/确认|使用|打出/.test(text) && !/无法|不足|不能/.test(text)) {
-        const targets = this.frame(f => {
-          const started=Date.now();this.metrics.ocrCalls++;
-          const rs = f.FindMulti(RecognitionObject.Ocr(1550, 850, 360, 190));
-          const out = [];
-          for (let i = 0; i < rs.count; i++) {
-            const r = rs[i];
-            if (/^(确认|使用|打出)(卡牌)?$/.test(String(r.text ?? r.Text).replace(/\s/g, ""))) {
-              out.push({ x: Number(r.x ?? r.X), y: Number(r.y ?? r.Y), w: Number(r.width ?? r.Width), h: Number(r.height ?? r.Height) });
-            }
-          }
-          this.metrics.ocrMs+=Date.now()-started;return out;
-        });
+        const targets = this.frame(f => this.ocrRows(f, this.roi("bottom", [1550, 850, 360, 190]))
+          .filter(r => /^(确认|使用|打出)(卡牌)?$/.test(r.text.replace(/\s/g, ""))));
         if (targets.length !== 1) throw new Error("无法唯一识别出牌确认按钮");
         const b = targets[0];
         const point = this.clickAt(b.x + b.w / 2, b.y + b.h / 2);

@@ -24,7 +24,7 @@ module.exports = async function(test) {
   });
   await test("R06: consuming the sole reduced sashimi must prefer the already enhanced NA",()=>{
     const s=board(T),m=T.freshMemory();s.active=1;s.dice={Hydro:3};
-    s.hand=[observed(T,"sashimi",0,0,{reduction:1})];s.enemies[0].aura=["Hydro"];
+    s.hand=[observed(T,"sashimi",0,0,{reduction:1})];Object.assign(s.enemies[0],{aura:["Hydro"],auraKnown:true});
     m.lunarMinimum=T.fact(3,"confirmed-action");m.passiveUsed=true;
     const before=JSON.stringify([s,m]),food=card(s.hand[0],1),p=T.projectResources(s,m,food),
       direct=T.damageEstimate(s,m,1,"NA"),after=T.damageEstimate(p.state,p.memory,1,"NA"),
@@ -73,7 +73,7 @@ module.exports = async function(test) {
   await test("R06: a retained reduced card preserves enhancement; sleepy only discounts the first kernel",()=>{
     const s=board(T),m=T.freshMemory();s.active=1;s.dice={Hydro:3};
     s.hand=[observed(T,"sashimi",0,0,{reduction:1}),observed(T,"fruit",1,2,{reduction:1})];
-    s.enemies[0].aura=["Hydro"];m.lunarMinimum=T.fact(3,"confirmed-action");m.passiveUsed=true;
+    Object.assign(s.enemies[0],{aura:["Hydro"],auraKnown:true});m.lunarMinimum=T.fact(3,"confirmed-action");m.passiveUsed=true;
     const p=T.projectResources(s,m,card(s.hand[0],1));
     assert.equal(T.damageEstimate(p.state,p.memory,1,"NA").enhancedReady,true);
     assert.ok(T.cardScore(s,m,card(s.hand[0],1),T.axis(s,m))>0);

@@ -1,5 +1,81 @@
 // Shared capture fragments. Inlined at build time; no runtime dependency.
 
+// @fragment bgi-host.findOcr
+findOcr(f, roi, multiple, contextKey) {
+      const key = "ocr/" + contextKey;
+      if (!this.roCache.has(key)) this.roCache.set(key, RecognitionObject.Ocr(...roi));
+      const started = Date.now();
+      this.metrics.ocrCalls++;
+      try {
+        if (!multiple) {
+          const r = f.Find(this.roCache.get(key));
+          return r.isExist() ? String(r.text ?? r.Text ?? "").trim() : "";
+        }
+        const found = f.FindMulti(this.roCache.get(key)), rows = [];
+        for (let i = 0; i < found.count; i++) {
+          const r = found[i];
+          rows.push({ text: String(r.text ?? r.Text ?? "").trim(), x: Number(r.x ?? r.X),
+            y: Number(r.y ?? r.Y), w: Number(r.width ?? r.Width), h: Number(r.height ?? r.Height) });
+        }
+        return rows;
+      } finally { this.metrics.ocrMs += Date.now() - started; }
+    }
+// @endfragment bgi-host.findOcr
+
+// @fragment bgi-host.localOcr
+localOcr(f, area, zoom, multiple) {
+      const roi = this.checkedRoi(f, area);
+      if (!Number.isFinite(zoom) || zoom <= 0) throw captureGeometryError("局部OCR倍率无效");
+      const key = JSON.stringify(["localOcr", area, roi, zoom, multiple]);
+      return this.memoFrame(f, key, () => {
+        let crop = null, resized = null, region = null;
+        const width = Math.round(roi[2] * zoom / area.scale), height = Math.round(roi[3] * zoom / area.scale);
+        if (width <= 0 || height <= 0) throw captureGeometryError("局部OCR尺寸无效");
+        try {
+          crop = f.DeriveCrop(...roi);
+          resized = crop.SrcMat.Resize(new OpenCvSharp.OpenCvSharp.Size(width, height));
+          region = new ImageRegion(resized, 0, 0);
+          const read = this.findOcr(region, [0, 0, width, height], multiple, key);
+          if (!multiple) return read;
+          // Round-trip through actual integer crop/output sizes, not a nominal
+          // scale. Returned rectangles are already F; callers must not map again.
+          const sx = roi[2] / width, sy = roi[3] / height;
+          return read.map(r => ({ text: r.text, x: roi[0] + r.x * sx, y: roi[1] + r.y * sy,
+            w: r.w * sx, h: r.h * sy }));
+        } finally {
+          if (region) region.dispose();
+          else if (resized) resized.dispose();
+          if (crop) crop.dispose();
+        }
+      });
+    }
+// @endfragment bgi-host.localOcr
+
+// @fragment bgi-host.artworkScore
+artworkScore(f, area, filename, pad, rank) {
+      const required=this.checkedRoi(f,area),size=captureSize(f);
+      if(!Number.isFinite(pad)||pad<0)throw captureGeometryError("牌面搜索边距无效");
+      const key=JSON.stringify(["artwork",area,filename,pad]);
+      return this.memoFrame(f,key,()=>{
+        if(!this.templates.has(filename)){
+          const mat=file.readImageMatSync(filename);
+          if(mat.empty()){mat.dispose();throw new Error("缺少牌面模板："+filename);}
+          this.templates.set(filename,mat);
+        }
+        const margin=pad*area.scale,[x,y,w,h]=required,
+          left=Math.max(0,Math.floor(x-margin)),top=Math.max(0,Math.floor(y-margin)),
+          right=Math.min(size.width,Math.ceil(x+w+margin)),bottom=Math.min(size.height,Math.ceil(y+h+margin));
+        let crop=null,normalized=null;
+        try {
+          crop=(f.srcMat??f.SrcMat).SubMat(top,bottom,left,right);
+          if(area.scale!==1)normalized=crop.Resize(new OpenCvSharp.OpenCvSharp.Size(
+            Math.round((right-left)/area.scale),Math.round((bottom-top)/area.scale)));
+          return rank(normalized||crop,this.templates.get(filename));
+        } finally { if(normalized)normalized.dispose();if(crop)crop.dispose(); }
+      });
+    }
+// @endfragment bgi-host.artworkScore
+
 // @fragment bgi-host.dispose
 dispose() {
       const gray = new Set();
@@ -17,30 +93,8 @@ dispose() {
 // @endfragment bgi-host.dispose
 
 // @fragment bgi-host.enlargedOcrRows
-enlargedOcrRows(f, roi, scale) {
-      return this.memoFrame(f, "enlargedRows/" + roi.join(",") + "/" + scale, () => {
-        let crop = null,
-          resized = null,
-          region = null;
-        try {
-          crop = f.DeriveCrop(...roi);
-          resized = crop.SrcMat.Resize(
-            new OpenCvSharp.OpenCvSharp.Size(roi[2] * scale, roi[3] * scale),
-          );
-          region = new ImageRegion(resized, 0, 0);
-          return this.ocrRows(region, [0, 0, roi[2] * scale, roi[3] * scale]).map((r) => ({
-            text: r.text,
-            x: roi[0] + r.x / scale,
-            y: roi[1] + r.y / scale,
-            w: r.w / scale,
-            h: r.h / scale,
-          }));
-        } finally {
-          if (region) region.dispose();
-          else if (resized) resized.dispose();
-          if (crop) crop.dispose();
-        }
-      });
+enlargedOcrRows(f, area, scale) {
+      return this.localOcr(f, area, scale, true);
     }
 // @endfragment bgi-host.enlargedOcrRows
 
@@ -55,7 +109,7 @@ frame(fn) {
       this.metrics.captureMs += captured - started;
       this.frameMemo = new WeakMap();
       try {
-        requireCaptureSize(captureSize(f));
+        this.adoptCapture(f);
         this.requireMatchTime();
         const result = fn(f);
         this.requireMatchTime();
@@ -67,6 +121,40 @@ frame(fn) {
       }
     }
 // @endfragment bgi-host.frame
+
+// @fragment bgi-host.adoptCapture
+adoptCapture(f) {
+      if (this.captureGeometryError) throw this.captureGeometryError;
+      try {
+        const geometry = captureGeometry(f, Number(genshin.scaleTo1080PRatio));
+        if (this.captureGeometry && JSON.stringify(geometry) !== JSON.stringify(this.captureGeometry))
+          throw captureGeometryError("本局客户区或归一帧尺寸已变化，请重新启动捕获器及牌手后开新局");
+        this.captureGeometry = geometry;
+        return geometry;
+      } catch (error) {
+        if (error.code !== "TCG_CAPTURE_GEOMETRY") throw error;
+        this.captureGeometryError = error;
+        this.boardReady = false;
+        this.handPositionProof = null;
+        this.preparedHandInput = null;
+        throw error;
+      }
+    }
+// @endfragment bgi-host.adoptCapture
+
+// @fragment bgi-host.checkInputGeometry
+checkInputGeometry() {
+      this.requireMatchTime();
+      if (this.captureGeometryError) throw this.captureGeometryError;
+      const started = Date.now(), f = captureGameRegion();
+      this.metrics.geometryChecks++;
+      this.metrics.frames++;
+      this.metrics.captureMs += Date.now() - started;
+      try { this.adoptCapture(f); }
+      finally { f.dispose(); this.metrics.geometryMs += Date.now() - started; }
+      this.requireMatchTime();
+    }
+// @endfragment bgi-host.checkInputGeometry
 
 // @fragment bgi-host.has
 has(f, asset, roi, threshold) {
@@ -107,39 +195,16 @@ metricSnapshot() {
 // @endfragment bgi-host.metricSnapshot
 
 // @fragment bgi-host.numericAt
-numericAt(f, roi, scale) {
-      return this.memoFrame(f, "numeric/" + roi.join(",") + "/" + scale, () => {
-        let crop = null,
-          resized = null,
-          region = null;
-        try {
-          crop = f.DeriveCrop(...roi);
-          resized = crop.SrcMat.Resize(
-            new OpenCvSharp.OpenCvSharp.Size(roi[2] * scale, roi[3] * scale),
-          );
-          region = new ImageRegion(resized, 0, 0);
-          return this.ocr(region, [0, 0, roi[2] * scale, roi[3] * scale]);
-        } finally {
-          if (region) region.dispose();
-          else if (resized) resized.dispose();
-          if (crop) crop.dispose();
-        }
-      });
+numericAt(f, area, scale) {
+      return this.localOcr(f, area, scale, false);
     }
 // @endfragment bgi-host.numericAt
 
 // @fragment bgi-host.ocr
-ocr(f, roi) {
-      const key = "ocr/" + roi.join(",");
-      return this.memoFrame(f, key, () => {
-        if (!this.roCache.has(key)) this.roCache.set(key, RecognitionObject.Ocr(...roi));
-        const started = Date.now();
-        this.metrics.ocrCalls++;
-        const r = f.Find(this.roCache.get(key));
-        const value = r.isExist() ? String(r.text ?? r.Text ?? "").trim() : "";
-        this.metrics.ocrMs += Date.now() - started;
-        return value;
-      });
+ocr(f, area) {
+      if (area.scale !== 1) return this.localOcr(f, area, 1, false);
+      const roi = this.checkedRoi(f, area), key = JSON.stringify(["ocr", area, roi]);
+      return this.memoFrame(f, key, () => this.findOcr(f, roi, false, key));
     }
 // @endfragment bgi-host.ocr
 
@@ -184,37 +249,61 @@ trace(event, data) {
 // @fragment bgi-host.waitForCapture
 async waitForCapture() {
       // Give an in-progress window transition a bounded chance to settle.
-      // No OCR, templates, or game input until two native 1080P frames agree.
+      // Bind both actual and normalized sizes; no OCR or input during settling.
       let stable = 0,
-        last = { width: null, height: null },
-        lastKey = "";
+        last = null, lastError = null, lastKey = "";
       for (let attempt = 0; attempt < 20; attempt++) {
-        const f = captureGameRegion();
+        this.requireMatchTime();
+        if (this.captureGeometryError) throw this.captureGeometryError;
+        const f = captureGameRegion(), frameSize = captureSize(f);
         try {
-          last = captureSize(f);
+          last = captureGeometry(f, Number(genshin.scaleTo1080PRatio));
+          lastError = null;
+        } catch (error) {
+          if (error.code !== "TCG_CAPTURE_GEOMETRY") throw error;
+          lastError = error;
+          last = null;
         } finally {
           f.dispose();
         }
-        const key = JSON.stringify(last);
+        const key = JSON.stringify(last || { frameSize, error: lastError.message });
+        stable = last ? key === lastKey ? stable + 1 : 1 : 0;
         if (key !== lastKey) {
-          this.trace("capture-size", { ...last, attempt });
+          this.trace("capture-size", { ...last, error: lastError?.message, attempt });
           lastKey = key;
         }
-        stable = last.width === 1920 && last.height === 1080 ? stable + 1 : 0;
         if (stable >= 2) {
+          if (this.captureGeometry && JSON.stringify(last) !== JSON.stringify(this.captureGeometry))
+            throw captureGeometryError("本局捕获尺寸已变化，不能重新绑定旧局");
+          this.captureGeometry = last;
           this.trace("capture-ready", last);
           return;
         }
         if (attempt < 19) await sleep(300);
       }
-      requireCaptureSize(last);
-      throw new Error("游戏捕获尺寸未稳定为1920×1080");
+      throw lastError || captureGeometryError("游戏客户区及归一帧尺寸未稳定");
     }
 // @endfragment bgi-host.waitForCapture
 
 // @fragment tcg-ui.matches
-matches(f, asset, roi, threshold = 0.88, useColor = false) {
-      const key = asset + "/" + roi.join(",") + "/" + threshold + "/" + useColor;
+matches(f, asset, area, threshold = 0.88, useColor = false) {
+      const roi = this.checkedRoi(f, area);
+      if (area.scale !== 1) {
+        return this.memoFrame(f,JSON.stringify(["localMatch",asset,area,threshold,useColor]),()=>{
+          let crop=null,resized=null,region=null;
+          const width=Math.round(roi[2]/area.scale),height=Math.round(roi[3]/area.scale);
+          try {
+            crop=f.DeriveCrop(...roi);
+            resized=crop.SrcMat.Resize(new OpenCvSharp.OpenCvSharp.Size(width,height));
+            region=new ImageRegion(resized,0,0);
+            const local={rect:[0,0,width,height],scale:1,layoutKey:area.layoutKey,panel:"details"};
+            return this.matches(region,asset,local,threshold,useColor).map(r=>({
+              x:roi[0]+r.x*roi[2]/width,y:roi[1]+r.y*roi[3]/height,
+              w:r.w*roi[2]/width,h:r.h*roi[3]/height}));
+          } finally { if(region)region.dispose();else if(resized)resized.dispose();if(crop)crop.dispose(); }
+        });
+      }
+      const key = asset + "/" + JSON.stringify([area, roi, threshold, useColor]);
       return this.memoFrame(f, "matches/"+key, () => {
       if (!this.roCache.has(key)) {
         if (!this.templates.has(asset)) {
@@ -241,26 +330,9 @@ matches(f, asset, roi, threshold = 0.88, useColor = false) {
 // @endfragment tcg-ui.matches
 
 // @fragment tcg-ui.ocrRows
-ocrRows(f, roi) {
-      return this.memoFrame(f, "ocrRows/" + roi.join(","), () => {
-        const key = "ocr/" + roi.join(",");
-        if (!this.roCache.has(key)) this.roCache.set(key, RecognitionObject.Ocr(...roi));
-        const started = Date.now();
-        this.metrics.ocrCalls++;
-        const rs = f.FindMulti(this.roCache.get(key)),
-          out = [];
-        for (let i = 0; i < rs.count; i++) {
-          const r = rs[i];
-          out.push({
-            text: String(r.text ?? r.Text ?? "").trim(),
-            x: Number(r.x ?? r.X),
-            y: Number(r.y ?? r.Y),
-            w: Number(r.width ?? r.Width),
-            h: Number(r.height ?? r.Height),
-          });
-        }
-        this.metrics.ocrMs += Date.now() - started;
-        return out;
-      });
+ocrRows(f, area) {
+      if (area.scale !== 1) return this.localOcr(f, area, 1, true);
+      const roi = this.checkedRoi(f, area), key = JSON.stringify(["ocrRows", area, roi]);
+      return this.memoFrame(f, key, () => this.findOcr(f, roi, true, key));
     }
 // @endfragment tcg-ui.ocrRows

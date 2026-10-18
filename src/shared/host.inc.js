@@ -22,6 +22,8 @@
   /* @include src/shared/geometry.inc.js#tcg-ui.number */
   /* @include src/shared/geometry.inc.js#tcg-ui.captureSize */
   /* @include src/shared/geometry.inc.js#tcg-ui.requireCaptureSize */
+  /* @include src/shared/geometry.inc.js#tcg-ui.captureGeometry */
+  /* @include src/shared/geometry.inc.js#tcg-ui.layoutRegions */
   /* @include src/shared/geometry.inc.js#tcg-ui.mousePoint */
   /* @include src/shared/board.inc.js#tcg-ui.boardDifferences */
   class BetterGIHost {
@@ -52,7 +54,9 @@
       this.tossSession = null;
       this.diagnosticKeys = new Set();
       this.frameMemo = null;
-      this.metrics = {frames:0,captureMs:0,frameWorkMs:0,ocrCalls:0,ocrMs:0,memoHits:0};
+      this.captureGeometry = null;
+      this.captureGeometryError = null;
+      this.metrics = {frames:0,captureMs:0,frameWorkMs:0,ocrCalls:0,ocrMs:0,memoHits:0,geometryChecks:0,geometryMs:0};
       this.inputRevision = 0;
       this.lastCostSample = null;
       this.handPositionProof = null;
@@ -73,7 +77,13 @@
     /* @include src/shared/input.inc.js#bgi-host.moveTo */
     /* @include src/shared/capture.inc.js#bgi-host.trace */
     /* @include src/shared/capture.inc.js#bgi-host.frame */
+    /* @include src/shared/capture.inc.js#bgi-host.adoptCapture */
+    /* @include src/shared/capture.inc.js#bgi-host.checkInputGeometry */
     /* @include src/shared/capture.inc.js#bgi-host.memoFrame */
+    /* @include src/shared/geometry.inc.js#bgi-host.roi */
+    /* @include src/shared/capture.inc.js#bgi-host.findOcr */
+    /* @include src/shared/capture.inc.js#bgi-host.localOcr */
+    /* @include src/shared/capture.inc.js#bgi-host.artworkScore */
     /* @include src/shared/capture.inc.js#bgi-host.metricSnapshot */
     /* @include src/shared/capture.inc.js#bgi-host.metricDelta */
     /* @include src/shared/capture.inc.js#bgi-host.waitForCapture */
@@ -91,10 +101,10 @@
     readPhaseIn(f) {
       // Native victory animation starts around y=500 before moving upward.
       // The old y=101..482 crop missed that exact terminal frame (20:11).
-      const result = this.ocr(f, [763, 101, 394, 600]);
+      const result = this.ocr(f, this.roi("phase", [763, 101, 394, 600]));
       if (/对局胜利/.test(result)) return { phase: "result", result: "win", turn: "none" };
       if (/对局失败/.test(result)) return { phase: "result", result: "lose", turn: "none" };
-      const title = this.ocr(f, [844, 167, 232, 65]);
+      const title = this.ocr(f, this.roi("header", [844, 167, 232, 65]));
       if (title.includes("初始手牌")) return { phase: "opening", turn: "none" };
       if (title.includes("重投骰子")) return { phase: "roll", turn: "none" };
       if(TCG.norm(title)==="挑选卡牌")return this.choiceIn(f) ||
@@ -103,17 +113,17 @@
       // it vanishes when the cursor moves onto the selected character.
       // Exclude the player-name row; saved native pixels passed 9 shifted/
       // brightness variants at native scale. No additional detail clicks.
-      const pickPrompt=TCG.norm(this.ocr(f,[138,1020,280,48]));
-      if (/^(请选择|选择)出战角色/.test(pickPrompt) || this.has(f, "core/出战角色", pickLabelROI)) return { phase: "pick", turn: "none" };
-      if (this.has(f, "core/回合结算阶段", [0, 0, 384, 1080])) return { phase: "settlement", turn: "none" };
+      const pickPrompt=TCG.norm(this.ocr(f,this.roi("bottom", [138,1020,280,48])));
+      if (/^(请选择|选择)出战角色/.test(pickPrompt) || this.has(f, "core/出战角色", this.roi("bottom", pickLabelROI))) return { phase: "pick", turn: "none" };
+      if (this.has(f, "core/回合结算阶段", this.roi("viewport", [0, 0, 384, 1080]))) return { phase: "settlement", turn: "none" };
       // Native action banners can coexist with the user-turn icon, while HP,
       // generated cards and the hand-count badge are still animating.
-      const banner = TCG.norm(this.ocr(f, [700, 508, 580, 65]));
+      const banner = TCG.norm(this.ocr(f, this.roi("phase", [700, 508, 580, 65])));
       if (this.automaticBanners?.includes(banner)) return { phase: "automatic", turn: "none", automatic: banner };
       if (["我方行动", "对方行动", "行动阶段", "回合开始"].includes(banner)) return { phase: "transition", turn: "none" };
-      const user = this.has(f, "user_turn", [64, 518, 33, 42], 0.9);
-      const enemy = this.has(f, "enemy_turn", [64, 518, 33, 42], 0.9);
-      const opponent = this.has(f, "core/对方行动中", [0, 0, 384, 1080]);
+      const user = this.has(f, "user_turn", this.roi("phase", [64, 518, 33, 42]), 0.9);
+      const enemy = this.has(f, "enemy_turn", this.roi("phase", [64, 518, 33, 42]), 0.9);
+      const opponent = this.has(f, "core/对方行动中", this.roi("viewport", [0, 0, 384, 1080]));
       if (user && !enemy && !opponent) return { phase: "board", turn: "user" };
       if (enemy && !user || opponent) return { phase: "board", turn: "enemy" };
       const choice=this.choiceIn(f);
@@ -134,8 +144,8 @@
     skillPreviewIn(f) {
       // Native E preview read "神变·恶曜开眼\n3" with the old tall ROI.
       // Exclude the cost row instead of deleting arbitrary digits from OCR.
-      const name = this.ocr(f, [135, 122, 238, 42]);
-      const detail = this.ocr(f, [70, 210, 320, 85]);
+      const name = this.ocr(f, this.roi("details", [135, 122, 238, 42]));
+      const detail = this.ocr(f, this.roi("details", [70, 210, 320, 85]));
       const candidates = [];
       for (let who = 0; who < skillNames.length; who++) for (const skill of ["NA", "E", "Q"]) {
         const names = [skillNames[who][skill], ...(TCG.team[who].skillAliases?.[skill] || [])];
@@ -207,7 +217,7 @@
           feeProbe,
           limit: 1,
         });
-        this.clickAt(x, 957);
+        this.clickAt(...this.point("bottom", x, 957));
         await sleep(120);
         return this.requireSkillPreview(action, feeProbe, readFee);
       }
@@ -219,7 +229,7 @@
     async probeSkill(action,before,memory) {
       if(action.who!==before.active)throw new Error("费用检视只能用于当前角色");
       const x={NA:1608,E:1716,Q:1824}[action.skill];
-      this.clickAt(x,957);await sleep(120);await this.requireOpenedSkill(action,before,x,false,true);
+      this.clickAt(...this.point("bottom",x,957));await sleep(120);await this.requireOpenedSkill(action,before,x,false,true);
       let fee=null,last=null,stable=0;
       for(let i=0;i<4;i++){
         const n=this.frame(f=>this.skillFeeIn(f,action));stable=n!==null&&n===last?stable+1:1;last=n;
@@ -285,7 +295,7 @@
       let stable=0;
       for(let attempt=0;attempt<3;attempt++) {
         const p=this.frame(f=>({phase:this.phaseIn(f),count:this.handCountIn(f),
-          empty:this.has(f,"hand_empty",[1003,928,504,124],0.97,false)}));
+          empty:this.has(f,"hand_empty",this.roi("handExpanded", [1003,928,504,124]),0.97,false)}));
         const matched=p.phase.phase==="board"&&p.phase.turn==="user"&&p.empty&&(p.count===null||p.count===0);
         stable=matched?stable+1:0;
         this.trace("empty-hand-native",{attempt,matched,stable,count:p.count,phase:p.phase});
@@ -321,10 +331,12 @@
     /* @include src/shared/opening.inc.js#tcg-ui.roll */
     async drag(x, y, toX, toY) {
       // Validate BOTH endpoints before any movement or button press.
-      const start = mousePoint(x, y), end = mousePoint(toX, toY);
+      const size = this.captureGeometry?.frameSize;
+      const start = mousePoint(x, y, size), end = mousePoint(toX, toY, size);
       this.moveTo(start[0], start[1]);
       await sleep(60);
       this.requireMatchTime();
+      this.checkInputGeometry();
       leftButtonDown();
       this.inputRevision++;
       this.handPositionProof = null;
@@ -342,8 +354,6 @@
     /* @include src/shared/input.inc.js#bgi-host.cardChoicePreviewIn */
     /* @include src/shared/input.inc.js#bgi-host.waitForSample */
     /* @include src/shared/input.inc.js#bgi-host.cardTargetPreviewIn */
-    /* @include src/shared/input.inc.js#bgi-host.cardPaymentPreviewIn */
-    /* @include src/shared/input.inc.js#bgi-host.requireStableCardPayment */
     /* @include src/shared/input.inc.js#tcg-ui.requireNoWarning */
     /* @include src/shared/input.inc.js#bgi-host.requireSwitchPreview */
     

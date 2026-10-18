@@ -14,7 +14,7 @@ async waitForSample(sampledAt, interval, revision = this.inputRevision) {
 
 // @fragment bgi-host.cardConfirmationEntryIn
 cardConfirmationEntryIn(f, targetedBanners = []) {
-      const banner = this.cardBannerIn ? this.cardBannerIn(f) : this.ocr(f, [740, 510, 450, 65]);
+      const banner = this.cardBannerIn ? this.cardBannerIn(f) : this.ocr(f, this.roi("phase", [740, 510, 450, 65]));
       const phase = this.phaseIn(f);
       // A real target page owns a different input. Do not OCR its payment
       // control until the target owner has selected the character.
@@ -29,9 +29,9 @@ cardConfirmationEntryIn(f, targetedBanners = []) {
 // @fragment bgi-host.cardChoicePreviewIn
 cardChoicePreviewIn(f, kind, phase = this.phaseIn(f)) {
       return {
-        banner: TCG.norm(this.ocr(f, kind === "target" ? [600, 510, 720, 65] : [740, 510, 450, 65])),
+        banner: TCG.norm(this.ocr(f, this.roi("choice", kind === "target" ? [600, 510, 720, 65] : [740, 510, 450, 65]))),
         phase, controls: this.cardPaymentControlsIn(f),
-        ...(kind === "target" ? { buttons: this.matches(f, "core/确定", [770, 900, 380, 90]) } : {}),
+        ...(kind === "target" ? { buttons: this.matches(f, "core/确定", this.roi("bottom", [770, 900, 380, 90])) } : {}),
       };
     }
 // @endfragment bgi-host.cardChoicePreviewIn
@@ -39,55 +39,26 @@ cardChoicePreviewIn(f, kind, phase = this.phaseIn(f)) {
 // @fragment bgi-host.cardTargetPreviewIn
 cardTargetPreviewIn(f) {
       return {
-        banner: TCG.norm(this.cardBannerIn ? this.cardBannerIn(f) : this.ocr(f, [740, 510, 450, 65])),
-        buttons: this.matches(f, "core/确定", [770, 900, 380, 90]),
-        rows: this.ocrRows(f, [770, 900, 380, 90]),
+        banner: TCG.norm(this.cardBannerIn ? this.cardBannerIn(f) : this.ocr(f, this.roi("phase", [740, 510, 450, 65]))),
+        buttons: this.matches(f, "core/确定", this.roi("bottom", [770, 900, 380, 90])),
+        rows: this.ocrRows(f, this.roi("bottom", [770, 900, 380, 90])),
         phase: this.phaseIn(f), warning: this.warnings(f),
       };
     }
 // @endfragment bgi-host.cardTargetPreviewIn
 
-// @fragment bgi-host.cardPaymentPreviewIn
-cardPaymentPreviewIn(f) {
-      return {
-        banner: TCG.norm(this.cardBannerIn ? this.cardBannerIn(f) : this.ocr(f, [740, 510, 450, 65])),
-        controls: this.cardPaymentControlsIn(f),
-        phase: this.phaseIn(f), warning: this.warnings(f),
-      };
-    }
-// @endfragment bgi-host.cardPaymentPreviewIn
-
-// @fragment bgi-host.requireStableCardPayment
-async requireStableCardPayment(action, central, sampledAt) {
-      const banner = TCG.norm(central.banner), b = central.targets[0];
-      let stable = 1;
-      for (let attempt = 0; attempt < 6; attempt++) {
-        await this.waitForSample(sampledAt, 250); sampledAt = Date.now();
-        const current = this.frame(f => this.cardPaymentPreviewIn(f));
-        await this.requireNoWarning(current.warning);
-        const c = current.controls[0], matched = current.banner === banner && current.controls.length === 1 &&
-          current.phase.phase === "unknown" && current.phase.turn === "none" &&
-          Math.abs(c.x + c.w / 2 - b.x - b.w / 2) <= 3 && Math.abs(c.y + c.h / 2 - b.y - b.h / 2) <= 3;
-        stable = matched ? stable + 1 : 0;
-        this.trace("card-payment-preview", { id: action.id, attempt, matched, stable, ...current });
-        if (stable >= 2) return;
-        if (attempt === 5) throw new Error("中央出牌确认控件未连续核实");
-      }
-    }
-// @endfragment bgi-host.requireStableCardPayment
-
 // @fragment bgi-host.cardPaymentControlsIn
 cardPaymentControlsIn(f) {
       // OCR Find returns only its first item, which may be a key hint. Read
       // complete native rows; confirmation still requires a unique exact label.
-      return this.ocrRows(f, [770, 900, 380, 90]).filter(
+      return this.ocrRows(f, this.roi("bottom", [770, 900, 380, 90])).filter(
         (row) => TCG.norm(row.text) === "打出手牌",
       );
     }
 // @endfragment bgi-host.cardPaymentControlsIn
 
 // @fragment bgi-host.button
-button(asset, roi = [0, 540, 1920, 540]) {
+button(asset, roi = this.roi("viewport", [0, 540, 1920, 540])) {
       return this.frame((f) => this.matches(f, "core/" + asset, roi)[0] || null);
     }
 // @endfragment bgi-host.button
@@ -96,13 +67,13 @@ button(asset, roi = [0, 540, 1920, 540]) {
 characterOverviewIn(f) {
       // Native 17:18: the character overview has a role title, not a skill title.
       // Its right-hand section varies with equipment/statuses. Read this only
-      // on a failed preview, never in the normal two-frame skill-confirm path.
-      const name = this.ocr(f, [311, 115, 341, 50]);
+      // on a probe failure, never in the normal skill-confirm path.
+      const name = this.ocr(f, this.roi("details", [311, 115, 341, 50]));
       const who = TCG.characterName(name);
       if (who < 0) return null;
-      const heading = this.ocr(f, [740, 123, 280, 44]);
+      const heading = this.ocr(f, this.roi("details", [740, 123, 280, 44]));
       if (["角色装备", "角色状态", "阵营出战状态"].includes(TCG.norm(heading))) return { name, heading };
-      const text = TCG.norm(this.ocr(f, [350, 210, 300, 270]));
+      const text = TCG.norm(this.ocr(f, this.roi("details", [350, 210, 300, 270])));
       const skills = Object.values(TCG.team[who].skills).filter(skill => text.includes(TCG.norm(skill)));
       return skills.length >= 2 ? { name, heading: "角色技能", skills } : null;
     }
@@ -127,9 +98,9 @@ async dismissCharacterOverview(reason) {
           TCG.norm(first.panel.name) !== TCG.norm(second.panel.name) ||
           TCG.norm(first.panel.heading) !== TCG.norm(second.panel.heading) ||
           JSON.stringify(first.panel.skills || []) !== JSON.stringify(second.panel.skills || [])) return false;
-      const point = this.clickAt(1190, 545);
+      const point = this.clickAt(...this.point("board",1190,545));
       this.overviewClearRevision = this.inputRevision;
-      this.moveTo(1555, 545);
+      this.moveTo(...this.point("board",1555,545));
       this.trace("character-overview-dismissed", { reason, panel: second.panel, point });
       await sleep(300);
       return true;
@@ -178,9 +149,13 @@ emptySkillPreview(p) {
 
 // @fragment bgi-host.moveTo
 moveTo(x, y) {
-      const point = mousePoint(x, y);
+      const point = mousePoint(x, y, this.captureGeometry?.frameSize);
       this.requireMatchTime();
-      moveMouseTo(point[0], point[1]);
+      // Recheck actual geometry even if the last OCR frame has the same size.
+      // This also guards each interpolation step of a held drag, without OCR.
+      this.checkInputGeometry();
+      this.requireMatchTime();
+      GameCaptureRegion.GameRegion1080PPosMove(point[0], point[1]);
       return point;
     }
 // @endfragment bgi-host.moveTo
@@ -196,9 +171,9 @@ async requireSwitchPreview(action, memory) {
         const sampledAt = Date.now();
         const preview = this.frame((f) => ({
           phase: this.phaseIn(f),
-          banner: this.ocr(f, [700, 508, 580, 65]),
-          control: this.ocr(f, [1720, 835, 195, 75]),
-          speed: this.ocr(f, [850, 972, 260, 60]),
+          banner: this.ocr(f, this.roi("phase", [700, 508, 580, 65])),
+          control: this.ocr(f, this.roi("bottom", [1720, 835, 195, 75])),
+          speed: this.ocr(f, this.roi("bottom", [850, 972, 260, 60])),
           warning: this.warnings(f),
         }));
         await this.requireNoWarning(preview.warning);
@@ -268,7 +243,7 @@ async requireSkillPreview(action, feeProbe=false, readFee=false) {
 // @fragment bgi-host.inputSkill
 async inputSkill(action, before, memory, cost, readFee = false) {
       const x = { NA: 1608, E: 1716, Q: 1824 }[action.skill];
-      this.clickAt(x, 957);
+      this.clickAt(...this.point("bottom",x,957));
       await sleep(120);
       const preview = await this.requireOpenedSkill(action, before, x, readFee);
       if (this.expectedDice !== null && preview.fee !== null) {
@@ -277,16 +252,16 @@ async inputSkill(action, before, memory, cost, readFee = false) {
           nominal: cost, actual: preview.fee, expectedDice: this.expectedDice,
           source: "current-confirmed-preview" });
       }
-      this.clickAt(x, 957);
-      this.trace("skill-confirm-clicked", { who: action.who, skill: action.skill, point: [x, 957] });
+      this.clickAt(...this.point("bottom",x,957));
+      this.trace("skill-confirm-clicked", { who: action.who, skill: action.skill, point: this.point("bottom",x,957) });
     }
 // @endfragment bgi-host.inputSkill
 
 // @fragment bgi-host.warnings
 warnings(frame = null) {
       const read = (f) => ({
-        lack: this.has(f, "core/元素骰子不足", [960, 0, 960, 1080]),
-        text: this.ocr(f, [1490, 790, 410, 250]),
+        lack: this.has(f, "core/元素骰子不足", this.roi("viewport", [960, 0, 960, 1080])),
+        text: this.ocr(f, this.roi("bottom", [1490, 790, 410, 250])),
       });
       return frame ? read(frame) : this.frame(read);
     }
@@ -294,10 +269,10 @@ warnings(frame = null) {
 
 // @fragment tcg-ui.clickAt
 clickAt(x, y) {
-      const point = mousePoint(x, y);
+      const point = this.moveTo(x, y);
       this.requireMatchTime();
       this.boardReady = false;
-      click(point[0], point[1]);
+      leftButtonClick();
       this.inputRevision++;
       this.handPositionProof = null;
       return point;
@@ -426,19 +401,19 @@ if (!Number.isInteger(action.target) || action.target < 0 || action.target > 2 |
       const raw = await this.titleAt(charX[action.target], 720, false, false, "character", action.target, true);
       this.requireHandObservation(this.phase(), "before-switch-payment");
       if (TCG.characterName(raw) !== action.target) throw new Error("切换目标角色标题未核实");
-      this.clickAt(1820, 958);
+      this.clickAt(...this.point("bottom",1820,958));
       await sleep(120);
       const preview = await this.requireSwitchPreview(action, memory);
-      this.clickAt(1820, 958);
+      this.clickAt(...this.point("bottom",1820,958));
       this.trace("switch-confirm-clicked", {
         target: action.target,
-        point: [1820, 958],
+        point: this.point("bottom",1820,958),
         fast: preview.fast,
         predictedFast: memory.fastSwitch,
       });
 // @endfragment bgi-host.switchInputBody
 
 // @fragment bgi-host.endRoundInputBody
-await this.clickButton("回合结束", [0, 0, 384, 1080]);
-      if (this.phase().turn === "user") await this.clickButton("回合结束", [0, 0, 384, 1080]);
+await this.clickButton("回合结束", this.roi("viewport", [0, 0, 384, 1080]));
+      if (this.phase().turn === "user") await this.clickButton("回合结束", this.roi("viewport", [0, 0, 384, 1080]));
 // @endfragment bgi-host.endRoundInputBody

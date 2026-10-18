@@ -14,7 +14,7 @@ function load(id, overrides = {}) {
 function board(T, ids = []) {
   return {phase:"board",turn:"user",active:0,diceKnown:true,dice:{Omni:3},
     characters:T.team.map(c=>({hp:c.maxHp,energy:0,dead:false,frozen:false})),
-    enemies:[{hp:10,dead:false,active:true,auraKnown:true,aura:[]}],
+    enemies:[{hp:10,dead:false,active:true,auraKnown:false,aura:[]}],
     hand:T.indexedHand(ids.map(id=>({id,name:T.byId[id].name,supported:true})))};
 }
 module.exports={load,board};

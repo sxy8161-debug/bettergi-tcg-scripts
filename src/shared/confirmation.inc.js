@@ -42,10 +42,21 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
       // The existing combat flag also owns switch/end recovery. This new
       // refresh policy is only for casts, not ordinary fast/manual switches.
       const effectAction = combat && !["switch", "end"].includes(action.type);
+      const actual = this.captureGeometry?.actualSize;
+      const handoff = actual?.width === 2560 && [1440,1600].includes(actual.height) &&
+        (effectAction || action.type === "switch" && !memory.fastSwitch)
+        ? (session.handoff ||= { startedAt: session.submittedAt ?? Date.now(), ownSince: null, ownReads: 0, ready: false }) : null;
+      // Edict consumption can precede its healing animation. Keep consumption
+      // confirmed, but use the existing quiet-board observer before planning.
+      // Do not require HP gain: full HP or healing suppression may prevent it.
+      const quietObservationRequired = action.type === "card" && action.id === "edict";
       while (Date.now() < deadline) {
         sampledAt = Date.now();
         const p = this.phase();
         lastPhase = p;
+        if (handoff && (p.phase !== "board" || p.turn !== "user")) {
+          handoff.ownSince = null; handoff.ownReads = 0; handoff.ready = false;
+        }
         if (p.result) return { ...p, confirmed: true };
         if (p.turn === "enemy" || ["choice", "roll", "pick", "settlement"].includes(p.phase))
           session.handObservation = null;
@@ -82,6 +93,32 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           return { ...p, confirmed };
         }
         if (p.turn === "user") {
+          if (handoff && !handoff.ready) {
+            const now = Date.now(), minimumMs = action.skill === "Q" ? 15000 : 10000;
+            // Reuse the official 10s/15s no-handoff grace, but keep observing:
+            // a real opponent return can release it early; terminal/pick/choice
+            // still dispatch above. Never require a nonexistent enemy turn.
+            const eligible = p.phase === "board" &&
+              (session.transition || now - handoff.startedAt >= minimumMs);
+            if (eligible) { handoff.ownSince ??= now; handoff.ownReads++; }
+            else { handoff.ownSince = null; handoff.ownReads = 0; }
+            if (!eligible || handoff.ownReads < 3 || now - handoff.ownSince < 2000) {
+              const reason = eligible ? "own-turn-still-settling" : "handoff-not-observed";
+              if (handoff.reason !== reason) {
+                handoff.reason = reason;
+                this.trace("combat-handoff-wait", { action, reason, phase: p.phase, turn: p.turn,
+                  transition: session.transition, elapsedMs: now - handoff.startedAt, minimumMs });
+              }
+              await waitForSample(450); continue;
+            }
+            handoff.ready = true;
+            // Phase persistence is not full effect proof. Keep the existing
+            // quiet COMPLETE-board observer before any hand scan or input.
+            this.autoRisk = true;
+            this.trace("combat-handoff-ready", { action, transition: session.transition,
+              elapsedMs: now - handoff.startedAt, ownStableMs: now - handoff.ownSince,
+              ownReads: handoff.ownReads, proof: session.transition ? "observed-opponent-return" : "conservative-no-handoff-window" });
+          }
           let after;
           try {
             this.requireHandObservation(p, "before-confirm-reset");
@@ -100,6 +137,7 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           }
           if (after.result) return { ...after, confirmed: true };
           if (after.phase !== "board" || after.turn !== "user") {
+            if (handoff) { handoff.ownSince = null; handoff.ownReads = 0; handoff.ready = false; }
             if (after.turn === "enemy" || ["choice", "roll", "pick", "settlement"].includes(after.phase))
               session.handObservation = null;
             if (after.turn === "enemy") session.transition = true;
@@ -130,7 +168,8 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
             // full observation is required when no enemy turn was observed;
             // it must not wait for predicted damage or exclude zero damage.
             return { ...after, ...this.confirmationExtras?.(), confirmed: true,
-              freshObservationRequired: effectAction && !session.transition };
+              freshObservationRequired: effectAction && !session.transition || quietObservationRequired,
+              quietObservationRequired };
           }
           if (!budgetMatches && !await this.observedResourceProof(after)) {
             this.trace("budget-reconciliation-wait", { action, expectedDice: this.expectedDice,
@@ -146,6 +185,7 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           if (after.result) return { ...after, confirmed: true };
           if (after.phase !== "board" || after.turn !== "user") {
             if (after.turn === "enemy") session.transition = true;
+            if (handoff) { handoff.ownSince = null; handoff.ownReads = 0; handoff.ready = false; }
             await waitForSample(450); continue;
           }
           if (!TCG.legalState(after)) {
@@ -159,7 +199,8 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           this.adoptObservedState(after, "post-action-resync");
           this.trace("state-resynced", { action, confirmed, after });
           return { ...after, ...this.confirmationExtras?.(), confirmed, resynchronized: true,
-            freshObservationRequired: confirmed && effectAction && !session.transition };
+            freshObservationRequired: confirmed && (effectAction && !session.transition || quietObservationRequired),
+            quietObservationRequired: confirmed && quietObservationRequired };
         }
         if (p.phase === "roll" && combat) return { ...p, confirmed: session.transition };
         await waitForSample(450);
@@ -184,13 +225,14 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           p?.count!==before.hand.length||p.stableReads!==2||
           !["native-badge","full-cost-layout","full-rim-layout"].includes(p.source)||
           !cost||TCG.size(cost)<=0)return false;
-      // An exact legal payment, not an arbitrary total decrease or a growing hand.
-      // Refunded/unknown-fee draw effects deliberately supply no drawPayment.
+      // Exact payment is the default. A deck may additionally prove a native
+      // conversion, but never infer consumption from hand growth or total alone.
       const current=TCG.drawPayment(before,action,memory);
       if(!current||JSON.stringify(current)!==JSON.stringify(cost))return false;
       const spent=Object.fromEntries(TCG.diceOrder.map(e=>[e,(before.dice[e]||0)-(after.dice[e]||0)]));
-      if(Object.values(spent).some(n=>!Number.isInteger(n)||n<0)||TCG.total(spent)!==TCG.size(cost)||
-          !TCG.payment(spent,cost,TCG.team[before.active].element))return false;
+      const exactPaid=Object.values(spent).every(n=>Number.isInteger(n)&&n>=0)&&TCG.total(spent)===TCG.size(cost)&&
+          !!TCG.payment(spent,cost,TCG.team[before.active].element);
+      if(TCG.drawPaymentMatches?!TCG.drawPaymentMatches(before,action,after,memory,cost,exactPaid):!exactPaid)return false;
       const decreased=after.hand.filter(h=>h.id===action.id).length<before.hand.filter(h=>h.id===action.id).length;
       // Ordinary confirmed consumption needs no extra dice OCR. Only the
       // same-name ambiguity adds the existing independent resource proof.

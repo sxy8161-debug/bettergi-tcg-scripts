@@ -1,9 +1,10 @@
 // Shared hand fragments. Inlined at build time; no runtime dependency.
 
 // @fragment bgi-host.handCostMarkersIn
-handCostMarkersIn(f, roi) {
+handCostMarkersIn(f, roi, useColor = false) {
+      const threshold = roi.panel === "handFolded" && roi.layoutKey === "16:10" ? .88 : .9;
       return ["hand_cost_neutral", "hand_cost_element", "hand_cost_dendro", "hand_cost_electro", "hand_cost_matching"]
-        .flatMap(asset => this.matches(f, asset, roi, .9, false));
+        .flatMap(asset => this.matches(f, asset, roi, threshold, useColor));
     }
 // @endfragment bgi-host.handCostMarkersIn
 
@@ -22,17 +23,17 @@ acceptHand(hand, reason) {
 handCostLayoutIn(f, nativeCount = null) {
       return this.memoFrame(f, "costLayout:" + nativeCount, () => {
         const measured = nativeCount ?? (this.handFanReady ? this.memoFrame(f, "hand/rim-count", () =>
-          handLayoutCount(this.matches(f, "hand_rim", [500, 900, 1260, 135], 0.85, false).map(r => r.x))) : null);
-        return costMarkerLayout(this.handCostMarkersIn(f, [450, 750, 1310, 200]), measured);
+          handLayoutCount(this.matches(f, "hand_rim", this.roi("handExpanded", [500, 900, 1260, 135]), 0.85, false).map(r => r.x))) : null);
+        return costMarkerLayout(this.handCostMarkersIn(f, this.roi("handExpanded", [450, 750, 1310, 200])), measured, this.panelTransform("handExpanded"));
       });
     }
 // @endfragment bgi-host.handCostLayoutIn
 
 // @fragment bgi-host.handPriceIn
 handPriceIn(f, marker) {
-      const cost = number(this.numericAt(f, [Math.round(marker.x + 12), Math.round(marker.y - 5), 36, 42], 4));
+      const cost = number(this.numericAt(f, this.observedRoi("handExpanded", [Math.round(marker.x + 12), Math.round(marker.y - 5), 36, 42]), 4));
       return cost !== null ? { cost, reads: 1 } : {
-        cost: number(this.numericAt(f, [Math.round(marker.x), Math.round(marker.y - 30), 60, 90], 4)), reads: 2,
+        cost: number(this.numericAt(f, this.observedRoi("handExpanded", [Math.round(marker.x), Math.round(marker.y - 30), 60, 90]), 4)), reads: 2,
       };
     }
 // @endfragment bgi-host.handPriceIn
@@ -41,7 +42,7 @@ handPriceIn(f, marker) {
 costHandIn(f, nativeCount = null) {
       return this.memoFrame(f, "costHand:" + nativeCount, () => {
         const roi = [450, 750, 1310, 200];
-        const matches = this.handCostMarkersIn(f, roi), layout = this.handCostLayoutIn(f, nativeCount);
+        const matches = this.handCostMarkersIn(f, this.roi("handExpanded", roi)), layout = this.handCostLayoutIn(f, nativeCount);
         const unresolved = (reason, detail = {}) => {
           const key = "hand-cost-unresolved:" + reason;
           if (!this.diagnosticKeys.has(key)) {
@@ -52,9 +53,9 @@ costHandIn(f, nativeCount = null) {
         };
         if (!layout) return unresolved("geometry");
         const yy = Math.floor(
-          Math.max(750, Math.min(840, Math.min(...layout.markers.map((m) => m.y)) - 40)),
+          Math.max(this.point("handExpanded",0,750)[1], Math.min(this.point("handExpanded",0,840)[1], Math.min(...layout.markers.map((m) => m.y)) - 40)),
         );
-        const numbers = costDigitRows(this.enlargedOcrRows(f, [470, yy, 1290, 110], 3));
+        const numbers = costDigitRows(this.enlargedOcrRows(f, this.observedRoi("handExpanded", [470, yy, 1290, 110]), 3));
         let localRecoveryCalls = 0;
         for (const m of layout.markers) {
           const found = costNumbersAt(m, numbers);
@@ -65,14 +66,14 @@ costHandIn(f, nativeCount = null) {
             // Verify only this digit in its tight crop; legal two-digit prices
             // are retained, never clamped to the printed card cost.
             numbers.splice(numbers.indexOf(found[0]),1);
-            const value=number(this.numericAt(f,[Math.round(m.x+12),Math.round(m.y-5),36,42],4));
+            const value=number(this.numericAt(f,this.observedRoi("handExpanded", [Math.round(m.x+12),Math.round(m.y-5),36,42]),4));
             localRecoveryCalls++;
             if(value!==null)numbers.push({...found[0],value});
             continue;
           }
           // The tight crop also reads zeroes that a broad OCR row drops.
           // Use the same numeric ROI as selected/folded prices before wider rows.
-          const digit=number(this.numericAt(f,[Math.round(m.x+12),Math.round(m.y-5),36,42],4));
+          const digit=number(this.numericAt(f,this.observedRoi("handExpanded", [Math.round(m.x+12),Math.round(m.y-5),36,42]),4));
           localRecoveryCalls++;
           if(digit!==null){numbers.push({value:digit,x:m.x+28,y:m.y+15});continue;}
           // Only missing locations: at most three wider crops on the SAME frame.
@@ -86,7 +87,7 @@ costHandIn(f, nativeCount = null) {
             const local = costNumbersAt(
               m,
               costDigitRows(
-                this.enlargedOcrRows(f, [Math.floor(m.x + dx), Math.floor(m.y + dy), w, h], 4),
+                this.enlargedOcrRows(f, this.observedRoi("handExpanded", [Math.floor(m.x + dx), Math.floor(m.y + dy), w, h]), 4),
               ),
             );
             localRecoveryCalls++;
@@ -115,12 +116,12 @@ costHandIn(f, nativeCount = null) {
 foldedHandCostsIn(f, layout) {
       // The same native digits (including green prices), on an already bound
       // folded row. A missing price does not invalidate any card identity.
-      const numbers=costDigitRows(this.enlargedOcrRows(f,[430,965,1050,70],3));
+      const numbers=costDigitRows(this.enlargedOcrRows(f,this.roi("handFolded", [430,965,1050,70]),3));
       const costs=layout.slots.map(({marker})=>{
         const found=costNumbersAt(marker,numbers);
         if(found.length===1&&found[0].value<10)return found[0].value;
         if(found.length>1)return null;
-        return number(this.numericAt(f,[marker.x+12,marker.y-5,36,42],4));
+        return number(this.numericAt(f,this.observedRoi("handFolded", [marker.x+12,marker.y-5,36,42]),4));
       });
       return {costs,source:"native-folded-cost-markers"};
     }
@@ -130,14 +131,14 @@ foldedHandCostsIn(f, layout) {
 handEmpowermentIn(f, markers) {
       // A covered/missing badge is unknown, never proof of no empowerment.
       return markers.map(m => this.matches(f, "hand_empowered",
-        [Math.round(m.x + 68), Math.round(m.y - 12), 68, 66], .92, true).length ? true : null);
+        this.observedRoi("handExpanded", [Math.round(m.x + 68), Math.round(m.y - 12), 68, 66]), .92, true).length ? true : null);
     }
 // @endfragment bgi-host.handEmpowermentIn
 
 // @fragment bgi-host.selectedCardCostIn
 selectedCardCostIn(f, x) {
-      const roi = [Math.round(x - 125), 750, 80, 140];
-      const marks = this.handCostMarkersIn(f, roi)
+      const roi = [Math.round(x - 125), this.point("handExpanded",0,750)[1], 80, 140];
+      const marks = this.handCostMarkersIn(f, this.observedRoi("handExpanded", roi))
         .filter(m => Math.abs(m.x + 103 - x) <= 32).sort((a,b) => a.y - b.y);
       if (!marks.length) return null;
       const m = marks[0];
@@ -168,8 +169,8 @@ async expand(resetFirst = true) {
         return;
       }
       if (resetFirst && !this.boardReady) await this.reset();
-      this.clickAt(967, 1041);
-      this.moveTo(1791, 917);
+      this.clickAt(...this.point("handFolded",967,1041));
+      this.moveTo(...this.point("bottom",1791,917));
       await sleep(180);
       this.handFanReady = true;
       this.handNeedsReset = true;
@@ -401,7 +402,7 @@ handCountIn(f) {
       this.lastHandCountSource = null;
       const counts = [];
       for (let n = 5; n <= 10; n++)
-        if (this.has(f, "num/Hand" + n, [1463, 700, 439, 124], 0.92)) counts.push(n);
+        if (this.has(f, "num/Hand" + n, this.roi("handExpanded", [1463, 700, 439, 124]), 0.92)) counts.push(n);
       if (counts.length > 1) {
         const error = new Error("手牌数量模板相互冲突：" + JSON.stringify(counts));
         error.code = "TCG_HAND_RETRY";
@@ -411,7 +412,7 @@ handCountIn(f) {
         this.lastHandCountSource = "native-badge";
         return counts[0];
       }
-      const n = number(this.ocr(f, [1730, 700, 170, 124]));
+      const n = number(this.ocr(f, this.roi("handExpanded", [1730, 700, 170, 124])));
       if (n !== null && n <= 10) {
         this.lastHandCountSource = "native-badge";
         return n;
@@ -421,8 +422,8 @@ handCountIn(f) {
       if (layout) {
         // An unbound row still checks outer numeric evidence. No per-slot
         // digit recovery is needed just to establish quantity/positions.
-        const y=Math.floor(Math.max(750,Math.min(840,Math.min(...layout.markers.map(m=>m.y))-40))),
-          numbers=layout.measuredCount===null?costDigitRows(this.enlargedOcrRows(f,[470,y,1290,110],3)):[],
+        const y=Math.floor(Math.max(this.point("handExpanded",0,750)[1],Math.min(this.point("handExpanded",0,840)[1],Math.min(...layout.markers.map(m=>m.y))-40))),
+          numbers=layout.measuredCount===null?costDigitRows(this.enlargedOcrRows(f,this.observedRoi("handExpanded", [470,y,1290,110]),3)):[],
           sample=costHandSample(layout,numbers);
         if(sample){
           this.lastHandCountSource = "full-cost-layout";
@@ -432,7 +433,7 @@ handCountIn(f) {
       }
       // Grayscale rim gradient: usable-card gold glow must not change count.
       const rimCount = this.memoFrame(f, "hand/rim-count", () => handLayoutCount(
-        this.matches(f, "hand_rim", [500, 900, 1260, 135], 0.85, false).map((r) => r.x),
+        this.matches(f, "hand_rim", this.roi("handExpanded", [500, 900, 1260, 135]), 0.85, false).map((r) => r.x),
       ));
       if (rimCount !== null) this.lastHandCountSource = "full-rim-layout";
       return rimCount;
@@ -715,8 +716,8 @@ async reset() {
         return;
       }
       this.handFanReady = false;
-      this.clickAt(1190, 545);
-      this.moveTo(1555, 545);
+      this.clickAt(...this.point("board",1190,545));
+      this.moveTo(...this.point("board",1555,545));
       await sleep(300);
       this.handNeedsReset = false;
       this.boardReady = true;
@@ -726,7 +727,7 @@ async reset() {
 
 // @fragment bgi-host.titleIn
 titleIn(f, roi, kind = "card", names = null) {
-      const native = this.ocr(f, roi);
+      const native = this.ocr(f, this.roi("details", roi));
       const identify = text => names ? names.some(name => TCG.norm(name) === TCG.norm(text)) :
         kind === "character" ? TCG.characterName(text) >= 0 : !!TCG.identify(text);
       const card = kind === "card" ? TCG.identify(native) : null;
@@ -735,7 +736,7 @@ titleIn(f, roi, kind = "card", names = null) {
         return card.name;
       }
       if (identify(native) || !native) return native;
-      const enlarged = this.numericAt(f, roi, 3);
+      const enlarged = this.numericAt(f, this.roi("details", roi), 3);
       if (identify(enlarged)) {
         this.trace("title-pixel-recovery", { roi, kind, native, enlarged, scale:3, additionalInputs:0 });
         return enlarged;
@@ -807,6 +808,10 @@ async titleAt(
       watchPhase = false,
     ) {
       if (watchPhase) this.requireHandObservation(this.phase(), "before-title-input");
+      // Opening/character arguments are reference points. Hand x is already
+      // measured in F; only its reference row y needs the hand-panel transform.
+      if (opening || kind === "character") [x,y]=this.point(opening?"opening":"board",x,y);
+      else y=this.point("handExpanded",0,y)[1];
       if (!opening && kind === "card") this.selectedCostProof = this.handPositionProof;
       if (hover) this.moveTo(x, y);
       else this.clickAt(x, y);
@@ -893,15 +898,26 @@ async inputHand(action,before,memory,prepared=null) {
       const x = selected?prepared.x:this.handPoints(current.length)[action.index];
       if (!selected) await this.inspectHandCard(action, x);
       await this.checkCardInput?.(action,before,x,memory);
-      if(this.phase().turn!=="user")throw new Error("拖牌前回合已改变");
+      const phase = this.phase();
+      if (phase.turn !== "user") {
+        const error = new Error("拖牌前回合已改变"), actual = this.captureGeometry?.actualSize;
+        if (actual?.width === 2560 && [1440,1600].includes(actual.height)) {
+          error.code = "TCG_OBSERVATION_INTERRUPTED"; error.phase = { ...phase, hand: null };
+          this.boardReady = false; this.preparedHandInput = null; this.autoRisk = true;
+          this.trace("hand-input-interrupted", { action, stage: "before-drag", phase: phase.phase,
+            turn: phase.turn, inputSubmitted: false });
+        }
+        throw error;
+      }
       const targeted = action.type === "card" && action.target !== null;
       this.consumptionReceipt={id:action.id,index:action.index,target:action.target??null,
         beforeKey:TCG.boardKey(before),inputSent:false,
         ...(action.type==="card"&&TCG.byId[action.id]?.type==="draw"?
           {sourceInstanceIds:h.instanceIds?.slice()||[],cost:TCG.drawPayment(before,action,memory)}:{}),
         ...(sourceCount?{sourceCountProof:sourceCount}:{})};
-      await this.drag(x, 945, action.type === "tune" ? 1867 : targeted ? charX[action.target] : x,
-        action.type === "tune" ? 518 : targeted ? 720 : 595);
+      const destination=action.type==="tune"?this.point("phase",1867,518):
+        targeted?this.point("board",charX[action.target],720):[x,this.point("board",0,595)[1]];
+      await this.drag(x, this.point("handExpanded",0,945)[1], ...destination);
       this.consumptionReceipt.inputSent=true;
       if (action.type === "tune") await this.confirmTune();
       else await this.cardConfirm(action,before);

@@ -28,7 +28,7 @@ async actionReroll(before, memory = TCG.freshMemory()) {
           page = this.frame((f) => {
             const phase = this.phaseIn(f);
             if (phase.phase !== "roll") return { phase };
-            const text = this.ocr(f, counterROI),
+            const text = this.ocr(f, this.roi("bottom", counterROI)),
               remaining = TCG.rerollCounter(text);
             const blank = remaining === null && TCG.norm(text) === "";
             return {
@@ -37,10 +37,10 @@ async actionReroll(before, memory = TCG.freshMemory()) {
               remaining,
               blank,
               blankHeader: blank
-                ? TCG.norm(this.ocr(f, [844, 167, 232, 65])) === "重投骰子" &&
-                  TCG.norm(this.ocr(f, [700, 230, 520, 50])) === "请选择要重投的骰子"
+                ? TCG.norm(this.ocr(f, this.roi("header", [844, 167, 232, 65]))) === "重投骰子" &&
+                  TCG.norm(this.ocr(f, this.roi("header", [700, 230, 520, 50]))) === "请选择要重投的骰子"
                 : false,
-              buttons: this.matches(f, "core/确定", [500, 900, 920, 150]),
+              buttons: this.matches(f, "core/确定", this.roi("bottom", [500, 900, 920, 150])),
               dice:
                 !session.selection &&
                 (remaining === session.expected ||
@@ -124,13 +124,6 @@ async actionReroll(before, memory = TCG.freshMemory()) {
           await sleep(300);
           continue;
         }
-        const current = JSON.stringify([page.remaining, page.buttons, page.dice?.items]);
-        stable = current === key ? stable + 1 : 1;
-        key = current;
-        if (stable < 2) {
-          await sleep(300);
-          continue;
-        }
         if (!session.selection) {
           const bad = page.dice.items.filter(
             (d) => d.element !== session.wanted && d.element !== "Omni",
@@ -157,6 +150,10 @@ async actionReroll(before, memory = TCG.freshMemory()) {
         // selection. Empty OCR retries read-only; no selection replay.
         const b = page.buttons[0];
         this.clickAt(b.x + b.w / 2, b.y + b.h / 2);
+        // 1440 can restore the raised fan on leaving reroll. Let the existing
+        // action-board boundary fold it before reading HP/death/status again.
+        const actual = this.captureGeometry?.actualSize;
+        if (actual?.width === 2560 && [1440,1600].includes(actual.height)) this.handNeedsReset = true;
         session.sent++;
         session.expected = page.remaining === null ? 0 : page.remaining - 1;
         const selected = session.selection.selected;
@@ -187,7 +184,7 @@ async confirmOpening(data) {
       if (this.phase().phase !== "opening") throw new Error("确认起手前页面已改变");
       this.moveTo(1791, 860);
       await sleep(150);
-      await this.clickButton("确定", [720, 880, 480, 140]);
+      await this.clickButton("确定", this.roi("bottom", [720, 880, 480, 140]));
       // Confirm exactly once, then prove progression; no blind double-click.
       let stable = 0,
         previous = "";
@@ -219,7 +216,7 @@ firstPickObservation() {
         return {
           ...p,
           selectedTarget:
-            p.phase === "pick" ? TCG.characterName(this.ocr(f, [311, 115, 341, 50])) : null,
+            p.phase === "pick" ? TCG.characterName(this.ocr(f, this.roi("details", [311, 115, 341, 50]))) : null,
         };
       });
     }
@@ -230,8 +227,8 @@ pickSelectionIn(f) {
       // Native forced selection can leave ALL character cards lowered. The
       // selected card opens its exact identity and a dedicated selection banner.
       return {
-        who: TCG.characterName(this.ocr(f, [311, 115, 341, 50])),
-        banner: TCG.norm(this.ocr(f, [700, 508, 580, 65])),
+        who: TCG.characterName(this.ocr(f, this.roi("details", [311, 115, 341, 50]))),
+        banner: TCG.norm(this.ocr(f, this.roi("phase", [700, 508, 580, 65]))),
       };
     }
 // @endfragment bgi-host.pickSelectionIn
@@ -294,7 +291,7 @@ async opening() {
       };
       const toggle = async (index, purpose) => {
         // First card's centre is covered by its own left detail panel.
-        this.clickAt(startingXs[index] + 70, 540);
+        this.clickAt(...this.point("opening",startingXs[index]+70,540));
         await sleep(350);
         let observed;
         try { observed = await this.openingSelections(startingXs); }
@@ -369,7 +366,7 @@ async openingSelections(xs) {
       for (let attempt = 0; attempt < 8; attempt++) {
         const observation = this.frame((f) => ({
           phase: this.phaseIn(f).phase,
-          labels: xs.map((x) => TCG.norm(this.ocr(f, [x - 100, 730, 200, 60]))),
+          labels: xs.map((x) => TCG.norm(this.ocr(f, this.roi("opening", [x - 100, 730, 200, 60])))),
         }));
         if (observation.phase !== "opening") throw new Error("起手置换检查期间页面改变");
         if (observation.labels.some((t) => t !== "" && t !== "替换")) {
@@ -392,28 +389,26 @@ async pick(target, first = true) {
       if (!Number.isInteger(target) || target < 0 || target >= charX.length) throw new Error("出战角色索引无效");
       if(!first)return this.pickForced(target);
       if (this.phase().phase !== "pick") throw new Error("当前不是出战页");
-      this.clickAt(charX[target], 720);
+      this.clickAt(...this.point("board",charX[target],720));
       this.trace("pick-target-clicked", { target, name:TCG.team[target].name, first, point:[charX[target],720] });
       await sleep(500);
       // A preselected card can confirm on the FIRST click (native 11:07 run).
       // Otherwise ChooseFirst uses the same card again, but only after positive
       // selected-target evidence. Never send a second input to a roll/board.
-      let confirmationSent = false, selectionStable = 0;
+      let confirmationSent = false;
       let stable = 0, lastKey = "", last = { phase: "unknown", turn: "none" };
       for (let attempt = 0; attempt < 60; attempt++) {
         last = this.firstPickObservation();
         if (last.phase === "pick" && !confirmationSent && last.selectedTarget === target) {
-          if (++selectionStable >= 2) {
-            this.trace("pick-selected", { target, name:TCG.team[target].name, first, proof:"exact-target-title-on-pick-page" });
-            this.clickAt(charX[target], 720);
-            confirmationSent = true;
-            this.trace("pick-confirm-clicked", { target, first, point:[charX[target],720], method:"official-character-card" });
-            this.moveTo(1555, 860);
-            selectionStable = 0; stable = 0; lastKey = "";
-            await sleep(500);
-            continue;
-          }
-        } else selectionStable = 0;
+          this.trace("pick-selected", { target, name:TCG.team[target].name, first, proof:"exact-target-title-on-pick-page" });
+          this.clickAt(...this.point("board",charX[target],720));
+          confirmationSent = true;
+          this.trace("pick-confirm-clicked", { target, first, point:[charX[target],720], method:"official-character-card" });
+          this.moveTo(1555, 860);
+          stable = 0; lastKey = "";
+          await sleep(500);
+          continue;
+        }
         let accepted = last.phase === "roll" || !!last.result;
         if (last.phase === "board" && ["user", "enemy"].includes(last.turn)) {
           try { last = this.board(); } catch (e) {
@@ -450,16 +445,16 @@ async pickForced(target) {
         if(initial.phase!=="pick" || !TCG.alive(initial.characters?.[target])) {
           const e=new Error("强制换人局面尚未核实");e.code="TCG_PICK_RETRY";throw e;
         }
-        this.clickAt(charX[target],720);
+        this.clickAt(...this.point("board",charX[target],720));
         this.forcedPickSession={target,confirmed:false};
         this.trace("forced-pick-selected",{target,name:TCG.team[target].name});
         await sleep(500);
       }
-      let confirmed=this.forcedPickSession.confirmed,stable=0,key="",last=null,selectionStable=0;
+      let confirmed=this.forcedPickSession.confirmed,stable=0,key="",last=null;
       for(let attempt=0;attempt<40;attempt++) {
         try{last=this.board(false, true);}catch(e){
           if(!["TCG_DICE_RETRY","TCG_BOARD_RETRY"].includes(e.code))throw e;
-          stable=0;key="";selectionStable=0;
+          stable=0;key="";
           this.trace("forced-pick-read-deferred",{target,attempt,code:e.code});await sleep(400);continue;
         }
         if(last.result){this.forcedPickSession=null;return last;}
@@ -468,16 +463,12 @@ async pickForced(target) {
           ["请选择一位角色出战","请选择一个角色出战"].includes(last.pickSelection.banner);
         if(last.phase==="pick" && TCG.alive(c) && (c.raised===true || selected) && !confirmed) {
           // Positive selected-card evidence; exactly one confirmation input.
-          selectionStable++;
-          if(selectionStable>=2) {
-            this.clickAt(charX[target],720);confirmed=true;this.forcedPickSession.confirmed=true;
-            this.trace("forced-pick-confirm-clicked",{target,point:[charX[target],720],method:"official-character-card",
-              proof:selected?"exact-target-title-and-pick-banner":"raised-living-target"});
-          }
+          this.clickAt(...this.point("board",charX[target],720));confirmed=true;this.forcedPickSession.confirmed=true;
+          this.trace("forced-pick-confirm-clicked",{target,point:[charX[target],720],method:"official-character-card",
+            proof:selected?"exact-target-title-and-pick-banner":"raised-living-target"});
           stable=0;key="";
         } else if(last.phase==="board" && ["user","enemy"].includes(last.turn) &&
             last.active===target && TCG.alive(c)) {
-          selectionStable=0;
           const next=JSON.stringify([last.phase,last.turn,last.active]);
           stable=next===key?stable+1:1;key=next;
           if(stable>=2) {
@@ -496,7 +487,7 @@ async pickForced(target) {
               confirmationInputs:confirmed?1:0,proof:"complete-native-board-overrides-planned-target"});
             this.forcedPickSession=null;return observed;
           }
-          stable=0;key="";selectionStable=0;
+          stable=0;key="";
         } else if(["settlement","choice","roll"].includes(last.phase)) {
           // End-phase damage can require a replacement BEFORE remaining summons,
           // a blessing choice, and next-round dice. Hand off the stable native
@@ -504,7 +495,6 @@ async pickForced(target) {
           // A preselected target can finish on the FIRST card click. Native
           // phase exit is enough to transfer page ownership, never to assert
           // a cast, card consumption, or an unobserved active character.
-          selectionStable=0;
           const next=JSON.stringify(["handoff",last.phase,last.turn]);
           stable=next===key?stable+1:1;key=next;
           if(stable>=2) {
@@ -515,7 +505,7 @@ async pickForced(target) {
             return {phase:last.phase,turn:last.turn};
           }
         } else {
-          stable=0;key="";selectionStable=0;
+          stable=0;key="";
           if(confirmed && last.phase==="pick" && c?.dead===true) {
             this.trace("forced-pick-defeated-again",{target});this.forcedPickSession=null;return last;
           }

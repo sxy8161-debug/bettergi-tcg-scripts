@@ -1,0 +1,8 @@
+{
+  "scope": "representative measured marker coordinates; locator replay, not native gameplay",
+  "rows": [
+    {"sourceImage":"21f9472076ac05ae633a69d8-1-raw.png","sourceImageSha256":"362fce1c4baa7b9b567ce6efedf0a4b2a1144a51c15d30857239337efe101c97","expectedCount":5,"gray":[[692,983],[692,983],[948,983],[692,983],[948,983],[948,983],[777,983],[863,983],[1033,983],[1206,989]],"color":[[692,983],[948,983],[777,983],[863,983],[1033,983]]},
+    {"sourceImage":"7d873506e0808e6d4787162f-0-raw.png","sourceImageSha256":"ea9e2f1e6599d777f9dc9c4f06bfa755380f5a0d27dd27ea0a88402e025d3c9a","expectedCount":5,"gray":[[948,983],[948,983],[948,983],[692,983],[777,983],[863,983],[1033,983]],"color":[[948,983],[692,983],[777,983],[863,983],[1033,983]]},
+    {"sourceImage":"96dd4fe1545810f1e355c278-0-raw.png","sourceImageSha256":"b03a34983529ee84c270251a64d2af3ca3d58cd33fef330663f1969322b52db0","expectedCount":4,"gray":[[735,983],[820,983],[991,983],[735,983],[820,983],[991,983],[820,983],[991,983],[820,983],[991,983],[905,983]],"color":[[735,983],[820,983],[991,983],[905,983]]}
+  ]
+}
