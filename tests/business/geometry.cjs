@@ -269,30 +269,65 @@ module.exports = async function (test) {
       assert.throws(() => host.ocr(f, bad), e => e.code === "TCG_CAPTURE_GEOMETRY");
     assert.deepEqual(plain(host.observedRoi("details", [101,202,30,40]).rect), [101,202,30,40]);
   });
-  await test("geometry: actual local OCR dimensions round-trip to F once, cache only this frame and release on error", () => {
-    const f = fixture("raiden",2560,1440), dispose=[], crops=[], capture=f.env.captureGameRegion;
+  await test("geometry: actual local OCR dimensions round-trip to F once, cache only this frame and release on error", async () => {
+   for(const scenario of [
+    {height:1440,panel:"details",rect:[135.4,122.4,238.2,42.2],zoom:1.25,crop:[135,122,238,42],output:[298,53],box:[254,143,23.8,4.2],click:[266,145]},
+    {height:1600,panel:"opening",rect:[283,730,200,60],zoom:1,crop:[307,783,193,58],output:[200,60],box:[403.5,812,19.3,5.8],click:[413,815]},
+   ]){
+    const f = fixture("raiden",2560,scenario.height), dispose=[], crops=[];
+    await f.host.waitForCapture();
+    const capture=f.env.captureGameRegion,[width,height]=scenario.output;
     let reads=0, fail=false;
     f.env.RecognitionObject={Ocr:(...roi)=>({roi})};
     f.env.OpenCvSharp={OpenCvSharp:{Size:class{constructor(w,h){this.w=w;this.h=h;}}}};
     f.env.ImageRegion=class{
       constructor(mat){this.mat=mat;}
-      FindMulti(ro){reads++;assert.deepEqual(Array.from(ro.roi),[0,0,298,53]);if(fail)throw new TypeError("scripted OCR failure");
-        return {count:1,0:{text:"确定",x:149,y:26.5,width:29.8,height:5.3}};}
+      FindMulti(ro){reads++;assert.deepEqual(Array.from(ro.roi),[0,0,width,height]);if(fail)throw new TypeError("scripted OCR failure");
+        return {count:1,0:{text:"确定",x:width/2,y:height/2,width:width/10,height:height/10}};}
       dispose(){dispose.push("region");this.mat.dispose();}
     };
     f.env.captureGameRegion=()=>Object.assign(capture(),{DeriveCrop(...roi){crops.push(roi);return {
-      SrcMat:{Resize(){return {dispose(){dispose.push("resized");}};}},dispose(){dispose.push("crop");}};}});
-    const area=f.host.observedRoi("details",[135.4,122.4,238.2,42.2]);
-    const sample=()=>f.host.frame(image=>{const a=f.host.enlargedOcrRows(image,area,1.25);
-      assert.equal(f.host.enlargedOcrRows(image,area,1.25),a);return a;});
-    const rows=sample();assert.equal(reads,1);assert.deepEqual(crops,[[135,122,238,42]]);
-    assert.equal(rows[0].x,254);assert.equal(rows[0].y,143);
-    assert.ok(Math.abs(rows[0].w-23.8)<1e-9);assert.ok(Math.abs(rows[0].h-4.2)<1e-9);
+      SrcMat:{Resize(size){assert.deepEqual([size.w,size.h],scenario.output);return {dispose(){dispose.push("resized");}};}},dispose(){dispose.push("crop");}};}});
+    const area=f.host.roi(scenario.panel,scenario.rect);
+    const sample=()=>f.host.frame(image=>{const a=f.host.enlargedOcrRows(image,area,scenario.zoom);
+      assert.equal(f.host.enlargedOcrRows(image,area,scenario.zoom),a);return a;});
+    const rows=sample();assert.equal(reads,1);assert.deepEqual(crops,[scenario.crop]);
+    ["x","y","w","h"].forEach((key,i)=>assert.ok(Math.abs(rows[0][key]-scenario.box[i])<1e-9));
     f.host.clickAt(rows[0].x+rows[0].w/2,rows[0].y+rows[0].h/2);
-    assert.deepEqual(f.calls,[["move",266,145],["click"]]);
+    assert.deepEqual(f.calls,[["move",...scenario.click],["click"]]);
     sample();assert.equal(reads,2);fail=true;
     assert.throws(sample,/scripted OCR failure/);
     assert.equal(reads,3);assert.deepEqual(dispose,Array(3).fill(["region","resized","crop"]).flat());
+   }
+  });
+  await test("geometry:1600 roll uses measured native dice scale and all eight distinct slots",async()=>{
+    const evidence=require("./fixtures/roll-1600-native-20261018.json"),f=fixture("raiden",2560,1600),h=f.host;
+    await h.waitForCapture();
+    // Recorded rectangles are independent pixel measurements, not generated
+    // by panelTransform. This tests consumers, not a new pixel accuracy claim.
+    h.matches=(_,asset,area)=>{
+      assert.equal(area.panel,"rollDice");
+      assert.ok(area.scale>=evidence.measuredScaleRange[0]&&area.scale<=evidence.measuredScaleRange[1]);
+      const [x,y,w,hh]=area.rect;
+      return evidence.hits.filter(r=>asset==="dice/NativeRoll"+r.element&&r.x>=x&&r.y>=y&&r.x+r.w<=x+w&&r.y+r.h<=y+hh);
+    };
+    const dice=h.frame(image=>h.diceIn(image,true));
+    assert.deepEqual(plain(dice.items.map(d=>[d.element,d.slot])),evidence.hits.map((d,i)=>[d.element,i]));
+    assert.deepEqual(plain(dice.dice),{Cryo:0,Hydro:2,Pyro:2,Electro:2,Anemo:1,Geo:0,Dendro:0,Omni:1});
+  });
+  await test("recognition: complete views and different-identity margin decide acceptance",()=>{
+    const {env}=load("raiden"),layout={status:"readable",count:1,slots:[{index:0}]};
+    const entry=(id,views)=>({id,views:views.map((patches,i)=>({name:String(i),patches}))});
+    const identify=(entries,scores)=>env.TCGCollapsedHand.identify(layout,{scoreFloor:.9,runnerUpGap:.2,
+      patches:[[0,0,46,22],[0,26,46,22]],entries},(_slot,_patch,file)=>scores[file]).slots[0];
+    const a=entry("a",[["a1","a2"],["a3","a4"]]),b=entry("b",[["b1","b2"]]);
+    // A's two complete views do not compete against each other for the gap.
+    assert.equal(identify([a,b],{a1:.99,a2:.99,a3:.98,a4:.98,b1:.6,b2:.6}).id,"a");
+    const ambiguous=identify([a,b],{a1:.99,a2:.99,a3:.98,a4:.98,b1:.98,b2:.98});
+    assert.equal(ambiguous.id,null);assert.equal(ambiguous.rejectionReason,"runner-up-gap");
+    // Never splice individually good patches across incomplete/different views.
+    assert.equal(identify([a,b],{a1:.99,a2:.1,a3:.1,a4:.99,b1:.2,b2:.2}).id,null);
+    assert.equal(identify([entry("a",[["a1"]]),b],{a1:.99,b1:.2,b2:.2}).id,null);
   });
   await test("geometry: Iansan fee, payment banner and soup coordinates preserve1080 and follow1600 panels", async()=>{
    for(const height of [1080,1600]){

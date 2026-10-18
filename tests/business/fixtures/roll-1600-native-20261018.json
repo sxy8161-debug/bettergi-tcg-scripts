@@ -1,0 +1,19 @@
+{
+  "scope": "External native screenshot coordinates measured offline; not player-frame or native automatic acceptance",
+  "sourceImage": "d6149b5bd99cf273404f25e3-0-raw.png",
+  "sourceImageSha256": "5fc4cb0162405b4c94c5724d0e0e94fc78d0c7c60604794d28ce109b919f2680",
+  "actualSize": [2560, 1600],
+  "frameSize": [1920, 1200],
+  "measurement": "Color template search over manually viewed front-face crops; details in reports/review-6f7e852-20261018/roll-measured.json. Rounded rectangles below, unchanged raw image.",
+  "measuredScaleRange": [1.08, 1.125],
+  "hits": [
+    {"element":"Omni","x":554,"y":423,"w":57,"h":48},
+    {"element":"Electro","x":810,"y":426,"w":52,"h":52},
+    {"element":"Hydro","x":1059,"y":423,"w":49,"h":48},
+    {"element":"Pyro","x":1315,"y":421,"w":46,"h":50},
+    {"element":"Electro","x":564,"y":701,"w":51,"h":51},
+    {"element":"Hydro","x":811,"y":697,"w":48,"h":47},
+    {"element":"Pyro","x":1063,"y":696,"w":45,"h":49},
+    {"element":"Anemo","x":1305,"y":699,"w":49,"h":48}
+  ]
+}
