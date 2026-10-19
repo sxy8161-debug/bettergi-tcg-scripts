@@ -1,0 +1,66 @@
+/* @include src/shared/host.inc.js */
+(function(root) {
+  "use strict";
+  const {charX,number}=root.TCGBetterGI;
+  class BetterGIHost extends root.TCGBetterGI.BetterGIHost {
+    constructor(options) {
+      super(options);
+      this.automaticBanners=["风风轮舞踢","准备技能","正在准备技能"];
+      this.talentTargets={skivingNewAndImproved:1,flowingFlame:2};
+    }
+    choiceIn(){return null;}
+    async resolveChoice() {
+      const error=new Error("当前选择页不属于本牌表，等待原生页面恢复，不猜选项");
+      error.code="TCG_CHOICE_RETRY";throw error;
+    }
+    initialObservationBoard(){return this.board(true);}
+    boardExtrasIn(){return {};}
+    prepareBoardObservation(){this.moveTo(...this.point("board",1555,545));}
+    skillFeeIn(f,a,verifiedIdentity=undefined) {
+      const identity=verifiedIdentity===undefined?this.skillPreviewIn(f).identity:verifiedIdentity;
+      if(identity?.who!==a.who||identity?.skill!==a.skill)return null;
+      const roi=a.skill==="Q"?[1780,1010,36,35]:a.skill==="E"?[1698,1010,36,35]:null;
+      if(!roi)return null;
+      const n=number(this.numericAt(f,this.roi("bottom",roi),4)),limit=a.who===2&&a.skill==="Q"?4:3;
+      return n!==null&&n>=0&&n<=limit?n:null;
+    }
+    /* @include src/shared/equipment-input.inc.js */
+    async executeInput(a,b,m) {
+      if(a.type==="card"&&!TCG.cardLegal(b,a,m))throw new Error("卡牌费用、目标或前置条件不合法");
+      if(a.type==="skill"&&!TCG.skillLegal(b,a,m))throw new Error("技能资源或充能不足");
+      await this.requireUnchangedBoard(b);
+      if(a.type==="probe")return this.probeSkill(a,b,m);
+      const cost=a.type==="skill"?TCG.size(TCG.skillCost(a.who,a.skill,m,b)):a.type==="card"?
+        TCG.size(TCG.cardCost(a.id,a.target,m,b)):a.type==="switch"?TCG.size(TCG.switchCost(m)):0;
+      this.expectedDice=a.type==="end"?null:TCG.total(b.dice)-cost+TCG.total(TCG.cardRefund(a,m,b));
+      const wearer=a.type==="switch"?a.target:b.active;
+      this.gamblerBudget=m.artifactKinds[wearer]==="gambler"?
+        {owner:wearer,remaining:TCG.gamblerRemaining(m,wearer),enemies:TCG.enemyCount(b)}:null;
+      m.fastSwitch=b.active===0&&!m.monaFastUsed;
+      this.boardReady=false;
+      if(a.type==="card"||a.type==="tune")await this.inputHand(a,b,m);
+      else if(a.type==="skill")await this.inputSkill(a,b,m,cost,true);
+      else if(a.type==="switch")await this.inputSwitch(a,b,m);
+      else if(a.type==="end")await this.inputEnd();
+      else throw new Error("未支持的动作："+a.type);
+      this.autoRisk=a.type==="skill"&&a.who===1&&a.skill==="E"||a.type==="card"&&a.id==="skivingNewAndImproved";
+    }
+    async confirm(a,b,m=TCG.freshMemory()) {
+      const result=await super.confirm(a,b,m);
+      const cast=a.type==="skill"?a:a.type==="card"?TCG.byId[a.id]?.combatSkill:null;
+      if(cast&&result.confirmed&&Array.isArray(result.enemies)) {
+        const estimate=TCG.damageEstimate(b,m,cast.who,cast.skill);
+        const comparable=b.enemies.length===result.enemies.length&&b.enemies.every((e,i)=>
+          (!e.identity||e.identity===result.enemies[i].identity)&&
+          (TCG.known(e.hp)||e.dead===true)&&(TCG.known(result.enemies[i].hp)||result.enemies[i].dead===true));
+        const netHpLoss=comparable?b.enemies.map((e,i)=>(e.dead?0:e.hp)-(result.enemies[i].dead?0:result.enemies[i].hp)):null;
+        this.trace("damage-audit",{who:cast.who,skill:cast.skill,estimate,
+          beforeHp:b.enemies.map(e=>e.hp),afterHp:result.enemies.map(e=>e.hp),netHpLoss,
+          attribution:"net observed HP change; may include prepared attacks, summons, enemy healing and special rules; not isolated skill damage",
+          comparable,defenseKnown:estimate.guaranteed!==null});
+      }
+      return result;
+    }
+  }
+  root.TCGBetterGI={...root.TCGBetterGI,BetterGIHost};
+})(globalThis);

@@ -1,6 +1,6 @@
 {
   "name": "bettergi-tcg-scripts",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "private": true,
   "scripts": {
     "test": "node tests/business.cjs",

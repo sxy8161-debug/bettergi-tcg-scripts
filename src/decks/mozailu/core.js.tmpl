@@ -1,0 +1,270 @@
+/* GPL-3.0. Confirmed-action accounting; projections never replace native facts. */
+(function(root) {
+  "use strict";
+  const team=[
+    {name:"莫娜",element:"Hydro",maxHp:10,maxEnergy:3,weapon:"catalyst",skills:{NA:"因果点破",E:"水中幻愿",Q:"星命定轨"}},
+    {name:"早柚",element:"Anemo",maxHp:10,maxEnergy:2,weapon:"claymore",skills:{NA:"忍刀·终末番",E:"呜呼流·风隐急进",Q:"呜呼流·影貉缭乱"}},
+    {name:"迪卢克",element:"Pyro",maxHp:10,maxEnergy:3,weapon:"claymore",skills:{NA:"淬炼之剑",E:"逆焰之刃",Q:"黎明"}}
+  ];
+  const cards=[
+    ["flowingFlame","流火焦灼",{element:"Pyro",n:3},"talent",2,2],
+    ["skivingNewAndImproved","偷懒的新方法",{element:"Anemo",n:3},"talent",2,1],
+    ["wolf","狼的末路",{aligned:3},"weapon",2],
+    ["gambler","赌徒的耳环",{aligned:1},"artifact",2],
+    ["gilded","饰金之梦",{aligned:3},"artifact",2],
+    ["troupe","黄金剧团的奖赏",{},"artifact",2],
+    ["house","黄金屋",{},"support",1],
+    ["timaeus","蒂玛乌斯",{aligned:2},"support",2],
+    ["liben","立本",{},"support",2],
+    ["dunyarzad","迪娜泽黛",{aligned:1},"support",2],
+    ["garden","旧时庭园",{},"legend",1],
+    ["shift","换班时间",{},"switch",2],
+    ["draw","运筹帷幄",{aligned:1},"draw",2],
+    ["lyre","琴音之诗",{},"recycle",2],
+    ["boar","野猪公主",{},"event",2],
+    ["countdown3","幻戏倒计时：3",{aligned:3},"draw",2],
+    ["countdown2","幻戏倒计时：2",{aligned:2},"draw",0],
+    ["countdown1","幻戏倒计时：1",{aligned:1},"draw",0],
+    ["show","幻戏开始！",{},"draw",0]
+  ].map(([id,name,cost,type,copies,target])=>({id,name,cost,type,copies,
+    ...(type==="talent"?{target,combatSkill:{who:target,skill:"E"}}:{})}));
+  const byId=Object.fromEntries(cards.map(c=>[c.id,c]));
+  const cardTitleAliases={运筹惟:"运筹帷幄"},characterAliases={};
+  /* @include src/shared/rules.inc.js#tcg-rules.norm */
+  /* @include src/shared/rules.inc.js#tcg-rules.identify */
+  /* @include src/shared/rules.inc.js#tcg-rules.observedCard */
+  /* @include src/shared/rules.inc.js#tcg-rules.handCardKnown */
+  /* @include src/shared/rules.inc.js#tcg-rules.indexedHand */
+  /* @include src/shared/rules.inc.js#tcg-rules.characterName */
+  /* @include src/shared/rules.inc.js#tcg-rules.diceOrder */
+  /* @include src/shared/rules.inc.js#tcg-rules.known */
+  /* @include src/shared/rules.inc.js#tcg-rules.alive */
+  /* @include src/shared/rules.inc.js#tcg-rules.total */
+  /* @include src/shared/rules.inc.js#tcg-rules.size */
+  /* @include src/shared/rules.inc.js#tcg-rules.boardKey */
+  /* @include src/shared/rules.inc.js#tcg-rules.actionKey */
+  /* @include src/shared/rules.inc.js#tcg-rules.enemyCount */
+  /* @include src/shared/rules.inc.js#tcg-rules.bag */
+  /* @include src/shared/rules.inc.js#tcg-rules.cardCountDecreased */
+  /* @include src/shared/rules.inc.js#tcg-rules.removedOne */
+  /* @include src/shared/rules.inc.js#tcg-rules.OpeningFlow */
+  /* @include src/shared/rules.inc.js#tcg-rules.freshActionBoard */
+  /* @include src/shared/rules.inc.js#tcg-rules.rerollCounter */
+  /* @include src/shared/combat.inc.js#tcg-rules.elementReaction */
+  /* @include src/shared/combat.inc.js#tcg-rules.damageAgainst */
+  function payment(dice,cost,preserve="Hydro") {
+    const secondaryPaymentWeights={},emptyPaymentWeight={weight:0};
+    /* @include src/shared/rules.inc.js#tcg-rules.countedPaymentBody */
+  }
+  function freshMemory() {
+    return {round:0,used:[0,0,0],defeated:[false,false,false],lastActive:0,
+      freeSwitch:false,fastSwitch:false,monaFastUsed:false,monaStarted:false,bubble:false,pyroInfusion:0,dilucE:0,
+      weapons:[false,false,false],weaponKinds:[null,null,null],artifacts:[false,false,false],artifactKinds:[null,null,null],
+      talents:[false,false,false],troupe:[0,0,0],gamblerUsed:[0,0,0],enemyAliveCount:null,
+      supports:[],supportSlots:0,supportStateKnown:true,garden:false,legendUsed:false,lyre:0,boar:0,firstCard:true,
+      sayuSummon:0,reflection:0,skillCosts:null,uncertainActions:[],refusedActions:[],probeKeys:[]};
+  }
+  function nextRound(m) {
+    if(m.round>0) {
+      for(let i=0;i<3;i++)if(m.artifactKinds[i]==="troupe"&&!m.defeated[i]&&m.lastActive!==i)m.troupe[i]=Math.min(2,m.troupe[i]+1);
+      for(const x of m.supports)if(x.id==="timaeus"&&known(x.materials))x.materials++;
+      m.supports=m.supports.filter(x=>x.id!=="liben"||x.collected<3);
+      m.pyroInfusion=Math.max(0,m.pyroInfusion-1);m.sayuSummon=Math.max(0,m.sayuSummon-1);m.reflection=0;
+    }
+    m.round++;m.dilucE=0;m.monaFastUsed=false;m.fastSwitch=false;
+    m.garden=false;m.lyre=0;m.boar=0;m.firstCard=true;
+    m.uncertainActions=[];m.refusedActions=[];clearSkillCosts(m);
+    m.supportSlots=m.supportStateKnown?m.supports.length:4;
+  }
+  function legalState(s) {
+    return !!s&&s.phase==="board"&&s.turn==="user"&&Array.isArray(s.characters)&&s.characters.length===3&&
+      known(s.active)&&s.active<3&&alive(s.characters[s.active])&&s.diceKnown===true&&s.dice&&
+      Object.keys(s.dice).every(e=>diceOrder.includes(e))&&Object.values(s.dice).every(known)&&total(s.dice)<=16&&
+      Array.isArray(s.hand)&&s.hand.every(handCardKnown)&&s.characters.every((c,i)=>c&&(c.dead===true||
+        alive(c)&&typeof c.frozen==="boolean"&&known(c.energy)&&c.energy<=team[i].maxEnergy));
+  }
+  function switchCost(m){return {any:m.freeSwitch?0:1};}
+  function skillCost(who,skill,m,s=null) {
+    const base=skill==="NA"?{element:team[who].element,n:1,any:2}:{element:team[who].element,n:who===2&&skill==="Q"?4:3};
+    if(skill==="E")base.n=Math.max(0,base.n-(m.troupe[who]||0)-(who===2&&m.talents[2]&&[1,2].includes(m.dilucE)?1:0));
+    const quote=s&&skillQuote(s,m,{who,skill});
+    if(quote?.source==="native-skill-preview"&&known(quote.n)&&quote.n<= (who===2&&skill==="Q"?4:3)) {
+      if(skill==="NA"){base.n=Math.min(1,quote.n);base.any=Math.max(0,quote.n-1);}else base.n=quote.n;
+    }
+    return base;
+  }
+  function skillLegal(s,a,m) {
+    return ["NA","E","Q"].includes(a.skill)&&s.active===a.who&&alive(s.characters[a.who])&&
+      s.characters[a.who].frozen===false&&(a.skill!=="Q"||s.characters[a.who].energy>=team[a.who].maxEnergy)&&
+      !!payment(s.dice,skillCost(a.who,a.skill,m,s),team[a.who].element);
+  }
+  // All-dice replacement (Timaeus) precedes ordinary die reductions. Within
+  // ordinary reductions, combat statuses precede supports in installation order.
+  // Return the actual reducers as well as the price, so only a confirmed play consumes them.
+  function cardPrice(id,target,m) {
+    const c=byId[id],base={...c.cost},effects=[];let n=size(base);
+    if(c.type==="talent")n=Math.max(0,n-(m.troupe[target]||0));
+    if(c.type==="artifact"&&n>0) {
+      const i=m.supports.findIndex(x=>x.id==="timaeus"&&x.round!==m.round&&known(x.materials)&&x.materials>=n);
+      if(i>=0){effects.push({kind:"support",i,n});n=0;}
+    }
+    if(["weapon","artifact"].includes(c.type)) {
+      if(m.garden&&n>0){n=Math.max(0,n-2);effects.push({kind:"garden"});}
+      if(c.type==="artifact"&&m.lyre&&n>0){n=Math.max(0,n-m.lyre);effects.push({kind:"lyre"});}
+    }
+    for(let i=0;i<m.supports.length;i++) {
+      const x=m.supports[i];if(x.round===m.round)continue;
+      if(x.id==="house"&&x.left>0&&["weapon","artifact"].includes(c.type)&&n>=3){n--;effects.push({kind:"support",i,n:1});}
+      if(x.id==="dunyarzad"&&["timaeus","liben","dunyarzad"].includes(id)&&n>0){n--;effects.push({kind:"support",i,n:1});}
+    }
+    if(base.aligned!==undefined)base.aligned=n;else if(base.n!==undefined)base.n=n;
+    return {cost:base,effects};
+  }
+  function cardCost(id,target,m){return cardPrice(id,target,m).cost;}
+  function cardLegal(s,a,m) {
+    const c=byId[a.id];if(!c||s.hand[a.index]?.id!==a.id)return false;
+    if(a.target!=null&&(!known(a.target)||a.target>2||!alive(s.characters[a.target])))return false;
+    if(["weapon","artifact","recycle","talent"].includes(c.type)&&a.target==null)return false;
+    if(!["weapon","artifact","recycle","talent"].includes(c.type)&&a.target!==null)return false;
+    if(c.type==="weapon"&&team[a.target].weapon!=="claymore")return false;
+    if(c.type==="talent"&&(a.target!==c.target||s.active!==c.target||s.characters[c.target].frozen))return false;
+    if(a.id==="lyre"&&!m.artifactKinds[a.target])return false;
+    if(a.id==="garden"&&(m.legendUsed||!m.weapons.some(Boolean)&&!m.artifacts.some(Boolean)))return false;
+    if(c.type==="support"&&m.supportSlots>=4)return false;
+    return !!payment(s.dice,cardCost(a.id,a.target,m,s),team[s.active].element);
+  }
+  function generateDice(dice,element,count){const n=Math.min(count,Math.max(0,16-total(dice)));if(n)dice[element]=(dice[element]||0)+n;return n;}
+  function cardRefund(a,m,b) {
+    if(a.type!=="card")return {};
+    const c=byId[a.id],out={},paid=payment(b.dice,cardCost(a.id,a.target,m,b),team[b.active].element);
+    if(!paid)return out;
+    if(a.id==="gilded")out[team[a.target].element]=generateDice(paid.remaining,team[a.target].element,2);
+    if(["weapon","artifact","talent"].includes(c.type)&&m.boar>0&&
+      (c.type==="weapon"?m.weapons[a.target]:c.type==="talent"?m.talents[a.target]:m.artifacts[a.target]))
+      out.Omni=generateDice(paid.remaining,"Omni",1);
+    return out;
+  }
+  const gamblerRemaining=(m,i)=>Math.max(0,3-(m.gamblerUsed[i]||0));
+  function noteBoard(m,s,owner=m.lastActive) {
+    if(!s?.characters)return;
+    s.characters.forEach((c,i)=>{if(c.dead===true&&!m.defeated[i]) {
+      m.defeated[i]=true;m.boar=Math.max(0,m.boar-Number(m.weapons[i])-Number(m.artifacts[i])-Number(m.talents[i]));
+      m.weapons[i]=m.artifacts[i]=m.talents[i]=false;m.weaponKinds[i]=m.artifactKinds[i]=null;m.troupe[i]=0;
+    }});
+    const n=enemyCount(s);
+    if(n!==null){if(m.enemyAliveCount!==null&&m.artifactKinds[owner]==="gambler")m.gamblerUsed[owner]=Math.min(3,m.gamblerUsed[owner]+Math.max(0,m.enemyAliveCount-n));m.enemyAliveCount=n;}
+    if(known(s.active))m.lastActive=s.active;
+  }
+  function commit(m,a,b,after) {
+    const oldFirst=m.firstCard;clearSkillCosts(m);
+    if(a.type==="end") {
+      // Multiple Libens collect sequentially; actual next-round dice still come from OCR.
+      const pool={...b.dice};
+      for(const x of m.supports)if(x.id==="liben"&&known(x.collected))for(const e of diceOrder)
+        if(x.collected<3&&pool[e]>0){pool[e]--;x.collected++;}
+    }
+    if(a.type==="switch"){if(b.active===0)m.monaFastUsed=true;m.freeSwitch=false;}
+    let cast=a.type==="skill"?a:a.type==="card"?byId[a.id]?.combatSkill:null;
+    if(a.type==="card") {
+      const c=byId[a.id];
+      const price=cardPrice(a.id,a.target,m);
+      for(const e of price.effects) {
+        if(e.kind==="garden")m.garden=false;
+        if(e.kind==="lyre")m.lyre=0;
+        if(e.kind==="support") {const x=m.supports[e.i];x.round=m.round;if(x.id==="house")x.left--;if(x.id==="timaeus")x.materials-=e.n;}
+      }
+      if(["weapon","artifact"].includes(c.type)) {
+        const weapon=c.type==="weapon",flags=weapon?m.weapons:m.artifacts,kinds=weapon?m.weaponKinds:m.artifactKinds;
+        if(flags[a.target])m.boar=Math.max(0,m.boar-1);
+        flags[a.target]=true;kinds[a.target]=a.id;if(!weapon)m.troupe[a.target]=0;
+        if(a.id==="gambler")m.gamblerUsed[a.target]=0;
+      }
+      if(c.type==="talent"){if(m.talents[c.target])m.boar=Math.max(0,m.boar-1);m.talents[c.target]=true;}
+      if(c.type==="support") {
+        for(const x of m.supports)if(x.id==="dunyarzad"&&["timaeus","liben","dunyarzad"].includes(a.id))x.drawUsed=true;
+        m.supports.push({id:a.id,round:-1,...(a.id==="house"?{left:2}:a.id==="timaeus"?{materials:2}:a.id==="liben"?{collected:0}:{drawUsed:false})});
+      }
+      if(a.id==="garden"){m.garden=true;m.legendUsed=true;}
+      if(a.id==="lyre"){m.artifacts[a.target]=false;m.artifactKinds[a.target]=null;m.troupe[a.target]=0;m.lyre=oldFirst?2:1;}
+      if(a.id==="boar")m.boar=2;
+      if(a.id==="shift")m.freeSwitch=true;
+      m.firstCard=false;
+    }
+    if(cast) {
+      m.used[cast.who]++;m.bubble=false;
+      if(cast.skill==="E")m.troupe[cast.who]=0;
+      if(cast.who===0){if(cast.skill==="E"){m.monaStarted=true;m.reflection=1;}if(cast.skill==="Q")m.bubble=true;}
+      if(cast.who===1&&cast.skill==="Q")m.sayuSummon=2;
+      if(cast.who===2){if(cast.skill==="E"&&known(m.dilucE))m.dilucE++;if(cast.skill==="Q")m.pyroInfusion=2;}
+    }
+    m.supports=m.supports.filter(x=>x.id!=="house"||x.left>0);m.supportSlots=m.supportStateKnown?m.supports.length:4;
+    noteBoard(m,after,cast?.who??b.active);
+    m.fastSwitch=m.lastActive===0&&!m.monaFastUsed;
+  }
+  function rejectAction(m,a,b){clearSkillCosts(m);blockAction(m,a,b);}
+  function deferUncertain(m,a,b) {
+    clearSkillCosts(m);blockAction(m,a,b,true);
+    // Never book an unconfirmed discount/equipment. Unknown reducers use their upper price.
+    m.garden=false;m.lyre=0;m.boar=0;m.bubble=false;m.freeSwitch=false;m.monaFastUsed=true;m.fastSwitch=false;
+    if(a.type==="skill"||byId[a.id]?.combatSkill){m.dilucE=null;m.pyroInfusion=0;m.troupe=[0,0,0];}
+    if(a.type==="card") {
+      if(a.id==="garden")m.legendUsed=true;
+      if(byId[a.id]?.type==="support"){m.supportSlots=4;m.supportStateKnown=false;}
+      for(const x of m.supports){x.round=m.round;if(x.id==="timaeus")x.materials=null;}
+      if(a.target!=null){m.weapons[a.target]=m.artifacts[a.target]=m.talents[a.target]=false;m.weaponKinds[a.target]=m.artifactKinds[a.target]=null;}
+    }
+  }
+  function handPlan(a,b,m) {
+    const h=indexedHand(b.hand),c=byId[a.id];
+    if(a.type==="probe"||a.type==="switch")return {mode:"unchanged",hand:h};
+    // Swirls and reaction artifacts can insert cards; do not trust the old empty hand.
+    if(a.type==="skill")return m?.talents[1]||m?.artifactKinds.includes("gilded")?{mode:"full"}:{mode:"unchanged",hand:h};
+    if(a.type==="card"&&(["draw","recycle","talent","support"].includes(c?.type)))return {mode:"full"};
+    if(a.type==="card"||a.type==="tune") {
+      if(h[a.index]?.id!==a.id)throw new Error("手牌索引与身份不一致");
+      return {mode:"remove",hand:indexedHand(h.filter((_,i)=>i!==a.index))};
+    }
+    return {mode:"full"};
+  }
+  function verify(a,b,c,transition=false) {
+    if(!a||!b||!c)return false;if(c.result)return true;
+    if(a.type==="end")return c.turn==="enemy"||["roll","settlement"].includes(c.phase);
+    if(a.type==="switch")return c.active===a.target&&b.active!==a.target;
+    if(a.type==="skill")return transition||c.turn==="enemy"||!!c.dice&&(total(c.dice)<total(b.dice)||
+      known(c.characters?.[a.who]?.energy)&&c.characters[a.who].energy!==b.characters[a.who].energy||
+      enemyCount(c)!==null&&JSON.stringify(c.enemies.map(e=>e.hp))!==JSON.stringify(b.enemies.map(e=>e.hp)));
+    if(a.type==="tune")return c.turn==="user"&&removedOne(b.hand,c.hand,a.id)&&total(c.dice)===total(b.dice)&&(c.dice[a.element]||0)===(b.dice[a.element]||0)+1;
+    if(a.type!=="card"||!c.hand)return false;
+    if(byId[a.id]?.type==="draw")return drawConsumptionProven(a,b,c)||cardCountDecreased(b.hand,c.hand,a.id);
+    if(a.id==="lyre")return cardCountDecreased(b.hand,c.hand,a.id)&&c.hand.length===b.hand.length;
+    if(["support","talent"].includes(byId[a.id]?.type))return cardCountDecreased(b.hand,c.hand,a.id);
+    return removedOne(b.hand,c.hand,a.id);
+  }
+  function openingSetting(){return "优先装备与启动牌";}
+  function openingContext(c={}){return {enemyCount:enemyCount({enemies:c.enemies})??c.enemyCount??null};}
+  function keepOpening(id,hand=[],index=null) {
+    if(["dunyarzad","timaeus","liben","countdown3","draw"].includes(id))return true;
+    if(id==="troupe")return hand.find(h=>h.id===id)?.index===index;
+    if(id==="garden")return hand.some(h=>["draw","countdown3","timaeus"].includes(h.id));
+    return false;
+  }
+  function openingPlan(hand,original) {
+    if(hand?.length!==5||!hand.every(handCardKnown)||original?.length!==5||!original.every(x=>typeof x==="boolean"))throw new Error("起手五张手牌未核实");
+    const replace=hand.map((h,i)=>h.supported?!keepOpening(h.id,hand,i):original[i]);
+    return {replace,keep:hand.filter((h,i)=>!replace[i]),duplicateWeapons:[]};
+  }
+  function rerollPlan(items,m) {
+    const primary=team[m.defeated[m.lastActive]?m.defeated.findIndex(v=>!v):m.lastActive]?.element||"Hydro";
+    const secondary=primary==="Hydro"?(m.openingContext?.enemyCount<=2?"Pyro":"Anemo"):null;
+    const indices=items.flatMap((d,i)=>d.element==="Omni"||d.element===primary||d.element===secondary?[i]:[]);
+    return {primary,secondary,elements:[primary,secondary,"Omni"].filter(Boolean),indices};
+  }
+  root.TCG={team,cards,byId,norm,identify,observedCard,handCardKnown,indexedHand,reconcileHand,actionRefused,blockAction,
+    skillQuote,skillProbeAttempted,recordSkillCost,clearSkillCosts,refreshSkillCosts,drawConsumptionProven,characterName,diceOrder,
+    known,alive,total,size,payment,boardKey,actionKey,freshMemory,nextRound,OpeningFlow,legalState,freshActionBoard,
+    switchCost,skillCost,skillLegal,cardPrice,cardCost,cardLegal,cardRefund,generateDice,enemyCount,elementReaction,damageAgainst,
+    gamblerRemaining,noteBoard,commit,deferUncertain,rejectAction,handPlan,verify,verifyResynchronized:(a,b,c,t)=>legalState(c)&&verify(a,b,c,t),
+    emptyHandEffect:()=>false,removalEffect:()=>false,openingSetting,openingContext,keepOpening,openingPlan,rerollPlan,rerollCounter,
+    drawPayment:(s,a,m)=>byId[a.id]?.type==="draw"?cardCost(a.id,a.target,m,s):null,
+    refusalCost:(s,m,a)=>a.type==="skill"?skillCost(a.who,a.skill,m,s):a.type==="card"?cardCost(a.id,a.target,m,s):a.type==="switch"?switchCost(m):{}};
+})(globalThis);

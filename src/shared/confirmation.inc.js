@@ -38,7 +38,7 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
         if (remaining > 0) await sleep(remaining);
       };
       const combat = ["skill", "switch", "end"].includes(action.type) ||
-        action.type === "card" && ["floralSidewinder", "skivingNewAndImproved", "wedge", "penance"].includes(action.id);
+        action.type === "card" && (TCG.byId[action.id]?.combatSkill || ["floralSidewinder", "skivingNewAndImproved", "wedge", "penance"].includes(action.id));
       // The existing combat flag also owns switch/end recovery. This new
       // refresh policy is only for casts, not ordinary fast/manual switches.
       const effectAction = combat && !["switch", "end"].includes(action.type);

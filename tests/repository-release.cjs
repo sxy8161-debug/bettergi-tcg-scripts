@@ -46,7 +46,7 @@ test("unsafe names, missing images, Windows case collisions and unreferenced ima
 });
 test("release tree uses compatible JS leaf nodes, complete standalone packages and matching gzip",()=>{
  const {files,index,manifest}=R.releaseFiles({sourceCommit:"a".repeat(40),sourceDate:"2026-10-17T00:00:00Z"});
- assert.equal(index.indexes.length,1);assert.equal(index.indexes[0].name,"js");assert.equal(index.indexes[0].children.length,3);
+ assert.equal(index.indexes.length,1);assert.equal(index.indexes[0].name,"js");assert.equal(index.indexes[0].children.length,Object.keys(B.config.players).length);
  for(const [id,folder]of Object.entries(require("../distribution/repository.json").players)){const n=index.indexes[0].children.find(n=>n.name===folder);assert.equal(n.children,undefined);assert.ok(n.description.includes("~|~"));assert.ok(files.has("repo/js/"+n.name+"/manifest.json"));assert.equal(n.version,B.config.players[id].version);assert.equal(manifest.playerVersions[id],n.version);}
  assert.equal(manifest.sharedVersion,B.config.sharedRevision);
  assert.equal(index.time,"20261017080000");assert.ok(index.url.endsWith("/refs/heads/release.zip"));

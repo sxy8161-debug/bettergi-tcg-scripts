@@ -1,0 +1,50 @@
+(function(root) {
+  "use strict";
+  const T=root.TCG;
+  /* @include src/shared/lifecycle.inc.js#lifecycle.BOARD_RETRIES */
+  /* @include src/shared/lifecycle.inc.js#lifecycle.INPUT_REFRESHES */
+  /* @include src/shared/lifecycle.inc.js#lifecycle.BUDGET_FIELDS */
+  const OPENING_DEFAULT="优先装备与启动牌";
+  /* @include src/shared/lifecycle.inc.js#lifecycle.playerOptions */
+  function actionCommentary(a,s,m) {
+    if(a.type==="skill")return T.team[a.who].name+"准备"+T.team[a.who].skills[a.skill]+"；伤害为估计，结算后以实际血量为准。";
+    if(a.type==="switch")return "切换"+T.team[a.target].name+"，按实际牌面接力。";
+    if(a.type==="card")return "使用「"+T.byId[a.id].name+"」"+(a.target!=null?"，目标"+T.team[a.target].name:"")+"。";
+    if(a.type==="tune")return "调和「"+(T.byId[a.id]?.name||s.hand[a.index].name)+"」，补充当前角色所需骰子。";
+    if(a.type==="probe")return "核实当前技能费用，不施放技能。";
+    return "结束回合。";
+  }
+  // One owner for lifecycle/progress. Host owns native evidence and input;
+  // strategy owns the next plan. Recovery never replays a submitted action.
+  class Player {
+    /* @include src/shared/lifecycle.inc.js#lifecycle.constructor */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.progress */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.notice */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.checkStalled */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.defer */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.finishOpening */
+    reportResult(p) { log.info(p.result === "win" ? "对局胜利" : "对局失败"); }
+    /* @include src/shared/lifecycle.inc.js#lifecycle.admitActionHand */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.enter */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.opening */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.choice */
+    planOpening(stage) {
+      this.memory.openingTarget=0;
+      this.host.trace("opening-character-plan",{target:0,stage:stage||"initial-pick",route:"莫娜挂水后按实际敌方数量接力"});
+      return {target:0};
+    }
+    /* @include src/shared/lifecycle.inc.js#lifecycle.replacement */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.pick */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.roll */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.observe */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.rejectUnchangedTune */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.recoverRejectedInput */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.awaitConfirmation */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.awaitObservation */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.recoverBeforeConfirmation */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.execute */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.act */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.run */
+  }
+  root.TCGPlayer = { Player, playerOptions, actionCommentary };
+})(globalThis);
