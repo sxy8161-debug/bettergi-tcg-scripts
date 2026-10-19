@@ -303,7 +303,7 @@
         const p = this.frame((f) => ({
           phase: this.phaseIn(f),
           count: this.handCountIn(f),
-          empty: this.has(f, "hand_empty", this.roi("bottom", [1003, 928, 504, 124]), 0.97, false),
+          empty: this.emptyHandIn(f,"bottom"),
         }));
         const matched =
           p.phase.phase === "board" &&

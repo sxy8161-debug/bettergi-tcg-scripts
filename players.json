@@ -1,5 +1,5 @@
 {
-  "sharedRevision": "1.6.1",
+  "sharedRevision": "1.6.3",
   "players": {
     "raiden": {
       "title": "雷神柯莱刻晴",
@@ -42,7 +42,7 @@
     "mozailu": {
       "title": "莫娜早柚迪卢克",
       "source": "repo/js/MonaSayuDilucPlayer",
-      "version": "0.1.1",
+      "version": "1.0.0",
       "recognition": "src/decks/mozailu/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],

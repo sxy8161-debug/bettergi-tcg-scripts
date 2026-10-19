@@ -56,7 +56,8 @@
         const netHpLoss=comparable?b.enemies.map((e,i)=>(e.dead?0:e.hp)-(result.enemies[i].dead?0:result.enemies[i].hp)):null;
         this.trace("damage-audit",{who:cast.who,skill:cast.skill,estimate,
           beforeHp:b.enemies.map(e=>e.hp),afterHp:result.enemies.map(e=>e.hp),netHpLoss,
-          attribution:"net observed HP change; may include prepared attacks, summons, enemy healing and special rules; not isolated skill damage",
+          snapshot:"action-confirmation",freshObservationRequired:result.freshObservationRequired===true,
+          attribution:"net observed HP change at confirmation; later damage may still be pending, and changes may include prepared attacks, summons, enemy healing and special rules; not isolated skill damage",
           comparable,defenseKnown:estimate.guaranteed!==null});
       }
       return result;

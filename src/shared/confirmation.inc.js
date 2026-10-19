@@ -214,7 +214,7 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
     async provePaidDraw(action,before,after,memory) {
       const r=this.consumptionReceipt,h=before.hand?.[action.index],cost=r?.cost,p=r?.sourceCountProof;
       if(TCG.drawConsumptionProven(action,before,after))return true;
-      if(action.type!=="card"||TCG.byId[action.id]?.type!=="draw"||after.handRead!=="full"||
+      if(action.type!=="card"||after.handRead!=="full"||
           this.confirmationSession?.key!==TCG.actionKey(action)+"/"+TCG.boardKey(before)||
           this.confirmationSession.transition||
           !TCG.legalState(after)||before.diceKnown!==true||after.diceKnown!==true||this.autoRisk||

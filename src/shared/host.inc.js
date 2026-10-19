@@ -285,6 +285,10 @@
     /* @include src/shared/observation.inc.js#bgi-host.settledBoard */
     /* @include src/shared/board.inc.js#bgi-host.requireDiceBudget */
     /* @include src/shared/observe.inc.js#bgi-host.observe */
+    emptyHandIn(f,panel="handExpanded") {
+      const region=this.roi(panel,[1003,928,504,124]);
+      return this.has(f,"hand_empty",region,0.97,false)||this.has(f,"hand_empty_blue",region,0.97,false);
+    }
     async proveEmptyHand(plan,settled) {
       const receipt=this.consumptionReceipt,a=plan?.action,b=plan?.before;
       if(plan?.mode!=="remove" || plan.hand.length!==0 || b?.hand?.length!==1 || !a ||
@@ -295,7 +299,7 @@
       let stable=0;
       for(let attempt=0;attempt<3;attempt++) {
         const p=this.frame(f=>({phase:this.phaseIn(f),count:this.handCountIn(f),
-          empty:this.has(f,"hand_empty",this.roi("handExpanded", [1003,928,504,124]),0.97,false)}));
+          empty:this.emptyHandIn(f)}));
         const matched=p.phase.phase==="board"&&p.phase.turn==="user"&&p.empty&&(p.count===null||p.count===0);
         stable=matched?stable+1:0;
         this.trace("empty-hand-native",{attempt,matched,stable,count:p.count,phase:p.phase});

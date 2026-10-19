@@ -23,8 +23,8 @@ function drawFixture(id,oldIds=["draw"],newIds=["draw"]){
 }
 module.exports=async function(test){
   await test("C01 paid same-name draw confirms once and retires only its consumed origin",async()=>{
-    for(const id of ["raiden","iansan","moonbloom"]){
-      const {T,h,m,b,a}=drawFixture(id,["draw"],["draw",id==="moonbloom"?"sashimi":"sweet"]);
+    for(const id of ["raiden","iansan","moonbloom","mozailu"]){
+      const {T,h,m,b,a}=drawFixture(id,["draw"],["draw",id==="moonbloom"?"sashimi":id==="mozailu"?"boar":"sweet"]);
       const result=await h.confirm(a,b,m);
       assert.equal(result.confirmed,true,id);assert.ok(result.hand[0].instanceIds.every(n=>!b.hand[0].instanceIds.includes(n)),id);
       assert.equal(h.confirmationSession,null);assert.equal(h.consumptionReceipt,null);
@@ -57,6 +57,27 @@ module.exports=async function(test){
     assert.ok(!p.readyState.hand[0].instanceIds.includes(b.hand[0].instanceIds[0]));
     assert.equal(T.actionRefused(p.readyState,m,card(p.readyState.hand[0])),false);
     assert.equal(T.choose(p.readyState,m).id,"draw");
+  });
+  await test("C01 paid Timaeus retrieval confirms the consumed copy and books its support once",async()=>{
+    const f=drawFixture("mozailu",["timaeus","liben"],["gilded","timaeus","liben"]),{T,h,m,b,a}=f;
+    m.round=1;m.supports=[{id:"dunyarzad",round:-1,drawUsed:false}];m.supportSlots=1;
+    const p=new f.Player(h,{maxMinutes:1});p.memory=m;p.observe=async()=>b;p.progress=()=>{};
+    const countProof=h.consumptionReceipt.sourceCountProof;let sent=0,commits=0;
+    h.requireUnchangedBoard=async()=>{};h.prepareHandInput=async()=>countProof;h.handPoints=()=>[700,900];
+    h.inspectHandCard=async()=>{};h.drag=async()=>{sent++;};h.cardConfirm=async()=>{};
+    const choose=T.choose,commit=T.commit;T.choose=()=>a;T.commit=(...args)=>{commits++;return commit(...args);};
+    try{await p.act();}finally{T.choose=choose;T.commit=commit;}
+    assert.equal(sent,1);assert.equal(commits,1);assert.equal(m.uncertainActions.length,0);
+    assert.equal(m.supportStateKnown,true);assert.equal(m.supportSlots,2);
+    assert.equal(m.supports[0].drawUsed,true);assert.equal(m.supports[1].id,"timaeus");assert.equal(m.supports[1].materials,2);
+    assert.ok(!p.readyState.hand[1].instanceIds.includes(b.hand[0].instanceIds[0]));
+    assert.ok(p.readyState.hand[2].instanceIds.includes(b.hand[1].instanceIds[0]));
+    assert.equal(T.verify(a,b,f.c),false,"same name and reduced dice without a receipt are still insufficient");
+    const free={type:"card",id:"liben",index:1,target:null};
+    assert.equal(T.size(T.drawPayment(b,free,{...m,supports:[{id:"dunyarzad",drawUsed:false}]})),0);
+    const ordinary=board(T,["house"]);
+    assert.equal(T.drawPayment(ordinary,card(ordinary.hand[0]),m),null,
+      "a support without retrieval does not opt into paid-draw proof");
   });
   await test("C01 consuming one item preserves other ambiguous origins and late-hand refresh",async()=>{
     const f=drawFixture("iansan",["draw","draw"],["draw"]),{T,h,m,b,a}=f;

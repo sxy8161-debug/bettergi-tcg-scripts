@@ -21,7 +21,7 @@ function render(text, dependencies = [], stack = [], deck = null) {
  });
 }
 const elements=["Pyro","Hydro","Anemo","Electro","Dendro","Cryo","Geo","Omni"];
-const commonAssets=["user_turn","enemy_turn","charge","uncharge","disable","hand_empty","hand_rim","hand_cost_neutral","hand_cost_element","hand_cost_dendro","hand_cost_electro","hand_cost_matching","hand_empowered",
+const commonAssets=["user_turn","enemy_turn","charge","uncharge","disable","hand_empty","hand_empty_blue","hand_rim","hand_cost_neutral","hand_cost_element","hand_cost_dendro","hand_cost_electro","hand_cost_matching","hand_empowered",
  ...["Main","Roll"].flatMap(k=>elements.map(e=>"dice/Native"+k+e)),
  ...["角色状态_水泡","角色状态_冻结2","角色状态_冻结","确定","对方行动中","回合结算阶段","回合结束","出战角色","元素骰子不足","元素调和"].map(n=>"core/"+n),
  ...["Pyro","Hydro","Cryo","Electro","Dendro","Freeze"].map(n=>"state/State"+n),...[5,6,7,8,9,10].map(n=>"num/Hand"+n)];

@@ -910,10 +910,10 @@ async inputHand(action,before,memory,prepared=null) {
         throw error;
       }
       const targeted = action.type === "card" && action.target !== null;
+      const drawCost = action.type === "card" ? TCG.drawPayment(before,action,memory) : null;
       this.consumptionReceipt={id:action.id,index:action.index,target:action.target??null,
         beforeKey:TCG.boardKey(before),inputSent:false,
-        ...(action.type==="card"&&TCG.byId[action.id]?.type==="draw"?
-          {sourceInstanceIds:h.instanceIds?.slice()||[],cost:TCG.drawPayment(before,action,memory)}:{}),
+        ...(drawCost?{sourceInstanceIds:h.instanceIds?.slice()||[],cost:drawCost}:{}),
         ...(sourceCount?{sourceCountProof:sourceCount}:{})};
       const destination=action.type==="tune"?this.point("phase",1867,518):
         targeted?this.point("board",charX[action.target],720):[x,this.point("board",0,595)[1]];
