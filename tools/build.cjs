@@ -70,7 +70,7 @@ function packageFiles(id,options={}) {
  for(const name of result.keys())if(/(?:tests|evidence|logs|tools|node_modules|src)\//.test(name))throw new Error("Internal file in runtime package: "+name);
  dependencies.push("src/shared/rules.inc.js#tcg-rules.strategyRegistry");
  const published=options.semanticAssets?require("./public-assets.cjs").semanticAssets(result).files:result;
- return {files:published,dependencies:[...new Set(dependencies)].sort()};
+ return {files:require("./card-atlas.cjs").packCardAtlases(published),dependencies:[...new Set(dependencies)].sort()};
 }
 function recognitionFiles(id,directory=config.players[id].recognition){
   const dir=path.resolve(base,directory);
@@ -148,9 +148,11 @@ function assertGeneratedClean(id,files,previous) {
  const initial=p.baselineSource?path.resolve(base,p.baselineSource):null;
  return assertTargetClean(id,source,files,baseline,initial,"Generated source changed outside shared layer");
 }
-const templatePath=/^assets\/(?:hand|opening|expanded)\/[\p{L}\p{N}_-]+\.png$/u;
+const {templatePath}=require("./card-atlas.cjs");
 function retiredTemplateFiles(files,baseline){
  const retained=new Set([...files].filter(([rel])=>templatePath.test(rel)).map(([,bytes])=>sha(bytes)));
+ if(files.has("hand-bank.json")&&JSON.parse(files.get("hand-bank.json")).atlas)
+  for(const region of require("./card-atlas.cjs").validateAtlas(files).values())retained.add(region.sourceSha256);
  return new Map(Object.entries(baseline||{}).filter(([rel,hash])=>!files.has(rel)&&templatePath.test(rel)&&retained.has(hash)));
 }
 function retireTemplates(target,retired,backup){
@@ -183,10 +185,10 @@ function build(){
  for(const id of Object.keys(config.players)) {
   const p=config.players[id],{files,dependencies}=packages[id],source=path.resolve(base,p.source);
   if(args.includes("--check"))for(const [rel,bytes] of files){if(!fs.existsSync(path.join(source,rel))||sha(fs.readFileSync(path.join(source,rel)))!==sha(bytes))throw new Error("Generated source drift: "+id+"/"+rel);}
-  else {writeFiles(path.join(base,"build",id),files);if(args.includes("--sync")){
+  else if(args.includes("--sync")){
    if(retired[id].size){report.retiredBackup??=path.resolve(base,"../../backups","tcg-template-sync-"+new Date().toISOString().replace(/[:.]/g,"-"));retireTemplates(source,retired[id],path.join(report.retiredBackup,id));}
    writeFiles(source,files);
-  }}
+  }
   report.players[id]={version:p.version,files:Object.fromEntries([...files].map(([n,b])=>[n,sha(b)])),dependencies};
  }
  if(!args.includes("--check")){fs.writeFileSync(path.join(base,"build-manifest.json"),JSON.stringify(report,null,2)+"\n");if(args.includes("--sync"))fs.writeFileSync(statePath,JSON.stringify(report,null,2)+"\n");}

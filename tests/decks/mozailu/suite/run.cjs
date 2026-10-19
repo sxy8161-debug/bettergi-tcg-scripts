@@ -1,7 +1,7 @@
 "use strict";
 const fs=require("node:fs"),path=require("node:path"),assert=require("node:assert/strict");
 const {load,clone,nativeInput}=require("../../../shared/harness.cjs");
-const root=process.env.TCG_TEST_ROOT||path.resolve(__dirname,"../../../../build/mozailu");
+const root=process.env.TCG_TEST_ROOT;
 const report=process.env.TCG_TEST_REPORT||path.resolve(__dirname,"../../../../reports/mozailu-latest.json");
 async function run(test,loadContext=overrides=>load(root,overrides)) {
 const C=loadContext(),T=C.TCG;
@@ -317,6 +317,7 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
 }
 module.exports=run;
 if(require.main===module)(async()=>{
+  if(!root)throw Error("Set TCG_TEST_ROOT to a staged package, or run npm test");
   const results=[];
   await run(async(name,fn)=>{try{await fn();results.push({name,pass:true});}catch(e){results.push({name,pass:false,error:e.stack});console.error(name+": "+e.stack);}});
   const out={at:new Date().toISOString(),passed:results.filter(r=>r.pass).length,failed:results.filter(r=>!r.pass).length,

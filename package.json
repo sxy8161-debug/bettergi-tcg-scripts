@@ -1,6 +1,6 @@
 {
   "name": "bettergi-tcg-scripts",
-  "version": "1.6.3",
+  "version": "1.6.4",
   "private": true,
   "scripts": {
     "test": "node tests/business.cjs",
@@ -8,5 +8,8 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "pngjs": "7.0.0"
   }
 }

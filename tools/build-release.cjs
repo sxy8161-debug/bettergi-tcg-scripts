@@ -48,13 +48,7 @@ function verifyRelease(root){
  for(const folder of Object.values(repo.players)){
   const node=nodes.find(n=>n.name===folder),dir=path.join(root,"repo/js",folder),m=JSON.parse(fs.readFileSync(path.join(dir,"manifest.json")));
   if(!node||node.children?.length||node.version!==m.version||!safeRel(m.main)||!fs.existsSync(path.join(dir,m.main)))throw Error("JS leaf/entry mismatch");
-  for(const bankName of ["hand-bank.json","opening-bank.json"]){
-   const bank=JSON.parse(fs.readFileSync(path.join(dir,bankName)));
-   for(const part of [bank,bank.expanded].filter(Boolean))for(const e of part.entries){
-    const refs=[...(e.patches||[]),...(e.views||[]).flatMap(v=>v.patches)];
-    for(const rel of refs)if(!safeRel(rel)||!fs.existsSync(path.join(dir,rel)))throw Error("Missing renamed template: "+rel);
-   }
-  }
+  require("./card-atlas.cjs").validateAtlas(new Map(listFiles(dir).map(rel=>[rel,fs.readFileSync(path.join(dir,rel))])));
  }
  return manifest;
 }

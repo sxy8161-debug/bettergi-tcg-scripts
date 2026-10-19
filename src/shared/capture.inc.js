@@ -58,7 +58,7 @@ artworkScore(f, area, filename, pad, rank) {
       const key=JSON.stringify(["artwork",area,filename,pad]);
       return this.memoFrame(f,key,()=>{
         if(!this.templates.has(filename)){
-          const mat=file.readImageMatSync(filename);
+          const mat=this.readTemplateImage(filename);
           if(mat.empty()){mat.dispose();throw new Error("缺少牌面模板："+filename);}
           this.templates.set(filename,mat);
         }
@@ -307,7 +307,7 @@ matches(f, asset, area, threshold = 0.88, useColor = false) {
       return this.memoFrame(f, "matches/"+key, () => {
       if (!this.roCache.has(key)) {
         if (!this.templates.has(asset)) {
-          const mat = file.readImageMatSync("assets/" + asset + ".png");
+          const mat = this.readTemplateImage("assets/" + asset + ".png");
           if (mat.empty()) { mat.dispose(); throw new Error("缺少模板：" + asset); }
           this.templates.set(asset, mat);
         }

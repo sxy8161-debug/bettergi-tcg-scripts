@@ -18,7 +18,7 @@ test("semantic names preserve original pixels, compatibility aliases and every n
    const original=JSON.parse(fs.readFileSync(path.join(dir,key))),packed=JSON.parse(compact.get(key));
    assert.deepEqual(pixels(packed,name=>name.endsWith(".png")&&compact.has(name)?B.sha(compact.get(name)):null),pixels(original,name=>name.endsWith(".png")?source.runtimeFiles[name]:null));
   }
-  const raw=B.packageFiles(id).files,{files,names}=S.semanticAssets(raw);assert.equal(raw.size,files.size);
+  const raw=B.recognitionFiles(id),{files,names}=S.semanticAssets(raw);assert.equal(raw.size,files.size);
   for(const [rel,bytes]of raw)if(!names.has(rel)&&!rel.endsWith("-bank.json"))assert.ok(bytes.equals(files.get(rel)),rel);
   for(const [old,rel]of names){assert.ok(raw.get(old).equals(files.get(rel)));assert.match(rel,/^assets\/(hand|opening|expanded)\/[\p{L}\p{N}_-]+-v\d+-p\d+\.png$/u);}
   for(const key of ["hand-bank.json","opening-bank.json"]){
@@ -31,9 +31,10 @@ test("semantic names preserve original pixels, compatibility aliases and every n
 });
 test("semantic layout is idempotent and keeps all script bytes unchanged",()=>{
  for(const id of Object.keys(B.config.players)){
-  const raw=B.packageFiles(id).files,a=B.packageFiles(id,{semanticAssets:true}).files,b=S.semanticAssets(a).files;
+  const raw=B.packageFiles(id).files,a=S.semanticAssets(B.recognitionFiles(id)).files,b=S.semanticAssets(a).files;
   assert.deepEqual(B.packageHashes({x:{files:a}}),B.packageHashes({x:{files:b}}));
-  for(const [rel,bytes]of raw)if(rel.endsWith(".js"))assert.ok(a.get(rel).equals(bytes));
+  const published=B.packageFiles(id,{semanticAssets:true}).files;
+  for(const [rel,bytes]of raw)if(rel.endsWith(".js"))assert.ok(published.get(rel).equals(bytes));
  }
 });
 test("unsafe names, missing images, Windows case collisions and unreferenced images fail closed",()=>{

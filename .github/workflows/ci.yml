@@ -31,5 +31,6 @@ jobs:
           set -euo pipefail
           SOURCE_SHA=$(git rev-parse HEAD)
           SOURCE_DATE=$(git show -s --format=%cI HEAD)
+          npm ci --ignore-scripts --no-audit --no-fund
           npm test
           node tools/build-release.cjs --output dist --source-sha "$SOURCE_SHA" --source-date "$SOURCE_DATE"
