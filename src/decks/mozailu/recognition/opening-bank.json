@@ -178,6 +178,23 @@
           ]
         }
       ]
+    },
+    {
+      "id": "dunyarzad",
+      "name": "迪娜泽黛",
+      "patches": [
+        "assets/opening/迪娜泽黛-v01-p01.png",
+        "assets/opening/迪娜泽黛-v01-p02.png"
+      ],
+      "views": [
+        {
+          "name": "user-opening1600-0f9ad7a09f",
+          "patches": [
+            "assets/opening/迪娜泽黛-v01-p01.png",
+            "assets/opening/迪娜泽黛-v01-p02.png"
+          ]
+        }
+      ]
     }
   ]
 }

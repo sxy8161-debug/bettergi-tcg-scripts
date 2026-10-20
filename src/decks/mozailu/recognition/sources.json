@@ -5,7 +5,7 @@
   "layout": "semantic-v1",
   "runtimeFiles": {
     "hand-bank.json": "418ee1215eef28a541d5cee1526fbf5d05188f41f5351b27ce81ecf0ebd8f1e1",
-    "opening-bank.json": "226c06697c2360a17c2839edf9097c6ded02d518b0f1d13696aa0b265519e9cf",
+    "opening-bank.json": "e152657dca2f1f593fea35ec1235f1605cc652ef819782fc5a1439efc58daa38",
     "assets/hand/偷懒的新方法-v01-p01.png": "7d5cc11b72b3fb8a56dc89c0a94392bfd1510ee13d5aa4668d0d916775e0d128",
     "assets/hand/偷懒的新方法-v01-p02.png": "cdeec6059c66724599703dbe6158a21638e453e002436296ae70e96c420e1c4e",
     "assets/hand/偷懒的新方法-v02-p01.png": "27b27145cf845ca5d86fb4229e4a752326ef3f1bb3f543d441d33aa427336b2f",
@@ -124,7 +124,9 @@
     "assets/hand/幻戏倒计时-3-v03-p01.png": "757a715735ef1438372e7de870a187a6d344d754493a3fc7146818cba606a850",
     "assets/hand/幻戏倒计时-3-v03-p02.png": "baf5f45832d1d4b437dbd295ba4878c25c54dcb3dfadf5691278d531d771d8fe",
     "assets/opening/蒂玛乌斯-v01-p01.png": "1592bc2bd4743cefe01ad817e1c90dd3dddf7f9bf60df41ff984a3d0d2c8ad5f",
-    "assets/opening/蒂玛乌斯-v01-p02.png": "9963db98f3764ff48d8faad30dbebef539322105700e62397ea4d421a16b038d"
+    "assets/opening/蒂玛乌斯-v01-p02.png": "9963db98f3764ff48d8faad30dbebef539322105700e62397ea4d421a16b038d",
+    "assets/opening/迪娜泽黛-v01-p01.png": "b7a6a155ee2bfafb01dce901764e9d5c83c296b2b0db18304b33740b5b0d192b",
+    "assets/opening/迪娜泽黛-v01-p02.png": "63660e0a04bd817ad6b8efa62d47b12bf25c1e0990ccc1baf77401c594ed7d4f"
   },
   "assetFiles": {
     "assets/hand/偷懒的新方法-v01-p01.png": "assets/templates/iansan/hand/偷懒的新方法-v01-p01.png",
@@ -245,6 +247,8 @@
     "assets/hand/幻戏倒计时-3-v03-p01.png": "assets/templates/mozailu/hand/幻戏倒计时-3-v03-p01.png",
     "assets/hand/幻戏倒计时-3-v03-p02.png": "assets/templates/mozailu/hand/幻戏倒计时-3-v03-p02.png",
     "assets/opening/蒂玛乌斯-v01-p01.png": "assets/templates/mozailu/opening/蒂玛乌斯-v01-p01.png",
-    "assets/opening/蒂玛乌斯-v01-p02.png": "assets/templates/mozailu/opening/蒂玛乌斯-v01-p02.png"
+    "assets/opening/蒂玛乌斯-v01-p02.png": "assets/templates/mozailu/opening/蒂玛乌斯-v01-p02.png",
+    "assets/opening/迪娜泽黛-v01-p01.png": "assets/templates/mozailu/opening/迪娜泽黛-v01-p01.png",
+    "assets/opening/迪娜泽黛-v01-p02.png": "assets/templates/mozailu/opening/迪娜泽黛-v01-p02.png"
   }
 }
