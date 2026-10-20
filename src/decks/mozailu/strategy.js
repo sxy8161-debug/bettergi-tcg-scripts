@@ -193,7 +193,7 @@
       a.type==="card"?T.cardCost(a.id,a.target,m,s):a.type==="switch"?T.switchCost(m):{};
     const paid=projectedPayment(s,cost);if(!paid)return null;
     n.dice=paid.remaining;
-    let value=-T.size(cost)*.25-.12,stop=false,estimate=null,terminal=false;
+    let value=-T.size(cost)*.25-.12,stop=false,estimate=null,terminal=false,drawCount=0;
     const focus=carry(s,m),c=T.byId[a.id],cast=a.type==="skill"?a:a.type==="card"?c?.combatSkill:null;
     if(a.type==="end") {
       return {state:n,memory:v,value:reserveValue(s,m)-.2,stop:true,terminal:false};
@@ -214,13 +214,15 @@
       if(a.id.startsWith("countdown")||a.id==="show")n.dice={Omni:T.total(n.dice)};
       if(c.type==="draw") {
         const count=a.id==="draw"?2:4;
-        value+=Math.min(count,10-n.hand.length)*.75+(a.id==="draw"?0:T.total(n.dice)*.18);stop=true;
+        drawCount=Math.min(count,10-n.hand.length);
+        value+=drawCount*.75+(a.id==="draw"?0:T.total(n.dice)*.18);stop=true;
       }
       if(c.type==="support") {
         value+=({dunyarzad:2.1,timaeus:2.5,liben:1.0,house:1.2}[a.id]||0)*(m.round<=2?1:.45);
         if(["timaeus","dunyarzad","liben"].includes(a.id)) {
           const draws=Number(a.id==="timaeus")+m.supports.filter(x=>x.id==="dunyarzad"&&!x.drawUsed).length;
-          value+=Math.min(draws,10-n.hand.length)*.75;
+          drawCount=Math.min(draws,10-n.hand.length);
+          value+=drawCount*.75;
           if(draws)stop=true; // value retrieval without inventing its random identity
         }
       }
@@ -263,14 +265,24 @@
     // loses its value; a neutral Lyre/re-equip cycle cannot farm that bonus.
     if(c?.type==="artifact"||a.id==="lyre")value+=artifactValue(s,v,a.target)-artifactValue(s,m,a.target);
     if(stop)value+=reserveValue(n,v);
-    return {state:n,memory:v,value,stop,estimate,terminal,conditionalPayment:!!paid.conditional};
+    // Random cards have investment value, not spendable attack resources.
+    // Only flag a definite loss of funds: even perfect colour tuning could not
+    // pay any eligible on-field skill after this draw. Native discounts count;
+    // colour uncertainty alone is not a reason to suppress a draw.
+    const skills=["NA","E","Q"].map(skill=>({type:"skill",who:s.active,skill}));
+    const attackReserveLost=drawCount>0&&T.size(cost)>0&&
+      skills.some(a=>T.skillLegal(s,a,m)&&!T.actionRefused(s,m,a))&&
+      skills.every(a=>n.characters[a.who].frozen||
+        a.skill==="Q"&&n.characters[a.who].energy<T.team[a.who].maxEnergy||
+        T.total(n.dice)<T.size(T.skillCost(a.who,a.skill,v,n)));
+    return {state:n,memory:v,value,stop,estimate,terminal,attackReserveLost,conditionalPayment:!!paid.conditional};
   }
   function choose(s,m) {
     if(!T.legalState(s))throw new Error("策略仅接受完整原生行动牌桌");
     // Only hypothetical fast resource prefixes are explored. Every actual card is
     // confirmed and observed again; no sequence is queued for later execution.
     const initial={state:s,memory:m,value:0,sequence:[],opponentReply:false};
-    let frontier=[initial],best=null,setup=null,development=null,used=0;
+    let frontier=[initial],best=null,combat=null,setup=null,development=null,used=0;
     function extend(node,a) {
       if(used>=320)return null;
       used++;
@@ -281,8 +293,10 @@
         terminal=p.terminal&&!opponentReply&&!paymentUncertain,
         score=node.value+p.value-(p.terminal&&!terminal?100:0)-
           (opponentReply&&p.estimate?Math.max(0,p.value-(p.terminal?100:0))*.25:0);
-      const candidate={action:sequence[0],score,sequence,estimate:p.estimate,terminal,paymentUncertain};
+      const candidate={action:sequence[0],score,sequence,estimate:p.estimate,terminal,paymentUncertain,
+        attackReserveLost:p.attackReserveLost};
       if((p.stop||sequence.length===5)&&(!best||score>best.score))best=candidate;
+      if(p.estimate&&!opponentReply&&(!combat||score>combat.score))combat=candidate;
       if(p.estimate?.hydroSetup&&!sequence.some(x=>x.type==="switch")&&(!setup||score>setup.score))setup=candidate;
       // Slot10 delayed a payable Timaeus until round3, though playing it in
       // round1 still left Mona's E payable even under the conservative payment.
@@ -307,6 +321,38 @@
         node=extend(node,a);if(!node)break;
       }
       if(node&&T.skillLegal(node.state,cast,node.memory)&&!T.actionRefused(node.state,node.memory,cast))extend(node,cast);
+    }
+    // The value beam can discard a free prerequisite before its saving is
+    // realised (native Suleika: Troupe -> Garden -> Wolf saved two dice, but
+    // naked Wolf survived the beam). Complete payable on-field equipment
+    // reductions before ranking, just like the tuning funding routes above.
+    // All steps use the SAME projection budget and real card-price rules.
+    // They are candidates only: execute the first step, then observe/replan.
+    const cardStep=(node,id)=>{
+      if(!node)return null;
+      const a=enumerate(node.state,node.memory).find(a=>a.type==="card"&&a.id===id&&
+        a.target===(["weapon","artifact","recycle"].includes(T.byId[id].type)?s.active:null));
+      return a?extend(node,a):null;
+    };
+    for(const h of s.hand) {
+      if(!["weapon","artifact"].includes(T.byId[h.id]?.type)||T.size(T.cardCost(h.id,s.active,m))<=0)continue;
+      const starts=[];
+      for(const reducer of ["garden","lyre"]) {
+        const p=cardStep(initial,reducer);
+        if(p)starts.push(p);
+      }
+      if(s.hand.some(x=>x.id==="garden")&&!m.legendUsed&&!m.weapons.some(Boolean)&&!m.artifacts.some(Boolean))
+        for(const seed of enumerate(s,m).filter(a=>a.type==="card"&&a.target===s.active&&
+          ["weapon","artifact"].includes(T.byId[a.id]?.type)&&a.id!==h.id&&T.size(T.cardCost(a.id,a.target,m))===0)) {
+          const p=cardStep(extend(initial,seed),"garden");
+          if(p)starts.push(p);
+        }
+      for(const node of starts) {
+        if(T.size(T.cardCost(h.id,s.active,node.memory))>=T.size(T.cardCost(h.id,s.active,m)))continue;
+        const equipped=cardStep(node,h.id);if(!equipped)continue;
+        for(const a of enumerate(equipped.state,equipped.memory))
+          if(a.type==="skill"||a.type==="card"&&T.byId[a.id]?.combatSkill)extend(equipped,a);
+      }
     }
     for(let depth=0;depth<5&&frontier.length;depth++) {
       const next=[];
@@ -334,6 +380,12 @@
       setup.score>reserveValue(s,m)-.2)best={...setup,reason:"opening-water-before-dry-relay"};
     if(development&&best.estimate&&!best.terminal&&best.estimate.direct<best.estimate.target?.hp)
       best={...development,reason:"opening-development-preserves-water"};
+    // After development, cash a useful already-evaluated attack instead of
+    // spending its last funds on random retrieval. This changes investment
+    // ordering, not enemy damage/death facts; it never forecasts a rescue card.
+    // Known resource prefixes still compete inside the same320 projection budget.
+    if(best.attackReserveLost&&!(m.round===1&&m.used.every(n=>n===0))&&combat?.score>0)
+      best={...combat,reason:"paid-draw-preserves-last-attack"};
     // The guide also cashes equipment lost on defeat, not just replacement.
     // A free Boar before a low-HP equipped carry attacks is insurance, not a
     // prediction of death or extra spendable dice. Do not delay a proven win.

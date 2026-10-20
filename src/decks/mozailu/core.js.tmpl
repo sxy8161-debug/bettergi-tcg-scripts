@@ -276,6 +276,19 @@
     if(["support","talent"].includes(byId[a.id]?.type))return cardCountDecreased(b.hand,c.hand,a.id);
     return removedOne(b.hand,c.hand,a.id);
   }
+  function drawPaymentMatches(before,a,after,m,cost,exactPaid,receipt) {
+    if(exactPaid)return true;
+    if(!countdownFamily.includes(a.id)||receipt?.paymentSubmitted!==true)return false;
+    const paid=size(cost),remaining=total(before.dice)-paid;
+    // Same-name redraw can hide consumption. After this source's verified
+    // central payment, conversion must explain more lost coloured dice than
+    // the fee alone can spend. The shared host still requires unchanged board
+    // facts, source/count/price ownership and two native dice-vector frames.
+    // Net refunds, a zero fee or an already-Omni hand do not gain new authority.
+    return !!payment(before.dice,cost,team[before.active].element)&&
+      total(before.dice)-(before.dice.Omni||0)>paid&&remaining>0&&
+      (after.dice.Omni||0)===remaining&&diceOrder.every(e=>e==="Omni"||(after.dice[e]||0)===0);
+  }
   function emptyHandEffect(a,b,c) {
     if(b.hand?.length!==1||c.phase!=="board"||c.turn!=="user"||c.active!==b.active||
       Array.isArray(c.hand)&&c.hand.length!==0||
@@ -323,5 +336,6 @@
     emptyHandEffect,removalEffect:()=>false,openingSetting,openingContext,keepOpening,openingPlan,rerollPlan,rerollCounter,
     drawPayment:(s,a,m)=>byId[a.id]?.type==="draw"||byId[a.id]?.type==="support"&&handPlan(a,s,m).mode==="full"
       ?cardCost(a.id,a.target,m,s):null,
+    drawPaymentMatches,
     refusalCost:(s,m,a)=>a.type==="skill"?skillCost(a.who,a.skill,m,s):a.type==="card"?cardCost(a.id,a.target,m,s):a.type==="switch"?switchCost(m):{}};
 })(globalThis);

@@ -1,10 +1,10 @@
 {
-  "sharedRevision": "1.6.7",
+  "sharedRevision": "1.6.9",
   "players": {
     "raiden": {
       "title": "雷神柯莱刻晴",
       "source": "repo/js/RaidenColleiKeqingPlayer",
-      "version": "1.4.5",
+      "version": "1.4.7",
       "recognition": "src/decks/raiden/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],
@@ -18,7 +18,7 @@
     "iansan": {
       "title": "伊安珊嘉明早柚",
       "source": "repo/js/IansanGamingSayuPlayer",
-      "version": "1.4.5",
+      "version": "1.4.7",
       "recognition": "src/decks/iansan/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],
@@ -30,7 +30,7 @@
     "moonbloom": {
       "title": "月绽放",
       "source": "repo/js/MoonbloomPlayer",
-      "version": "1.4.5",
+      "version": "1.4.7",
       "recognition": "src/decks/moonbloom/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],
@@ -42,7 +42,7 @@
     "mozailu": {
       "title": "莫娜早柚迪卢克",
       "source": "repo/js/MonaSayuDilucPlayer",
-      "version": "1.1.2",
+      "version": "1.1.5",
       "recognition": "src/decks/mozailu/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],

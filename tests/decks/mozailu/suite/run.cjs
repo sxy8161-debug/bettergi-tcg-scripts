@@ -460,6 +460,24 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     s.enemies=[enemy(2)];s.characters[1].hp=10;
     assert.ok(T.project(s,m,card(s,"gambler",1)).value<0,"post-final-kill dice have no future investment credit");
   });
+  await test("native Suleika resource route completes legal equipment prerequisites before beam pruning",()=>{
+    const s=board(["flowingFlame","skivingNewAndImproved","wolf","troupe","garden"],1),m=memory();
+    m.round=3;m.used=[1,2,0];s.characters[1].hp=4;s.characters[1].energy=2;
+    s.dice={Pyro:1,Hydro:1,Anemo:3,Geo:1,Omni:4};
+    s.enemies=[enemy(9,false,["Hydro"]),enemy(8,false,["Hydro"]),enemy(8,true,["Hydro"])];
+    const original=JSON.stringify([s,m]),chosen=T.choose(s,m);
+    assert.equal(JSON.stringify([s,m]),original);
+    assert.notEqual(chosen.id,"wolf","do not pay full price while a cheaper complete equipped attack is available");
+    assert.ok(chosen.planning.sequence.includes("card:garden"));
+    assert.ok(chosen.planning.sequence.includes("card:wolf"));
+    assert.ok(chosen.planning.sequence.some(k=>k==="card:skivingNewAndImproved"||k.startsWith("skill:1:")));
+    assert.ok(chosen.projections.used<=chosen.projections.limit);
+    m.legendUsed=true;
+    assert.ok(!T.choose(s,m).planning.sequence.includes("card:garden"),"spent secret cannot fund an invented discount");
+    m.legendUsed=false;s.characters[1].frozen=true;
+    const frozen=T.choose(s,m);
+    assert.ok(!frozen.planning?.sequence?.includes("card:skivingNewAndImproved"));
+  });
   await test("Sayu summon values only conditional survivors and missing HP, without weapon, bubble or native mutation",()=>{
     const s=board([],1),m=memory();s.characters[1].energy=2;
     s.enemies=[enemy(1),enemy(6,false,["Hydro"]),enemy(8,false,["Hydro"])];
@@ -473,6 +491,41 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     assert.ok(T.project(s,m,{type:"skill",who:1,skill:"Q"}).estimate.conditionalSummonValue<wet.estimate.conditionalSummonValue);
     m.sayuSummon=2;
     assert.equal(T.project(s,m,{type:"skill",who:1,skill:"Q"}).estimate.conditionalSummonValue,0);
+  });
+  await test("late paid draw cannot spend the last payable attack; opening and retained attack funds stay distinct",()=>{
+    const s=board(["flowingFlame","skivingNewAndImproved","gambler","troupe","dunyarzad","shift","countdown3"]),m=memory();
+    // Native19:40:03: only Mona remains, bubble active, five dice -> fee3 leaves2.
+    s.characters[0].hp=3;s.characters[1].hp=s.characters[2].hp=0;
+    s.characters[1].dead=s.characters[2].dead=true;
+    s.enemies=[enemy(4,true,["Hydro"])];s.enemies[0].defenseKnown=false;
+    s.dice={Electro:1,Dendro:1,Geo:1,Omni:2};
+    m.round=5;m.used=[4,4,3];m.defeated=[false,true,true];m.bubble=true;
+    m.artifacts=[true,false,false];m.artifactKinds=["gilded",null,null];m.legendUsed=true;
+    m.supports=[{id:"dunyarzad",round:1,drawUsed:true},{id:"timaeus",round:3,materials:2},
+      {id:"liben",round:-1,collected:0}];m.supportSlots=3;m.sayuSummon=1;
+    const original=JSON.stringify([s,m]),a=T.choose(s,m);
+    assert.ok(a.planning.sequence.some(k=>k.startsWith("skill:0:")),"retain a known payable attack, not a random rescue draw");
+    assert.equal(a.planning.terminal,false);assert.ok(a.projections.used<=320);
+    assert.equal(JSON.stringify([s,m]),original);
+    const draw=card(s,"countdown3"),cutoff=T.project(s,m,draw);
+    assert.equal(cutoff.attackReserveLost,true);
+    assert.equal(cutoff.stop,true);assert.equal(cutoff.state.hand.length,s.hand.length-1,
+      "no random cards or follow-up damage are invented");
+    s.dice={Omni:6};
+    assert.equal(T.project(s,m,draw).attackReserveLost,false,"three remaining dice retain an attack");
+    s.dice={Omni:3};s.characters[0].frozen=true;
+    assert.equal(T.project(s,m,draw).attackReserveLost,false,"no current legal attack to reserve");
+    const free=board(["show"],0),fresh=memory();free.dice={Omni:3};fresh.round=5;fresh.used=[1,0,0];
+    assert.equal(T.project(free,fresh,card(free,"show")).attackReserveLost,false,"zero-fee draw cannot consume attack funds");
+    const ordinary=board(["draw"],0);ordinary.dice={Omni:3};
+    assert.equal(T.project(ordinary,fresh,card(ordinary,"draw")).attackReserveLost,true,
+      "the same lost-attack opportunity applies to ordinary paid draw, not just Countdown");
+    const opening=board(["countdown3"],0),start=memory();opening.dice={Omni:5};
+    assert.notEqual(T.choose(opening,start).planning.reason,"paid-draw-preserves-last-attack",
+      "opening development is not subject to the late-round reserve");
+    const discounted=board(["countdown3"],2),dm=memory();dm.round=3;dm.talents[2]=true;dm.dilucE=1;discounted.dice={Omni:5};
+    assert.equal(T.project(discounted,dm,card(discounted,"countdown3")).attackReserveLost,false,
+      "use actual discounted skill cost, not a hardcoded three-die reserve");
   });
   await test("actual skill host uses two icon clicks; Diluc four-cost preview is admitted",async()=>{
     const inputs=[],c=loadContext({...nativeInput((...xy)=>inputs.push(xy)),log:{info(){},warn(){},error(){}}}),h=new c.TCGBetterGI.BetterGIHost({});

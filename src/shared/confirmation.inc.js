@@ -244,7 +244,7 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
       const spent=Object.fromEntries(TCG.diceOrder.map(e=>[e,(before.dice[e]||0)-(after.dice[e]||0)]));
       const exactPaid=Object.values(spent).every(n=>Number.isInteger(n)&&n>=0)&&TCG.total(spent)===TCG.size(cost)&&
           !!TCG.payment(spent,cost,TCG.team[before.active].element);
-      if(TCG.drawPaymentMatches?!TCG.drawPaymentMatches(before,action,after,memory,cost,exactPaid):!exactPaid)return false;
+      if(TCG.drawPaymentMatches?!TCG.drawPaymentMatches(before,action,after,memory,cost,exactPaid,r):!exactPaid)return false;
       const decreased=after.hand.filter(h=>h.id===action.id).length<before.hand.filter(h=>h.id===action.id).length;
       // Ordinary confirmed consumption needs no extra dice OCR. Only the
       // same-name ambiguity adds the existing independent resource proof.

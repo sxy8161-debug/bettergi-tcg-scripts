@@ -194,6 +194,11 @@
         // observed payment button once; the card itself invokes the skill.
         // Never add a target click or a separate skill cast here.
         const point = this.clickAt(b.x + b.w / 2, b.y + b.h / 2);
+        const receipt = this.consumptionReceipt;
+        if (receipt?.inputSent && before && receipt.beforeKey === TCG.boardKey(before) &&
+            receipt.id === action.id && receipt.index === action.index &&
+            receipt.target === (action.target ?? null))
+          receipt.paymentSubmitted = true;
         this.trace("card-confirm-clicked", {
           id: action.id,
           point,

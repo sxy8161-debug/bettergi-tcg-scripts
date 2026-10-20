@@ -285,31 +285,7 @@
     /* @include src/shared/observation.inc.js#bgi-host.settledBoard */
     /* @include src/shared/board.inc.js#bgi-host.requireDiceBudget */
     /* @include src/shared/observe.inc.js#bgi-host.observe */
-    emptyHandIn(f) {
-      // Absence is measured on the CARD UI, not on a particular table skin.
-      // A failed expansion can leave folded cards. Any marker (even an
-      // incomplete row) or rim vetoes zero; missing price digits never count.
-      // boardReady permits reuse of an unobscured board; expand() correctly
-      // clears it through clickAt(). It is NOT hand-observation readiness.
-      // The caller owns board settling; this frame proves phase and presence.
-      if (!this.handFanReady || this.choiceSession || this.pendingChoiceCard)
-        return false;
-      const phase = this.phaseIn(f);
-      if (phase.result || phase.phase !== "board" || phase.turn !== "user") return false;
-      // Match the intrinsic colored corner, not grayscale character-art
-      // gradients underneath an empty fan. The rim is independently grayscale.
-      if (this.handCostMarkersIn(f, this.roi("handExpanded", [450,750,1310,200]), true).length ||
-          this.handCostMarkersIn(f, this.roi("handFolded", [430,977,1050,42]), true).length ||
-          this.matches(f, "hand_rim", this.roi("handExpanded", [500,900,1260,135]), .85, false).length)
-        return false;
-      // The own-turn marker may survive a detail/payment overlay. Such a
-      // view is unknown even when the hand itself is hidden.
-      return !this.ocr(f, this.roi("details", [311,115,341,50])) &&
-        !this.ocr(f, this.roi("details", [135,122,238,42])) &&
-        !this.ocr(f, this.roi("phase", [600,510,720,65])) &&
-        !this.matches(f, "core/确定", this.roi("bottom", [770,900,380,90])).length &&
-        !this.cardPaymentControlsIn(f).length;
-    }
+    /* @include src/shared/hand.inc.js#bgi-host.handPresenceIn */
     async proveEmptyHand(plan,settled) {
       const receipt=this.consumptionReceipt,a=plan?.action,b=plan?.before;
       if(plan?.mode!=="remove" || plan.hand.length!==0 || b?.hand?.length!==1 || !a ||

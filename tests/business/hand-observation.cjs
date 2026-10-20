@@ -2,13 +2,81 @@
 const assert=require("node:assert/strict"),{load,board}=require("./runtime.cjs");
 const copy=x=>JSON.parse(JSON.stringify(x));
 module.exports=async function(test){
+  await test("hand view: native expanded or folded layout outranks a stale toggle flag",async()=>{
+    for(const scene of ["native-expanded","stale-expanded-flag","unknown","enemy"]){
+      const {Host}=load("moonbloom"),h=new Host({});
+      let expanded=scene!=="stale-expanded-flag",clicks=0;
+      h.boardReady=true;h.handFanReady=["stale-expanded-flag","unknown"].includes(scene);h.handNeedsReset=h.handFanReady;
+      h.trace=()=>{};h.frame=fn=>fn({width:1920,height:1080});
+      h.phaseIn=()=>({phase:"board",turn:scene==="enemy"?"enemy":"user"});
+      // Folded markers are the logged native 9-card row at12:44:25/29.
+      // Raised markers use the existing calibrated geometry. Only the
+      // matching backend is substituted; both production locators execute.
+      h.matches=(_f,asset,area)=>asset!=="hand_cost_neutral"||scene==="unknown"?[]:
+        (expanded&&area.panel==="handExpanded"
+          ?[587,716,847,976,1103,1225,1352,1492,1634].map(x=>({x:x-103,y:820,w:10,h:30}))
+          :!expanded&&area.panel==="handFolded"
+            ?[522,607,692,777,863,948,1033,1119,1204].map(x=>({x,y:983,w:10,h:30})):[]);
+      h.clickAt=()=>{clicks++;expanded=!expanded;h.inputRevision++;h.boardReady=false;};
+      h.moveTo=()=>{};
+      if(scene==="enemy"){
+        await assert.rejects(()=>h.expand(false),e=>e.code==="TCG_OBSERVATION_INTERRUPTED");
+        assert.equal(clicks,0);continue;
+      }
+      await h.expand(false);
+      assert.equal(expanded,true,scene);
+      assert.equal(clicks,scene==="stale-expanded-flag"?1:0,scene);
+      assert.equal(h.handFanReady,true);assert.equal(h.handNeedsReset,true);
+      if(scene!=="unknown")assert.equal(h.boardReady,false);
+      await h.expand(false);
+      assert.equal(clicks,scene==="stale-expanded-flag"?1:0,"unknown is not permission to repeat the toggle");
+    }
+  });
+  await test("hand observation: HUD text crossing the old title crop cannot block last-card tuning through Player.act",async()=>{
+    let now=100000;
+    class Clock extends Date{static now(){return now;}}
+    const f=load("mozailu",{Date:Clock,sleep:async ms=>{now+=ms;}}),
+      h=new f.Host({}),p=new f.Player(h,{maxMinutes:15}),events=[];
+    const s=board(f.T,["skivingNewAndImproved"]);
+    s.active=2;s.dice={Pyro:1,Electro:1};
+    const a={type:"tune",id:"skivingNewAndImproved",index:0,element:"Pyro"},
+      after={...copy(s),dice:{Pyro:2},hand:null};
+    h.trace=(event,data)=>events.push({event,data});h.frame=fn=>fn({width:1920,height:1080});
+    h.phase=h.phaseIn=()=>({phase:"board",turn:"user"});
+    h.board=()=>copy(after);h.boardReady=true;h.has=()=>false;h.matches=()=>[];
+    // Saved post-stop 1920x1080 frame SHA57e09e70...44bdcf8.
+    // Installed V4 offline OCR: the old crop reads "束"; the full row
+    // reads "已宣布结束" at [39,124,115,26], outside the detail-title panel.
+    // This is an observed backend fixture, not live OCR or a new game run.
+    h.ocr=(_f,area)=>area.panel==="details"&&area.rect[0]===135?"束":"";
+    h.ocrRows=(_f,area)=>area.panel==="details"
+      ?[{text:"已宣布结束",x:39,y:124,w:115,h:26}]:[];
+    h.clickAt=()=>{h.inputRevision++;h.boardReady=false;h.handPositionProof=null;};h.moveTo=()=>{};
+    let submitted=0;
+    h.executeInput=async()=>{
+      submitted++;
+      h.consumptionReceipt={inputSent:true,beforeKey:f.T.boardKey(s),id:a.id,index:0,target:null};
+      h.handNeedsReset=h.handFanReady=true;h.boardReady=false;
+    };
+    p.openingFlow={complete:true};
+    const observe=p.observe.bind(p);p.observe=async()=>s;f.T.choose=()=>a;p.progress=()=>{};
+    await p.act();
+    assert.equal(submitted,1);
+    assert.ok(p.readyState?.confirmed,"real confirmation hands its result back to the player");
+    assert.equal(p.readyState.hand.length,0);
+    assert.ok(events.some(e=>e.event==="empty-hand-proof"));
+    assert.ok(!events.some(e=>e.event==="hand-read-deferred"));
+    p.observe=observe;
+    assert.equal((await p.observe()).hand.length,0,"next decision can proceed without repeating the submitted tune");
+  });
   function fixture(){
     let now=100000;
     class Clock extends Date{static now(){return now;}}
     const f=load("mozailu",{Date:Clock,sleep:async ms=>{now+=ms;}});
     const h=new f.Host({}),events=[],inputs=[];
     h.memory=f.T.freshMemory();h.boardReady=true;
-    h.trace=(event,data)=>events.push({event,data});h.frame=fn=>fn({});
+    h.trace=(event,data)=>events.push({event,data});h.frame=fn=>fn({width:1920,height:1080});
+    h.matches=()=>[]; // No image backend in lifecycle fixtures: native layout is explicitly unknown.
     h.phase=h.phaseIn=()=>({phase:"board",turn:"user"});
     h.clickAt=(...p)=>{inputs.push(p);h.inputRevision++;h.boardReady=false;h.handPositionProof=null;};
     h.moveTo=()=>{};h.nativeHandCountIn=()=>null;

@@ -22,6 +22,52 @@ function drawFixture(id,oldIds=["draw"],newIds=["draw"]){
   return {T,Host,Player,h,m,b,a,c};
 }
 module.exports=async function(test){
+  await test("C01 countdown conversion uses bound payment and native dice, not same-name hand growth",async()=>{
+    // Suleika1.1.4, 2026-10-20T10:42:13.464Z central payment:
+    // Pyro2/Anemo1/Electro1/Omni3 -> Omni4, fee3, another countdown drawn.
+    for(const mode of ["valid","no-payment","fee-only","refund","badge","ordinary-draw","free"]){
+      const f=drawFixture("mozailu",["countdown3"],["countdown3","wolf"]);
+      const {T,h,m,b,a,c}=f;
+      b.dice={Pyro:2,Anemo:1,Electro:1,Omni:3};c.dice={Omni:4};
+      h.expectedDice=4;
+      if(mode==="ordinary-draw"){
+        a.id="draw";Object.assign(b.hand[0],observed(T,"draw",0));Object.assign(c.hand[0],observed(T,"draw",0));
+      }
+      h.consumptionReceipt={...h.consumptionReceipt,id:a.id,beforeKey:T.boardKey(b),
+        sourceInstanceIds:b.hand[0].instanceIds.slice(),cost:T.drawPayment(b,a,m),paymentSubmitted:true};
+      if(mode==="no-payment")delete h.consumptionReceipt.paymentSubmitted;
+      if(mode==="fee-only"){b.dice={Pyro:1,Anemo:1,Electro:1,Omni:4};h.consumptionReceipt.beforeKey=T.boardKey(b);}
+      if(mode==="refund")c.dice={Omni:5};
+      if(mode==="badge")h.diceCountIn=()=>5;
+      if(mode==="free")h.consumptionReceipt.cost={};
+      h.confirmationSession={key:T.actionKey(a)+"/"+T.boardKey(b)};
+      assert.equal(T.verify(a,b,c),false,"same-name hand growth is not consumption proof");
+      assert.equal(await h.provePaidDraw(a,b,c,m),mode==="valid",mode);
+      assert.equal(T.verify(a,b,c),mode==="valid",mode);
+    }
+  });
+  await test("C01 native central payment binds only the submitted source receipt",async()=>{
+    for(const mode of ["valid","wrong-owner","ambiguous","wrong-card","enemy","input-failed"]){
+      const {T,h,b,a,c}=drawFixture("mozailu",["countdown3"],["countdown3","wolf"]);
+      let clicks=0;
+      const page={banner:"打出手牌：幻戏倒计时：3",phase:{phase:"unknown",turn:"none"},
+        targets:[{x:900,y:900,w:100,h:50}]};
+      if(mode==="wrong-owner")h.consumptionReceipt.beforeKey="other-board";
+      if(mode==="ambiguous")page.targets.push({...page.targets[0],x:1100});
+      if(mode==="wrong-card")page.banner="打出手牌：运筹帷幄";
+      if(mode==="enemy")page.phase={phase:"board",turn:"enemy"};
+      h.requireNoWarning=async()=>{};
+      h.cardConfirmationEntryIn=()=>page;h.cardPaymentControlsIn=()=>page.targets;
+      h.cardBannerIn=()=>page.banner;h.phaseIn=()=>page.phase;
+      h.clickAt=()=>{if(mode==="input-failed")throw Error("native input failed");clicks++;h.inputRevision++;};
+      if(["valid","wrong-owner"].includes(mode))await h.cardConfirm(a,b);
+      else await assert.rejects(()=>h.cardConfirm(a,b));
+      assert.equal(clicks,["valid","wrong-owner"].includes(mode)?1:0,mode);
+      assert.equal(h.consumptionReceipt.paymentSubmitted===true,mode==="valid",mode);
+      assert.equal(T.verify(a,b,c),false,
+        "payment click alone is not consumption");
+    }
+  });
   await test("C01 paid same-name draw confirms once and retires only its consumed origin",async()=>{
     for(const id of ["raiden","iansan","moonbloom","mozailu"]){
       const {T,h,m,b,a}=drawFixture(id,["draw"],["draw",id==="moonbloom"?"sashimi":id==="mozailu"?"boar":"sweet"]);

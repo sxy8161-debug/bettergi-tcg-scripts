@@ -213,6 +213,7 @@ module.exports = async function (test) {
     for(const late of [{phase:"board",turn:"enemy"},{phase:"unknown",turn:"none"}]){
       const f=await combatFixture(),h=f.host,p=new f.Player(h,{maxMinutes:2}),scene={phase:"board",turn:"user"};
       h.phaseIn=()=>({...scene});h.board=()=>({...plain(f.before),...scene});h.handCache=null;
+      h.matches=()=>[]; // This phase/input fixture has no native image backend.
       h.prepareHandInput=async()=>{await h.expand(false);return {count:2,stableReads:2,source:"full-cost-layout"};};
       h.inspectHandCard=async(_a,x)=>{h.clickAt(x,945);Object.assign(scene,late);};
       h.drag=async()=>{throw Error("no drag or card confirmation after interrupted phase");};
