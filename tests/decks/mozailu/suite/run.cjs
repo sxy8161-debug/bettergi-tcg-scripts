@@ -328,12 +328,14 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
   });
   await test("last Shift confirms actual empty fan; missing count alone or a stale receipt cannot prove zero",async()=>{
     let time=100000;class Clock extends Date{static now(){return time;}}
-    const c=loadContext({Date:Clock,sleep:async ms=>{time+=ms;},...nativeInput(()=>{throw Error("unexpected submitted input");})}),t=c.TCG;
+    const c=loadContext({Date:Clock,sleep:async ms=>{time+=ms;},...nativeInput((x,y)=>{
+      assert.ok(x===967&&y===1041||x===1190&&y===545,"confirmation must not resubmit the action");
+    })}),t=c.TCG;
     const h=new c.TCGBetterGI.BetterGIHost({}),s=board(["shift"],2),a=card(s,"shift"),m=memory();
     h.trace=()=>{};h.frame=fn=>fn({});h.phaseIn=()=>({phase:"board",turn:"user"});
     h.board=()=>({...clone(s),hand:null});h.boardReady=true;h.expectedDice=t.total(s.dice);
-    h.handCountIn=()=>null;h.emptyHandIn=()=>true;h.phase=()=>h.phaseIn();
-    h.expand=async()=>{h.handFanReady=true;};
+    h.handCountIn=()=>null;h.phase=()=>h.phaseIn();
+    h.matches=()=>[];h.ocr=()=>"";h.ocrRows=()=>[];
     h.readHand=async()=>{throw Error("unnecessary full hand scan");};
     const receipt={inputSent:true,id:a.id,index:a.index,target:null,beforeKey:t.boardKey(s)};
     const proof={...receipt,kind:"native-empty-fan",sourceCount:1,stableReads:2};
@@ -353,13 +355,17 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     t.commit(m,a,s,result);assert.equal(m.freeSwitch,true);
   });
   await test("last ordinary tuning uses the real empty-fan confirmation; generated cards and missing dice change stay unproven",async()=>{
-    for(const id of ["troupe","flowingFlame"]) {
+    for(const id of ["troupe","flowingFlame","timaeus"]) {
       let time=100000;class Clock extends Date{static now(){return time;}}
-      const c=loadContext({Date:Clock,sleep:async ms=>{time+=ms;},...nativeInput(()=>{throw Error("unexpected submitted input");})}),t=c.TCG;
+      const c=loadContext({Date:Clock,sleep:async ms=>{time+=ms;},...nativeInput((x,y)=>{
+        assert.ok(x===967&&y===1041||x===1190&&y===545,"confirmation must not resubmit tuning");
+      })}),t=c.TCG;
       const h=new c.TCGBetterGI.BetterGIHost({}),s=board([id],2),m=memory();
       // slot04: last Troupe, Hydro1/Anemo2 -> Pyro1/Hydro1/Anemo1; count badge is unreadable.
-      s.dice={Hydro:1,Anemo:2};const a={type:"tune",id,index:0,element:"Pyro"};
-      const after={...clone(s),hand:null,dice:{Pyro:1,Hydro:1,Anemo:1}};
+      // slot03: the last Timaeus changes Geo to Pyro while count remains unreadable.
+      s.dice=id==="timaeus"?{Pyro:2,Anemo:1,Geo:1}:{Hydro:1,Anemo:2};
+      const a={type:"tune",id,index:0,element:"Pyro"};
+      const after={...clone(s),hand:null,dice:id==="timaeus"?{Pyro:3,Anemo:1}:{Pyro:1,Hydro:1,Anemo:1}};
       const receipt={inputSent:true,id,index:0,target:null,beforeKey:t.boardKey(s)};
       const proof={...receipt,kind:"native-empty-fan",sourceCount:1,stableReads:2};
       assert.equal(t.emptyHandEffect(a,s,after),false,"dice conversion alone cannot prove an empty hand");
@@ -368,9 +374,9 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
       assert.equal(t.verify(a,s,{...after,hand:[],dice:s.dice}),false,"empty fan alone cannot confirm tuning");
       assert.equal(t.emptyHandEffect(a,s,{...after,handEvidence:{...proof,beforeKey:"stale"}}),false);
       h.trace=()=>{};h.frame=fn=>fn({});h.phaseIn=()=>({phase:"board",turn:"user"});
-      h.board=()=>clone(after);h.boardReady=true;h.expectedDice=3;
-      h.handCountIn=()=>null;h.emptyHandIn=()=>true;h.phase=()=>h.phaseIn();
-      h.expand=async()=>{h.handFanReady=true;};
+      h.board=()=>clone(after);h.boardReady=true;h.expectedDice=t.total(s.dice);
+      h.handCountIn=()=>null;h.phase=()=>h.phaseIn();
+      h.matches=()=>[];h.ocr=()=>"";h.ocrRows=()=>[];
       h.readHand=async()=>{throw Error("unnecessary full hand scan");};
       h.consumptionReceipt=receipt;
       const result=await h.confirm(a,s,m);
