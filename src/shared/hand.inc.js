@@ -3,7 +3,7 @@
 // @fragment bgi-host.handCostMarkersIn
 handCostMarkersIn(f, roi, useColor = false) {
       const threshold = roi.panel === "handFolded" && roi.layoutKey === "16:10" ? .88 : .9;
-      return ["hand_cost_neutral", "hand_cost_element", "hand_cost_dendro", "hand_cost_electro", "hand_cost_matching"]
+      return ["hand_cost_neutral", "hand_cost_element", "hand_cost_dendro", "hand_cost_electro", "hand_cost_matching", "hand_cost_pyro"]
         .flatMap(asset => this.matches(f, asset, roi, threshold, useColor));
     }
 // @endfragment bgi-host.handCostMarkersIn
@@ -386,8 +386,16 @@ async removalEvidenceBeforeReset(plan) {
             count: phase.phase === "board" && phase.turn === "user" ? this.handCountIn(f) : null,
           };
         });
-        if (p.phase !== "board" || p.turn !== "user" || this.inputRevision !== revision)
-          return null;
+        // This sample is newer than confirm()'s entry phase. A late choice
+        // or unreadable transition must interrupt, not authorize a reset
+        // through the ordinary "no consumption evidence" return value.
+        if (p.result || p.phase !== "board" || p.turn !== "user") {
+          const error = new Error("收牌前消费核验期间页面变化：" + p.phase + "/" + p.turn);
+          error.code = "TCG_OBSERVATION_INTERRUPTED";
+          error.phase = { ...p, hand: null };
+          throw error;
+        }
+        if (this.inputRevision !== revision) return null;
         stable =
           p.count === plan.hand.length && p.count === last
             ? stable + 1
@@ -674,34 +682,51 @@ async readHandTitles(cards, points, scan = { titles: 0 }) {
 
 // @fragment tcg-ui.readHand
 async readHand(expected = this.handCountHint, evidence = null, scan = { titles: 0 }) {
-      // Evidence passed here was obtained in this very observation, not an
-      // estimated count or the previous action's projected hand.
-      const n = evidence ? evidence.count : await this.handCount(expected);
-      // This scratch list belongs to one observe() call: no submitted action,
-      // phase transition or next round can inherit it. A changed native count
-      // replaces it; a failed title alone does not erase successful slots.
-      if (scan.cards && scan.cards.length !== n) scan.titleCandidates = null;
-      const hand = scan.cards?.length === n ? scan.cards : Array(n).fill(null);
-      scan.cards = hand;
-      // Establish the expanded fan once. Selecting a card only raises that
-      // card; it does not require resetting/re-expanding the whole hand.
-      if (n > 0 && !this.handFanReady) {
-        this.requireHandObservation(this.phase(), "before-scan-expand");
-        await this.expand();
+      const started = Date.now(), titlesBefore = scan.titles;
+      let observed = null;
+      try {
+        // One owner for the read transaction. The artwork adapter only seeds
+        // identities/count; it cannot finish a second title/reset lifecycle.
+        if (!scan.cards && this.readFoldedHand)
+          evidence = await this.readFoldedHand(expected, evidence, scan);
+        // Evidence passed here was obtained in this very observation, not an
+        // estimated count or the previous action's projected hand.
+        const n = evidence ? evidence.count : await this.handCount(expected);
+        // This scratch list belongs to one observe() call: no submitted action,
+        // phase transition or next round can inherit it. A changed native count
+        // replaces it; a failed title alone does not erase successful slots.
+        if (scan.cards && scan.cards.length !== n) scan.titleCandidates = null;
+        const hand = scan.cards?.length === n ? scan.cards : Array(n).fill(null);
+        scan.cards = hand;
+        // Establish the expanded fan once. Selecting a card only raises that
+        // card; it does not require resetting/re-expanding the whole hand.
+        if (n > 0 && !hand.every(Boolean) && !this.handFanReady) {
+          this.requireHandObservation(this.phase(), "before-scan-expand");
+          await this.expand();
+        }
+        this.handScanSerial++;
+        // Copy all positions before the first title click invalidates the proof.
+        // Selection raises one card but does not reorder the rest of this fan.
+        const points = this.handPoints(n);
+        await this.prepareHandObservation?.(n);
+        if (!scan.route) scan.route = "expanded-artwork-fallback";
+        this.trace("hand-scan", { count: n, expected, reusedCount: !!evidence, route: scan.route });
+        await this.fillHandArtwork?.(hand, scan);
+        await this.readHandTitles(hand, points, scan);
+        observed = this.finishHandObservation ? this.finishHandObservation(hand, scan) : hand;
+        if (this.handFanReady || this.handNeedsReset) {
+          this.requireHandObservation(this.phase(), "before-hand-reset");
+          await this.reset();
+        }
+        this.handCountHint = null;
+        return observed;
+      } finally {
+        // Do not click in finally: a failed title retains this observation's
+        // known slots; a changed phase belongs to the recovery/phase owner.
+        try { this.trace("hand-read-completed", { route: scan.route || "expanded-artwork-fallback",
+          count: observed?.length ?? null, titleSlots: scan.titles - titlesBefore,
+          elapsedMs: Date.now() - started }); } catch {}
       }
-      this.handScanSerial++;
-      // Copy all positions before the first title click invalidates the proof.
-      // Selection raises one card but does not reorder the rest of this fan.
-      const points = this.handPoints(n);
-      await this.prepareHandObservation?.(n);
-      this.trace("hand-scan", { count: n, expected, reusedCount: !!evidence });
-      await this.fillHandArtwork?.(hand, scan);
-      await this.readHandTitles(hand, points, scan);
-      const observed = this.finishHandObservation ? this.finishHandObservation(hand, scan) : hand;
-      this.requireHandObservation(this.phase(), "before-hand-reset");
-      await this.reset();
-      this.handCountHint = null;
-      return observed;
     }
 // @endfragment tcg-ui.readHand
 

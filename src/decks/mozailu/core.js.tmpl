@@ -247,7 +247,10 @@
     if(a.type==="probe"||a.type==="switch")return {mode:"unchanged",hand:h};
     // Swirls and reaction artifacts can insert cards; do not trust the old empty hand.
     if(a.type==="skill")return m?.talents[1]||m?.artifactKinds.includes("gilded")?{mode:"full"}:{mode:"unchanged",hand:h};
-    if(a.type==="card"&&(["draw","recycle","talent"].includes(c?.type)))return {mode:"full"};
+    // A recycle replaces one observed card with one observed equipment card.
+    // verify() requires that complete replacement; it is not a pending draw.
+    if(a.type==="card"&&c?.type==="recycle")return {mode:"full",refreshAfterConsumption:false};
+    if(a.type==="card"&&(["draw","talent"].includes(c?.type)))return {mode:"full"};
     if(a.type==="card"&&c?.type==="support"&&(!m||a.id==="timaeus"||
       ["liben","dunyarzad"].includes(a.id)&&m.supports.some(x=>x.id==="dunyarzad"&&!x.drawUsed)))
       return {mode:"full",retainedHand:indexedHand(h.filter((_,i)=>i!==a.index)),

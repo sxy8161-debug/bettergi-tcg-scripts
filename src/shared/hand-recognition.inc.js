@@ -292,74 +292,51 @@
             elapsedMs:Date.now()-started,inputs:0});}catch{}
         }
       }
-      async readHand(expected=this.handCountHint,evidence=null,scan={titles:0}){
-        const started=Date.now(),titlesBefore=scan.titles;let route="expanded-artwork-fallback",hand=null;
-        try{
-          if(scan.cards)
-            return hand=await super.readHand(expected,evidence,scan);
-          // Full synchronization always tries the native artwork bank first.
-          // A raised fan is a view state, not evidence that every identity failed.
-          if(this.handFanReady||this.handNeedsReset){
-            this.requireHandObservation(this.phase(),"before-hand-artwork");
-            if(this.handFanReady){
-              const count=this.frame(f=>this.nativeHandCountIn(f));
-              if(count!==null)evidence={count};
-            }
-            await this.reset();
+      async readFoldedHand(expected,evidence,scan){
+        // Full synchronization always tries the native artwork bank first.
+        // A raised fan is a view state, not evidence that every identity failed.
+        if(this.handFanReady||this.handNeedsReset){
+          this.requireHandObservation(this.phase(),"before-hand-artwork");
+          if(this.handFanReady){
+            const count=this.frame(f=>this.nativeHandCountIn(f));
+            if(count!==null)evidence={count};
           }
-          let read=await this.folded("board",scan.settling===true);
-          if(read?.status==="raised"){
-            this.requireHandObservation(this.phase(),"raised-hand-before-folded-read");
-            if(read.nativeCount!==null)evidence={count:read.nativeCount};
-            await this.reset();
-            read=await this.folded("board",scan.settling===true);
-          }
-          const cards=read?.slots.map(s=>s.id?T.observedCard(T.byId[s.id].name,s.index):null);
-          if(!read||read.status==="raised"||read.countConflict||(evidence&&evidence.count!==read.count))
-            return hand=await super.readHand(expected,evidence,scan);
-          // Resolve missing count from native evidence without discarding the
-          // artwork identities merely because an older count hint disagrees.
-          let count=evidence?evidence.count:read.nativeCount;
-          // A complete calibrated native row measures count and slots together.
-          // Only an actual disagreement requires another measurement; a missing
-          // expanded badge alone is not a reason to toggle an already folded fan.
-          if(count===null && expected!==null && expected!==read.count){
-            this.requireHandObservation(this.phase(),"before-local-hand-count");
-            count=await this.handCount(expected);
-          }
-          count??=read.count;
-          if(count!==read.count)return hand=await super.readHand(null,{count},scan);
-          // Kept opening cards are already observed identities. Before the
-          // first action/read, reuse that evidence through the same complete
-          // family/count checks; never infer a countdown stage from its price.
-          const retained=scan.retainedHand??(this.handScanSerial===0&&!this.currentAction&&read.count===5
-            ?this.openingCards:null);
-          this.fillHandVariants(cards,read.slots,retained,scan.retainedVariantFamilies);
-          scan.cards=cards;
-          this.handScanSerial++;
-          if(cards.every(Boolean)){
-            route=this.handFanReady?"folded-identities-native-count":"folded-full";
-            await this.prepareHandObservation?.(count);
-          }else{
-            route="local-title-fallback";
-            this.requireHandObservation(this.phase(),"before-local-hand-fallback");
-            if(!this.handFanReady)await this.expand();
-            const points=this.handPoints(count);
-            await this.prepareHandObservation?.(count);
-            scan.titleCandidates=read.slots.map(s=>s.titleCandidates);
-            await this.fillHandArtwork(cards,scan);
-            await this.readHandTitles(cards,points,scan);
-          }
-          hand=this.finishHandObservation?this.finishHandObservation(cards,scan):cards;
-          if(this.handFanReady||this.handNeedsReset){
-            this.requireHandObservation(this.phase(),"before-hand-reset");
-            await this.reset();
-          }
-          this.handCountHint=null;return hand;
-        }finally{
-          try{this.trace("hand-read-completed",{route,count:hand?.length??null,
-            titleSlots:scan.titles-titlesBefore,elapsedMs:Date.now()-started});}catch{}
+          await this.reset();
         }
+        let read=await this.folded("board",scan.settling===true);
+        if(read?.status==="raised"){
+          this.requireHandObservation(this.phase(),"raised-hand-before-folded-read");
+          if(read.nativeCount!==null)evidence={count:read.nativeCount};
+          await this.reset();
+          read=await this.folded("board",scan.settling===true);
+        }
+        const cards=read?.slots.map(s=>s.id?T.observedCard(T.byId[s.id].name,s.index):null);
+        if(!read||read.status==="raised"||read.countConflict||(evidence&&evidence.count!==read.count))
+          return evidence;
+        // Resolve missing count from native evidence without discarding the
+        // artwork identities merely because an older count hint disagrees.
+        let count=evidence?evidence.count:read.nativeCount;
+        // A complete calibrated native row measures count and slots together.
+        // Only an actual disagreement requires another measurement; a missing
+        // expanded badge alone is not a reason to toggle an already folded fan.
+        if(count===null && expected!==null && expected!==read.count){
+          this.requireHandObservation(this.phase(),"before-local-hand-count");
+          count=await this.handCount(expected);
+        }
+        count??=read.count;
+        if(count!==read.count)return {count};
+        // Kept opening cards are already observed identities. Before the
+        // first action/read, reuse that evidence through the same complete
+        // family/count checks; never infer a countdown stage from its price.
+        const retained=scan.retainedHand??(this.handScanSerial===0&&!this.currentAction&&read.count===5
+          ?this.openingCards:null);
+        this.fillHandVariants(cards,read.slots,retained,scan.retainedVariantFamilies);
+        scan.cards=cards;
+        scan.route=cards.every(Boolean)
+          ?this.handFanReady?"folded-identities-native-count":"folded-full"
+          :"local-title-fallback";
+        scan.titleCandidates=read.slots.map(s=>s.titleCandidates);
+        return {count};
       }
       async opening(){
         if(!openingBank||T.openingSetting(this.options.mulligan)==="全部保留")return super.opening();

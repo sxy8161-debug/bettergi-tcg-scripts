@@ -50,6 +50,19 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
       // confirmed, but use the existing quiet-board observer before planning.
       // Do not require HP gain: full HP or healing suppression may prevent it.
       const quietObservationRequired = action.type === "card" && action.id === "edict";
+      // The pending action owns both identity synchronization and whether
+      // consumption might still precede insertion. The lifecycle must not
+      // reconstruct that plan after commit has changed the deck memory.
+      const completed = (after, confirmed) => ({
+        ...after, ...this.confirmationExtras?.(), confirmed,
+        // A card may enter combat confirmation as a skill (e.g. a kernel).
+        // That adapter preserves cardAction; its hand effects remain a card's.
+        handRefreshRequired: confirmed && (action.cardAction || action).type === "card" &&
+          session.plan?.mode === "full" && session.plan.refreshAfterConsumption !== false &&
+          Array.isArray(after.hand) && after.hand.length <= before.hand.length,
+        freshObservationRequired: confirmed && (effectAction && !session.transition || quietObservationRequired),
+        quietObservationRequired: confirmed && quietObservationRequired,
+      });
       while (Date.now() < deadline) {
         sampledAt = Date.now();
         const p = this.phase();
@@ -93,39 +106,42 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           return { ...p, confirmed };
         }
         if (p.turn === "user") {
-          if (handoff && !handoff.ready) {
-            const now = Date.now(), minimumMs = action.skill === "Q" ? 15000 : 10000;
-            // Reuse the official 10s/15s no-handoff grace, but keep observing:
-            // a real opponent return can release it early; terminal/pick/choice
-            // still dispatch above. Never require a nonexistent enemy turn.
-            const eligible = p.phase === "board" &&
-              (session.transition || now - handoff.startedAt >= minimumMs);
-            if (eligible) { handoff.ownSince ??= now; handoff.ownReads++; }
-            else { handoff.ownSince = null; handoff.ownReads = 0; }
-            if (!eligible || handoff.ownReads < 3 || now - handoff.ownSince < 2000) {
-              const reason = eligible ? "own-turn-still-settling" : "handoff-not-observed";
-              if (handoff.reason !== reason) {
-                handoff.reason = reason;
-                this.trace("combat-handoff-wait", { action, reason, phase: p.phase, turn: p.turn,
-                  transition: session.transition, elapsedMs: now - handoff.startedAt, minimumMs });
-              }
-              await waitForSample(450); continue;
-            }
-            handoff.ready = true;
-            // Phase persistence is not full effect proof. Keep the existing
-            // quiet COMPLETE-board observer before any hand scan or input.
-            this.autoRisk = true;
-            this.trace("combat-handoff-ready", { action, transition: session.transition,
-              elapsedMs: now - handoff.startedAt, ownStableMs: now - handoff.ownSince,
-              ownReads: handoff.ownReads, proof: session.transition ? "observed-opponent-return" : "conservative-no-handoff-window" });
-          }
           let after;
           try {
             this.requireHandObservation(p, "before-confirm-reset");
+            // Finish the submitted card's view as soon as its own board returns,
+            // not after the entire combat handoff wait. Never fold enemy/choice
+            // pages, and keep pre-reset consumption evidence bound to this action.
             const receipt = await this.removalEvidenceBeforeReset(session.plan);
-            if (!this.boardReady && (this.handNeedsReset || this.handFanReady)) await this.reset();
+            if (p.phase === "board" && (this.handNeedsReset || this.handFanReady)) await this.reset();
             if (receipt && this.inputRevision >= receipt.revision && this.inputRevision <= receipt.revision + 1)
               session.plan = { ...session.plan, preResetEvidence: { ...receipt, revision: this.inputRevision } };
+            if (handoff && !handoff.ready) {
+              const now = Date.now(), minimumMs = action.skill === "Q" ? 15000 : 10000;
+              // Reuse the official 10s/15s no-handoff grace, but keep observing:
+              // a real opponent return can release it early; terminal/pick/choice
+              // still dispatch above. Never require a nonexistent enemy turn.
+              const eligible = p.phase === "board" &&
+                (session.transition || now - handoff.startedAt >= minimumMs);
+              if (eligible) { handoff.ownSince ??= now; handoff.ownReads++; }
+              else { handoff.ownSince = null; handoff.ownReads = 0; }
+              if (!eligible || handoff.ownReads < 3 || now - handoff.ownSince < 2000) {
+                const reason = eligible ? "own-turn-still-settling" : "handoff-not-observed";
+                if (handoff.reason !== reason) {
+                  handoff.reason = reason;
+                  this.trace("combat-handoff-wait", { action, reason, phase: p.phase, turn: p.turn,
+                    transition: session.transition, elapsedMs: now - handoff.startedAt, minimumMs });
+                }
+                await waitForSample(450); continue;
+              }
+              handoff.ready = true;
+              // Phase persistence is not full effect proof. Keep the existing
+              // quiet COMPLETE-board observer before any hand scan or input.
+              this.autoRisk = true;
+              this.trace("combat-handoff-ready", { action, transition: session.transition,
+                elapsedMs: now - handoff.startedAt, ownStableMs: now - handoff.ownSince,
+                ownReads: handoff.ownReads, proof: session.transition ? "observed-opponent-return" : "conservative-no-handoff-window" });
+            }
             after = await this.observe(true, session.plan ? { ...session.plan, transitionPassed: session.transition } : null);
           } catch (e) {
             if (["TCG_BOARD_RETRY", "TCG_DICE_RETRY", "TCG_HAND_RETRY"].includes(e.code)) {
@@ -167,9 +183,7 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
             // hand this early snapshot straight to the next planner. A new
             // full observation is required when no enemy turn was observed;
             // it must not wait for predicted damage or exclude zero damage.
-            return { ...after, ...this.confirmationExtras?.(), confirmed: true,
-              freshObservationRequired: effectAction && !session.transition || quietObservationRequired,
-              quietObservationRequired };
+            return completed(after, true);
           }
           if (!budgetMatches && !await this.observedResourceProof(after)) {
             this.trace("budget-reconciliation-wait", { action, expectedDice: this.expectedDice,
@@ -198,9 +212,7 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           const confirmed = TCG.verifyResynchronized(action, before, after, session.transition);
           this.adoptObservedState(after, "post-action-resync");
           this.trace("state-resynced", { action, confirmed, after });
-          return { ...after, ...this.confirmationExtras?.(), confirmed, resynchronized: true,
-            freshObservationRequired: confirmed && (effectAction && !session.transition || quietObservationRequired),
-            quietObservationRequired: confirmed && quietObservationRequired };
+          return { ...completed(after, confirmed), resynchronized: true };
         }
         if (p.phase === "roll" && combat) return { ...p, confirmed: session.transition };
         await waitForSample(450);

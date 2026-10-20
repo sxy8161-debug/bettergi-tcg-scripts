@@ -472,9 +472,6 @@ async act() {
         planningMs = Date.now() - started;
       host.trace("decision", action);
       if (action.type === "stop") throw new Error(action.reason);
-      // Use the deck's pre-action identity/order contract, not the card's
-      // display category. Weapons, food and other cards can also insert cards.
-      const handChangingCard = action.type === "card" && T.handPlan(action, state, memory).mode === "full";
       const execution = await this.execute(action, state);
       if (!execution.sent) return;
       log.info("[第" + memory.round + "回合] " + actionCommentary(action, state, memory));
@@ -495,8 +492,7 @@ async act() {
         log.warn("动作效果未确认，已重新同步，不重复输入。");
       }
       T.noteBoard(memory, after);
-      const refreshHand = after.confirmed && handChangingCard &&
-        Array.isArray(after.hand) && after.hand.length <= state.hand.length;
+      const refreshHand = after.confirmed && after.handRefreshRequired === true;
       if (refreshHand) {
         // Consumption can precede card insertion (native draw 3 -> 2). Do not
         // plan from that partial hand. This also covers non-draw categories

@@ -167,7 +167,7 @@ module.exports = async function (test) {
           return asset==="hand_cost_neutral"?sample[useColor?"color":"gray"].map(([x,y])=>({x,y,w:10,h:30})):[];
         };
         const read=h.frame(frame=>h.collapsedLayoutIn(frame));
-        assert.deepEqual(modes,Array(5).fill(color));
+        assert.ok(modes.length>0&&modes.every(mode=>mode===color));
         assert.equal(read.count,!color&&i===0?null:sample.expectedCount);
       }
       const C=f.env.TCGCollapsedHand,marks=samples[0].color.map(([x,y])=>({x,y}));
