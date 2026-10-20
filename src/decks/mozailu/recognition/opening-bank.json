@@ -161,6 +161,23 @@
         }
       ],
       "scoreFloor": 0.95
+    },
+    {
+      "id": "timaeus",
+      "name": "蒂玛乌斯",
+      "patches": [
+        "assets/opening/蒂玛乌斯-v01-p01.png",
+        "assets/opening/蒂玛乌斯-v01-p02.png"
+      ],
+      "views": [
+        {
+          "name": "reviewed-opening1600",
+          "patches": [
+            "assets/opening/蒂玛乌斯-v01-p01.png",
+            "assets/opening/蒂玛乌斯-v01-p02.png"
+          ]
+        }
+      ]
     }
   ]
 }

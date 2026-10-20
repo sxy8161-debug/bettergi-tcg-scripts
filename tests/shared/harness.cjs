@@ -3,7 +3,6 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const scripts = ["core", "strategy", "bgi", "player"];
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 // Translate only a detached historical fixture, never its source bytes or the
@@ -33,11 +32,7 @@ function load(base, overrides = {}) {
     ...overrides,
     file: { createDirectory() {}, isExists() { return false; }, writeTextSync() { return true; }, ...overrides.file },
   });
-  for (const name of scripts) {
-    vm.runInContext(fs.readFileSync(path.join(base, "lib", name + ".js"), "utf8"), context, {
-      filename: name + ".js",
-    });
-  }
+  require("../business/runtime.cjs").loadDefinitions(fs.readFileSync(path.join(base,"main.js"),"utf8"),context);
   return context;
 }
 
@@ -53,4 +48,4 @@ function nativeInput(onClick = () => {}, onMove = () => {}) {
     leftButtonClick() { onClick(...point); },
   };
 }
-module.exports = { load, clone, historical, scripts, nativeInput };
+module.exports = { load, clone, historical, nativeInput };

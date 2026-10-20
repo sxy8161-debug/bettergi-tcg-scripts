@@ -295,43 +295,6 @@
           return true;
         }
       }
-      // Raise the fan to expose any residual card. Payment/skill overlays can
-      // hide a nonempty hand; both frames must be the own-action board.
-      if (!this.handFanReady) await this.expand(false);
-      let stable = 0;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const p = this.frame((f) => ({
-          phase: this.phaseIn(f),
-          count: this.handCountIn(f),
-          empty: this.emptyHandIn(f,"bottom"),
-        }));
-        const matched =
-          p.phase.phase === "board" &&
-          p.phase.turn === "user" &&
-          p.empty &&
-          (p.count === null || p.count === 0);
-        stable = matched ? stable + 1 : 0;
-        this.trace("empty-hand-native", {
-          attempt,
-          matched,
-          stable,
-          count: p.count,
-          phase: p.phase,
-        });
-        if (p.count > 0) return false;
-        if (stable >= 2) {
-          const proof = {
-            kind: "native-empty-fan",
-            stableReads: stable,
-            sourceCount: 1,
-            ...receipt,
-          };
-          if (!TCG.emptyHandEffect(a, b, { ...settled, handEvidence: proof }, false)) return false;
-          this.acceptEmptyHandProof(a, settled, b, proof);
-          return true;
-        }
-        if (attempt < 2) await sleep(180);
-      }
       // Zero-cost equipment may leave even the element vector unchanged. Prove
       // the NEW equipment on the exact target instead of matching its table.
       const kind = TCG.byId[a.id]?.type,
@@ -340,7 +303,7 @@
       if (
         !singleCard || a.type !== "card" || !["artifact", "weapon"].includes(kind) ||
         TCG.byId[prior]?.type !== kind || prior === a.id || this.autoRisk
-      ) return false;
+      ) return super.proveEmptyHand(plan, settled);
       this.requireHandObservation(this.phase(), "before-equipment-effect-proof");
       await this.reset();
       const title = await this.titleAt(charX[a.target], 720, false, false, "character", a.target);
@@ -364,7 +327,7 @@
         throw e;
       }
       const visible = this.frame((f) => this.handCountIn(f));
-      if (!matched || (visible !== null && visible !== 0)) return false;
+      if (!matched || (visible !== null && visible !== 0)) return super.proveEmptyHand(plan, settled);
       this.acceptEmptyHandProof(a, settled, b, {
         ...receipt, kind: "native-new-equipment", stableReads: 2, prior,
       });

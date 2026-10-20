@@ -29,6 +29,7 @@
     /* @include src/shared/lifecycle.inc.js#lifecycle.opening */
     /* @include src/shared/lifecycle.inc.js#lifecycle.choice */
     planOpening(stage) {
+      if(this.memory.round===0)this.memory.countdownStock={countdown3:T.byId.countdown3.copies};
       this.memory.openingTarget=0;
       this.host.trace("opening-character-plan",{target:0,stage:stage||"initial-pick",route:"莫娜挂水后按实际敌方数量接力"});
       return {target:0};

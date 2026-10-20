@@ -21,10 +21,16 @@ function render(text, dependencies = [], stack = [], deck = null) {
  });
 }
 const elements=["Pyro","Hydro","Anemo","Electro","Dendro","Cryo","Geo","Omni"];
-const commonAssets=["user_turn","enemy_turn","charge","uncharge","disable","hand_empty","hand_empty_blue","hand_rim","hand_cost_neutral","hand_cost_element","hand_cost_dendro","hand_cost_electro","hand_cost_matching","hand_empowered",
+const commonAssets=["user_turn","enemy_turn","charge","uncharge","disable","hand_rim","hand_cost_neutral","hand_cost_element","hand_cost_dendro","hand_cost_electro","hand_cost_matching","hand_empowered",
  ...["Main","Roll"].flatMap(k=>elements.map(e=>"dice/Native"+k+e)),
  ...["角色状态_水泡","角色状态_冻结2","角色状态_冻结","确定","对方行动中","回合结算阶段","回合结束","出战角色","元素骰子不足","元素调和"].map(n=>"core/"+n),
  ...["Pyro","Hydro","Cryo","Electro","Dendro","Freeze"].map(n=>"state/State"+n),...[5,6,7,8,9,10].map(n=>"num/Hand"+n)];
+function documentationLinks(text){
+ return text.replace(/\]\(ATTRIBUTION\.md\)/g,"](#attribution)")
+  .replace(/\]\(LICENSE-GPL-3\.0\.txt\)/g,"](#license)")
+  .replace(/`ATTRIBUTION\.md`/g,"[素材来源与署名](#attribution)")
+  .replace(/`LICENSE-GPL-3\.0\.txt`/g,"[许可证全文](#license)");
+}
 function packageFiles(id,options={}) {
  const p=config.players[id];if(!p)throw new Error("Unknown player "+id);
  const result=new Map(),dir=path.join(base,"src/decks",id),dependencies=[];
@@ -56,6 +62,11 @@ function packageFiles(id,options={}) {
    text=JSON.stringify(m,null,2)+"\n";}
   result.set(name,Buffer.from(text));
  }
+ const readme=documentationLinks(result.get("README.md").toString()),attribution=documentationLinks(result.get("ATTRIBUTION.md").toString());
+ result.set("README.md",Buffer.from(readme+'\n\n<a id="attribution"></a>\n\n'+attribution+
+  '\n\n<a id="license"></a>\n\n## 许可证全文\n\n<details>\n<summary>GNU General Public License v3.0（完整原文）</summary>\n\n```text\n'+
+  result.get("LICENSE-GPL-3.0.txt").toString()+'\n```\n\n</details>\n'));
+ result.delete("ATTRIBUTION.md");result.delete("LICENSE-GPL-3.0.txt");
  const recognition=p.recognition?recognitionFiles(id):new Map();
  for(const [rel,bytes]of recognition)result.set(rel,bytes);
  const readers=p.recognition?["collapsed-hand","opening-hand","hand-recognition"]:[];
@@ -64,8 +75,12 @@ function packageFiles(id,options={}) {
   new vm.Script(bytes.toString(),{filename:rel});result.set("lib/"+name+".js",bytes);dependencies.push(rel);
  }
  const select=p.recognition?'const {Host, Player} = TCGHandRecognition.classes(globalThis, JSON.parse(file.readTextSync("hand-bank.json")), JSON.parse(file.readTextSync("opening-bank.json")));':'const Host = TCGBetterGI.BetterGIHost, Player = TCGPlayer.Player;';
- const entry='for (const name of '+JSON.stringify(["core","strategy","bgi","player",...readers])+') {\n  eval(file.readTextSync("lib/" + name + ".js"));\n}\n(async function () {\n  "use strict";\n  const options = TCGPlayer.playerOptions(typeof settings === "undefined" ? {} : settings);\n  '+select+'\n  return new Player(new Host(options), options).run();\n})();\n';
- result.set("main.js",Buffer.from(entry));
+ const modules=["core","strategy","bgi","player",...readers];
+ const bundled=modules.map(name=>'// @module '+name+'\n'+result.get("lib/"+name+".js").toString()).join('\n;\n');
+ const entry='\n;\n// @tcg-entry\n(async function () {\n  "use strict";\n  const options = TCGPlayer.playerOptions(typeof settings === "undefined" ? {} : settings);\n  '+select+'\n  return new Player(new Host(options), options).run();\n})();\n';
+ new vm.Script(bundled+entry,{filename:id+"/main.js"});
+ result.set("main.js",Buffer.from(bundled+entry));
+ for(const name of modules)result.delete("lib/"+name+".js");
  for(const n of [...commonAssets,...p.extraAssets])result.set("assets/"+n+".png",fs.readFileSync(path.join(base,"assets",n+".png")));
  for(const name of result.keys())if(/(?:tests|evidence|logs|tools|node_modules|src)\//.test(name))throw new Error("Internal file in runtime package: "+name);
  dependencies.push("src/shared/rules.inc.js#tcg-rules.strategyRegistry");
@@ -155,17 +170,39 @@ function retiredTemplateFiles(files,baseline){
   for(const region of require("./card-atlas.cjs").validateAtlas(files).values())retained.add(region.sourceSha256);
  return new Map(Object.entries(baseline||{}).filter(([rel,hash])=>!files.has(rel)&&templatePath.test(rel)&&retained.has(hash)));
 }
-function retireTemplates(target,retired,backup){
- const root=path.resolve(target);
+function retiredRuntimeFiles(target,files,baseline){
+ const retired=retiredTemplateFiles(files,baseline),main=files.get("main.js")?.toString(),readme=files.get("README.md")?.toString();
+ for(const [rel,hash]of Object.entries(baseline||{})){
+  if(files.has(rel)||retired.has(rel))continue;
+  if(/^lib\/(core|strategy|bgi|player|collapsed-hand|opening-hand|hand-recognition)\.js$/.test(rel)){
+   if(main?.includes(fs.readFileSync(path.join(target,rel),"utf8")))retired.set(rel,hash);
+  }else if(["ATTRIBUTION.md","LICENSE-GPL-3.0.txt"].includes(rel)){
+   const text=fs.readFileSync(path.join(target,rel),"utf8");
+   if(readme?.includes(rel==="ATTRIBUTION.md"?documentationLinks(text):text))retired.set(rel,hash);
+  }else if(rel==="assets/card-atlas/opening.png"){
+   const index=require("./card-atlas.cjs").validateAtlas(files),retained=new Set([...index.values()].map(r=>r.sourceSha256+":"+r.rect.slice(2).join(",")));
+   const old=["hand-bank.json","opening-bank.json"].flatMap(name=>Object.values(JSON.parse(fs.readFileSync(path.join(target,name),"utf8")).atlas||{})).filter(r=>r.file===rel);
+   if(old.length&&old.every(r=>retained.has(r.sourceSha256+":"+r.rect.slice(2).join(","))))retired.set(rel,hash);
+  }
+ }
+ return retired;
+}
+function retireFiles(target,retired,backup){
+ const root=path.resolve(target),backupRoot=path.resolve(backup);
  for(const [rel,hash]of retired){
-  const current=path.resolve(root,rel),saved=path.resolve(backup,rel);
-  if(!templatePath.test(rel)||!current.startsWith(root+path.sep)||fs.lstatSync(current).isSymbolicLink()||sha(fs.readFileSync(current))!==hash||fs.existsSync(saved))
-   throw Error("Retired template changed or backup exists: "+current);
+  const current=path.resolve(root,rel),saved=path.resolve(backupRoot,rel);
+  if(!current.startsWith(root+path.sep)||!saved.startsWith(backupRoot+path.sep)||fs.lstatSync(current).isSymbolicLink()||sha(fs.readFileSync(current))!==hash||fs.existsSync(saved))
+   throw Error("Retired file changed or backup exists: "+current);
+ }
+ for(const [rel]of retired){
+  const current=path.resolve(root,rel),saved=path.resolve(backupRoot,rel);
   fs.mkdirSync(path.dirname(saved),{recursive:true});fs.renameSync(current,saved);
+  let parent=path.dirname(current);
+  while(parent.startsWith(root+path.sep)&&!fs.readdirSync(parent).length){fs.rmdirSync(parent);parent=path.dirname(parent);}
  }
 }
 function assertTargetClean(id,target,files,baseline,initial,label){
- const retired=retiredTemplateFiles(files,baseline);
+ const retired=retiredRuntimeFiles(target,files,baseline);
  for(const rel of new Set([...Object.keys(baseline||{}),...files.keys()])){
   const oldPath=initial?path.join(initial,rel):null,reference=baseline?baseline[rel]:oldPath&&fs.existsSync(oldPath)?sha(fs.readFileSync(oldPath)):null;
   const current=path.join(target,rel),exists=fs.existsSync(current);
@@ -186,7 +223,7 @@ function build(){
   const p=config.players[id],{files,dependencies}=packages[id],source=path.resolve(base,p.source);
   if(args.includes("--check"))for(const [rel,bytes] of files){if(!fs.existsSync(path.join(source,rel))||sha(fs.readFileSync(path.join(source,rel)))!==sha(bytes))throw new Error("Generated source drift: "+id+"/"+rel);}
   else if(args.includes("--sync")){
-   if(retired[id].size){report.retiredBackup??=path.resolve(base,"../../backups","tcg-template-sync-"+new Date().toISOString().replace(/[:.]/g,"-"));retireTemplates(source,retired[id],path.join(report.retiredBackup,id));}
+   if(retired[id].size){report.retiredBackup??=path.resolve(base,"../../backups","tcg-package-sync-"+new Date().toISOString().replace(/[:.]/g,"-"));retireFiles(source,retired[id],path.join(report.retiredBackup,id));}
    writeFiles(source,files);
   }
   report.players[id]={version:p.version,files:Object.fromEntries([...files].map(([n,b])=>[n,sha(b)])),dependencies};
@@ -195,4 +232,4 @@ function build(){
  console.log(JSON.stringify({checked:args.includes("--check"),synced:args.includes("--sync"),players:Object.fromEntries(Object.entries(report.players).map(([id,p])=>[id,{version:p.version,files:Object.keys(p.files).length,sharedFragments:p.dependencies.length}]))}));return report;
 }
 if(require.main===module)build();
-module.exports={base,config,sha,packageFiles,packageHashes,recognitionFiles,writeFiles,build,render,assertTested,targetedProofArg,assertGeneratedClean,assertTargetClean,retiredTemplateFiles,retireTemplates,commonAssets};
+module.exports={base,config,sha,packageFiles,packageHashes,recognitionFiles,writeFiles,build,render,assertTested,targetedProofArg,assertGeneratedClean,assertTargetClean,retiredTemplateFiles,retiredRuntimeFiles,retireFiles,commonAssets};

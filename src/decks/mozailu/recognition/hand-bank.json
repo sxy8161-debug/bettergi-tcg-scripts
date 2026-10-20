@@ -266,6 +266,13 @@
             "assets/hand/幻戏倒计时-3-v02-p01.png",
             "assets/hand/幻戏倒计时-3-v02-p02.png"
           ]
+        },
+        {
+          "name": "hushang1600-right-edge",
+          "patches": [
+            "assets/hand/幻戏倒计时-3-v03-p01.png",
+            "assets/hand/幻戏倒计时-3-v03-p02.png"
+          ]
         }
       ],
       "titleCandidates": [
@@ -299,6 +306,13 @@
           "patches": [
             "assets/hand/蒂玛乌斯-v01-p01.png",
             "assets/hand/蒂玛乌斯-v01-p02.png"
+          ]
+        },
+        {
+          "name": "hushang1600",
+          "patches": [
+            "assets/hand/蒂玛乌斯-v02-p01.png",
+            "assets/hand/蒂玛乌斯-v02-p02.png"
           ]
         }
       ]

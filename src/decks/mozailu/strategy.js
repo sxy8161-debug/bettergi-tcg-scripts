@@ -37,9 +37,38 @@
       total:Math.min(enemy?.hp||0,hit.direct)+splash.reduce((n,d)=>n+Math.min(s.enemies[d.index].hp,d.direct),0)};
   }
   function carry(s,m) {
-    const water=target(s)?.auraKnown&&target(s).aura.includes("Hydro");
-    const order=living(s).length>=3||living(s).length>1&&(water||s.active===1&&m.used[1]>0)?[1,2,0]:[2,1,0];
+    const order=living(s).length>1?[1,2,0]:[2,1,0];
     return order.find(i=>T.alive(s.characters[i])&&!s.characters[i].frozen)??s.active;
+  }
+  function artifactValue(s,m,who) {
+    const id=m.artifactKinds[who];
+    if(id==="gilded")return 1;
+    if(id==="troupe")return (who!==s.active&&m.round<=2&&(who!==0||m.used[0]===0)?1.2:.1)+(m.troupe[who]||0)*.3;
+    if(id==="gambler")return (who===carry(s,m)&&living(s).some(e=>e.hp<=6)?1.2:.05)*
+      Math.min(T.gamblerRemaining(m,who),Math.max(0,living(s).length-1))/3*s.characters[who].hp/10;
+    return 0;
+  }
+  function sayuSummonValue(s,m,hit) {
+    const extra=Math.max(0,2-m.sayuSummon);if(!extra)return 0;
+    // Compare one conditional end-phase packet on the observed survivors. The
+    // active enemy may change before it resolves; use the lowest target scenario,
+    // remove the burst's consumed aura, and never count weapon/bubble on a summon.
+    const after=copy(s);
+    after.enemies.forEach((e,i)=>{
+      const d=s.enemies[i]===hit.target?hit:hit.splash.find(x=>x.index===i);
+      e.hp=Math.max(0,e.hp-(d?.direct||0));e.dead=e.hp===0;
+      if(s.enemies[i]===hit.target&&hit.reaction.consumed)e.aura=e.aura.filter(x=>x!==hit.reaction.consumed);
+      // Do not fabricate splash attachment or unknown shield depletion.
+    });
+    const candidates=living(after);
+    const clean={...m,bubble:false,weaponKinds:[null,null,null]};
+    const damage=candidates.length?Math.min(...candidates.map(e=>{
+      after.enemies.forEach(x=>{x.active=x===e;});
+      return damageEstimate(after,clean,1,"Q").total;
+    })):0;
+    const healing=s.characters.filter(T.alive).reduce((v,c)=>v+
+      Math.min(extra*2,Math.max(0,10-c.hp-m.sayuSummon*2))*.2,0);
+    return Math.min(damage*extra,candidates.reduce((n,e)=>n+e.hp,0))*.55+healing;
   }
   function projectedPayment(s,cost) {
     const element=T.team[s.active].element,paid=T.payment(s.dice,cost,element);
@@ -91,14 +120,17 @@
         const affordable=!!switched&&T.skillLegal(payable,a,memory);
         // First water setup also serves the next round. Do not invent next-round
         // dice, actions or aura, or repeat this credit after Mona has already acted.
-        const deferred=!affordable&&m.used[0]===0&&who===carry(s,m)&&
+        const deferred=m.used[0]===0&&who===carry(s,m)&&
           (skill!=="Q"||s.characters[who].energy>=T.team[who].maxEnergy);
         if(!affordable&&!deferred)continue;
         // Opponent reply, switching and uncertain aura can invalidate this gain.
         // Do not add future lethal, Gambler refunds, random draws or the prepared kick.
-        const value=affordable?gain*.75-discard:gain*.55;
-        if(value>0&&(!best||value>best.value))best={value,gain,who,skill,tunes:affordable?tunes:0,
-          conditional:true,requiresFreshObservation:true,requiresNextRound:!affordable};
+        // Compare both opportunities: being able to tune must not REMOVE the
+        // deferred option. Otherwise burning a spare card can increase setup value.
+        const immediate=affordable?gain*.75-discard:0,later=deferred?gain*.55:0;
+        const nextRound=later>immediate,value=Math.max(immediate,later);
+        if(value>0&&(!best||value>best.value))best={value,gain,who,skill,tunes:nextRound?0:tunes,
+          conditional:true,requiresFreshObservation:true,requiresNextRound:nextRound};
       }
     }
     return best;
@@ -122,7 +154,6 @@
         if(h.id==="garden"&&(m.garden||!s.hand.some(x=>["wolf","gilded"].includes(x.id))))continue;
         if(h.id==="boar"&&(m.boar>0||!m.artifacts.some(Boolean)&&!m.weapons.some(Boolean)))continue;
         if(h.id==="shift"&&(m.freeSwitch||!s.characters.some((c,i)=>i!==s.active&&T.alive(c))))continue;
-        if(h.id==="lyre"&&!s.hand.some(x=>T.byId[x.id]?.type==="artifact"))continue;
         if(c.type==="support"&&m.supports.some(x=>x.id===h.id)&&h.id!=="liben")continue;
         if(c.type==="draw"&&s.hand.length>=9)continue;
         add(a);
@@ -151,6 +182,12 @@
     if(["garden","gilded","lyre"].includes(id))return 1.3;
     return .65;
   }
+  function reserveValue(s,m) {
+    // The same leftover dice can feed Liben AFTER a skill. Compare both routes
+    // on that basis, using the real sequential collection rule, not gross End credit.
+    const collected=copy(m);T.commit(collected,{type:"end"},s,s);
+    return collected.supports.reduce((v,x,i)=>v+Number(x.id==="liben"&&x.collected>=3&&m.supports[i].collected<3)*1.3,0);
+  }
   function project(s,m,a) {
     const n=copy(s),v=copy(m),cost=a.type==="skill"?T.skillCost(a.who,a.skill,m,s):
       a.type==="card"?T.cardCost(a.id,a.target,m,s):a.type==="switch"?T.switchCost(m):{};
@@ -159,8 +196,7 @@
     let value=-T.size(cost)*.25-.12,stop=false,estimate=null,terminal=false;
     const focus=carry(s,m),c=T.byId[a.id],cast=a.type==="skill"?a:a.type==="card"?c?.combatSkill:null;
     if(a.type==="end") {
-      const ready=m.supports.filter(x=>x.id==="liben").some(x=>Object.values(s.dice).filter(v=>v>0).length+x.collected>=3);
-      return {state:n,memory:v,value:ready?1.1:-.2,stop:true,terminal:false};
+      return {state:n,memory:v,value:reserveValue(s,m)-.2,stop:true,terminal:false};
     }
     if(a.type==="switch") {
       n.active=a.target;value-=s.active===0&&!m.monaFastUsed?0:.1;
@@ -188,14 +224,14 @@
           if(draws)stop=true; // value retrieval without inventing its random identity
         }
       }
-      if(a.id==="wolf")value+=(a.target===focus?2.5:1.1);
+      // Only the future investment credit scales with remaining HP. Damage from
+      // an immediately affordable equipped attack is still counted in full.
+      if(a.id==="wolf")value+=(a.target===focus?2.5:1.1)*s.characters[a.target].hp/10;
       if(a.id==="gilded") {
         const output=s.active===0&&m.used[0]===0?0:focus;
         const useful=e=>e==="Omni"||e===T.team[output].element;
-        value+=1+Object.entries(T.cardRefund(a,m,s)).reduce((v,[e,k])=>v+k*(useful(e) ? .35 : .1),0);
+        value+=Object.entries(T.cardRefund(a,m,s)).reduce((v,[e,k])=>v+k*(useful(e) ? .35 : .1),0);
       }
-      if(a.id==="troupe")value+=a.target!==s.active&&m.round<=2?1.2:.1;
-      if(a.id==="gambler")value+=a.target===focus&&living(s).some(e=>e.hp<=6)?1.2:.15;
       if(a.id==="lyre") {n.hand.push(T.observedCard(T.byId[m.artifactKinds[a.target]].name,n.hand.length));value-=.35;}
       if(c.type==="talent"&&!m.talents[c.target])value+=.8;
     }
@@ -216,38 +252,88 @@
       if(cast.who===0&&cast.skill==="E"&&!m.reflection)value+=1.6;
       if(cast.who===0&&cast.skill==="Q"&&T.alive(s.characters[2]))
         value+=s.characters[2].energy===3&&T.total(n.dice)>=T.size(T.switchCost(m))+4?6:2;
-      if(cast.who===1&&cast.skill==="Q"&&m.sayuSummon<2)value+=1.3+s.characters.filter(T.alive).reduce((v,c)=>v+Math.min(2,10-c.hp)*.2,0);
+      if(cast.who===1&&cast.skill==="Q") {
+        estimate.conditionalSummonValue=sayuSummonValue(s,m,estimate);
+        value+=estimate.conditionalSummonValue;
+      }
       if(cast.skill!=="Q")value+=.3;
     }
     T.commit(v,a,s,n);
+    // Value the change in equipment, not each equip event. Removing an artifact
+    // loses its value; a neutral Lyre/re-equip cycle cannot farm that bonus.
+    if(c?.type==="artifact"||a.id==="lyre")value+=artifactValue(s,v,a.target)-artifactValue(s,m,a.target);
+    if(stop)value+=reserveValue(n,v);
     return {state:n,memory:v,value,stop,estimate,terminal,conditionalPayment:!!paid.conditional};
   }
   function choose(s,m) {
     if(!T.legalState(s))throw new Error("策略仅接受完整原生行动牌桌");
     // Only hypothetical fast resource prefixes are explored. Every actual card is
     // confirmed and observed again; no sequence is queued for later execution.
-    let frontier=[{state:s,memory:m,value:0,sequence:[],opponentReply:false}],best=null,used=0;
+    const initial={state:s,memory:m,value:0,sequence:[],opponentReply:false};
+    let frontier=[initial],best=null,setup=null,development=null,used=0;
+    function extend(node,a) {
+      if(used>=320)return null;
+      used++;
+      const p=project(node.state,node.memory,a);if(!p)return null;
+      const sequence=[...node.sequence,a],opponentReply=node.opponentReply||
+        a.type==="switch"&&!(node.state.active===0&&!node.memory.monaFastUsed);
+      const paymentUncertain=!!node.paymentUncertain||p.conditionalPayment,
+        terminal=p.terminal&&!opponentReply&&!paymentUncertain,
+        score=node.value+p.value-(p.terminal&&!terminal?100:0)-
+          (opponentReply&&p.estimate?Math.max(0,p.value-(p.terminal?100:0))*.25:0);
+      const candidate={action:sequence[0],score,sequence,estimate:p.estimate,terminal,paymentUncertain};
+      if((p.stop||sequence.length===5)&&(!best||score>best.score))best=candidate;
+      if(p.estimate?.hydroSetup&&!sequence.some(x=>x.type==="switch")&&(!setup||score>setup.score))setup=candidate;
+      // Slot10 delayed a payable Timaeus until round3, though playing it in
+      // round1 still left Mona's E payable even under the conservative payment.
+      // Develop before opening combat when it does not consume that setup;
+      // random retrieval remains a stop, never assumed future hand contents.
+      if(m.round===1&&s.active===0&&m.used.every(n=>n===0)&&p.stop&&p.value>0&&
+        a.type==="card"&&["support","draw"].includes(T.byId[a.id]?.type)&&
+        sequence.every(x=>x.type==="card")&&T.skillLegal(p.state,{who:0,skill:"E"},p.memory)&&
+        (!development||score>development.score))development=candidate;
+      return {...p,value:score,sequence,opponentReply,paymentUncertain};
+    }
+    // A tuning prefix has negative intermediate value and can disappear from the
+    // beam before its skill is reached. Evaluate the short on-field funding routes
+    // first, inside the SAME budget; still execute only one step then observe again.
+    for(const skill of ["NA","E","Q"]) {
+      let node=initial;const cast={type:"skill",who:s.active,skill};
+      if(s.characters[s.active].frozen||skill==="Q"&&s.characters[s.active].energy<T.team[s.active].maxEnergy)continue;
+      for(let tunes=0;tunes<3&&!T.skillLegal(node.state,cast,node.memory);tunes++) {
+        const a=enumerate(node.state,node.memory).filter(a=>a.type==="tune"&&!a.id.startsWith("countdown"))
+          .sort((a,b)=>handValue(a.id,node.state,node.memory)-handValue(b.id,node.state,node.memory))[0];
+        if(!a)break;
+        node=extend(node,a);if(!node)break;
+      }
+      if(node&&T.skillLegal(node.state,cast,node.memory)&&!T.actionRefused(node.state,node.memory,cast))extend(node,cast);
+    }
     for(let depth=0;depth<5&&frontier.length;depth++) {
       const next=[];
       for(const node of frontier)for(const a of enumerate(node.state,node.memory)) {
         if(a.type==="switch"&&node.sequence.some(x=>x.type==="switch"))continue;
         if(used>=320)break;
-        used++;
-        const p=project(node.state,node.memory,a);if(!p)continue;
-        const sequence=[...node.sequence,a],opponentReply=node.opponentReply||
-          a.type==="switch"&&!(node.state.active===0&&!node.memory.monaFastUsed);
-        // A combat switch gives the opponent a reply. Its follow-up is useful
-        // for choosing a direction, but cannot inherit an immediate-lethal bonus.
-        const paymentUncertain=!!node.paymentUncertain||p.conditionalPayment,
-          terminal=p.terminal&&!opponentReply&&!paymentUncertain,
-          score=node.value+p.value-(p.terminal&&!terminal?100:0);
-        if((p.stop||depth===4)&&(!best||score>best.score))best={action:sequence[0],score,sequence,estimate:p.estimate,terminal,paymentUncertain};
-        if(!p.stop&&depth<4)next.push({...p,value:score,sequence,opponentReply,paymentUncertain});
+        // A combat switch gives the opponent a reply (slot08: incoming Mona was
+        // frozen). Discount that conditional output, not only its lethal bonus;
+        // immediate on-field output and Mona's fast exit retain their value.
+        const p=extend(node,a);if(p&&!p.stop&&depth<4)next.push(p);
       }
       if(used>=320)break;
       frontier=next.sort((a,b)=>b.value-a.value).slice(0,10);
     }
     if(!best)best={action:{type:"end"},score:0,sequence:[{type:"end"}]};
+    // Guide opening: develop first, then establish reactions before deploying
+    // the carry. Slot08 chose a dry Sayu E over a payable Mona setup because
+    // the one-combat horizon cannot see sustained swirl. Prefer an already
+    // evaluated setup route, not a scripted future turn or fabricated aura.
+    const leaving=best.sequence.find(a=>a.type==="switch"),enemy=target(s);
+    if(setup&&s.active===0&&m.used[0]===0&&leaving&&best.estimate&&
+      !best.estimate.reaction.name&&best.estimate.direct<best.estimate.target?.hp&&
+      s.characters[0].hp>=s.characters[leaving.target].hp&&
+      !(enemy?.auraKnown&&enemy.aura.some(e=>["Hydro","Pyro","Cryo","Electro"].includes(e)))&&
+      setup.score>reserveValue(s,m)-.2)best={...setup,reason:"opening-water-before-dry-relay"};
+    if(development&&best.estimate&&!best.terminal&&best.estimate.direct<best.estimate.target?.hp)
+      best={...development,reason:"opening-development-preserves-water"};
     // The guide also cashes equipment lost on defeat, not just replacement.
     // A free Boar before a low-HP equipped carry attacks is insurance, not a
     // prediction of death or extra spendable dice. Do not delay a proven win.
@@ -277,7 +363,8 @@
         T.total(s.dice)>0&&!T.skillProbeAttempted(s,m,a)&&!T.actionRefused(s,m,a))return a;
     }
     return {...best.action,planning:{score:best.score,sequence:best.sequence.map(T.actionKey),terminal:!!best.terminal,
-      estimate:best.estimate,conditionalPayment:!!best.paymentUncertain},projections:{used,limit:320,exhausted:used>=320}};
+      estimate:best.estimate,conditionalPayment:!!best.paymentUncertain,...(best.reason?{reason:best.reason}:{})},
+      projections:{used,limit:320,exhausted:used>=320}};
   }
   function replacement(s,m) {
     const choices=s.characters.flatMap((c,i)=>T.alive(c)?[{who:i,score:(c.frozen?-5:0)+(i===carry(s,m)?3:0)+c.hp*.1+(m.weapons[i]?1:0)}]:[]);

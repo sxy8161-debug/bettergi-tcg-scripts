@@ -4,8 +4,8 @@
   "validationUsedAsTraining": false,
   "layout": "semantic-v1",
   "runtimeFiles": {
-    "hand-bank.json": "a147f5548af307be542ea6f6acec74498f92a9ae38983460c9fefe475a2f8ff3",
-    "opening-bank.json": "2e3859a92cc04db61a70f636b5bbaa3016496cfad24cd4c010fc55e64d013908",
+    "hand-bank.json": "418ee1215eef28a541d5cee1526fbf5d05188f41f5351b27ce81ecf0ebd8f1e1",
+    "opening-bank.json": "226c06697c2360a17c2839edf9097c6ded02d518b0f1d13696aa0b265519e9cf",
     "assets/hand/偷懒的新方法-v01-p01.png": "7d5cc11b72b3fb8a56dc89c0a94392bfd1510ee13d5aa4668d0d916775e0d128",
     "assets/hand/偷懒的新方法-v01-p02.png": "cdeec6059c66724599703dbe6158a21638e453e002436296ae70e96c420e1c4e",
     "assets/hand/偷懒的新方法-v02-p01.png": "27b27145cf845ca5d86fb4229e4a752326ef3f1bb3f543d441d33aa427336b2f",
@@ -118,7 +118,13 @@
     "assets/expanded/迪娜泽黛-v02-p01.png": "3de560eb92257b81227179cf613c724f38ea20c2c6a1a23781eb931f737d9e3c",
     "assets/expanded/迪娜泽黛-v02-p02.png": "79d741abd02a18cc98a7f084a2e8c5700be0151922916822e9e73021c569b648",
     "assets/expanded/换班时间-v02-p01.png": "2a1c37830a5c893ab82f338e63ecded4b9c6179ae1ea215987fe7601337a9058",
-    "assets/expanded/换班时间-v02-p02.png": "d9dc9834dd5d728c6db1855f052c64fb37bc8cca79173a703e99ca7da5766ad8"
+    "assets/expanded/换班时间-v02-p02.png": "d9dc9834dd5d728c6db1855f052c64fb37bc8cca79173a703e99ca7da5766ad8",
+    "assets/hand/蒂玛乌斯-v02-p01.png": "dae6a9eb6dd092273b59bdcf15cd594ce4823e20d47a9fc0a8ef697f420ea109",
+    "assets/hand/蒂玛乌斯-v02-p02.png": "5dcc07e2a53afd71939b25ab87ecee47f6dc2dc34e76114d581deaa88c8b750c",
+    "assets/hand/幻戏倒计时-3-v03-p01.png": "757a715735ef1438372e7de870a187a6d344d754493a3fc7146818cba606a850",
+    "assets/hand/幻戏倒计时-3-v03-p02.png": "baf5f45832d1d4b437dbd295ba4878c25c54dcb3dfadf5691278d531d771d8fe",
+    "assets/opening/蒂玛乌斯-v01-p01.png": "1592bc2bd4743cefe01ad817e1c90dd3dddf7f9bf60df41ff984a3d0d2c8ad5f",
+    "assets/opening/蒂玛乌斯-v01-p02.png": "9963db98f3764ff48d8faad30dbebef539322105700e62397ea4d421a16b038d"
   },
   "assetFiles": {
     "assets/hand/偷懒的新方法-v01-p01.png": "assets/templates/iansan/hand/偷懒的新方法-v01-p01.png",
@@ -233,6 +239,12 @@
     "assets/expanded/迪娜泽黛-v02-p01.png": "assets/templates/mozailu/expanded/迪娜泽黛-v02-p01.png",
     "assets/expanded/迪娜泽黛-v02-p02.png": "assets/templates/mozailu/expanded/迪娜泽黛-v02-p02.png",
     "assets/expanded/换班时间-v02-p01.png": "assets/templates/mozailu/expanded/换班时间-v02-p01.png",
-    "assets/expanded/换班时间-v02-p02.png": "assets/templates/mozailu/expanded/换班时间-v02-p02.png"
+    "assets/expanded/换班时间-v02-p02.png": "assets/templates/mozailu/expanded/换班时间-v02-p02.png",
+    "assets/hand/蒂玛乌斯-v02-p01.png": "assets/templates/mozailu/hand/蒂玛乌斯-v02-p01.png",
+    "assets/hand/蒂玛乌斯-v02-p02.png": "assets/templates/mozailu/hand/蒂玛乌斯-v02-p02.png",
+    "assets/hand/幻戏倒计时-3-v03-p01.png": "assets/templates/mozailu/hand/幻戏倒计时-3-v03-p01.png",
+    "assets/hand/幻戏倒计时-3-v03-p02.png": "assets/templates/mozailu/hand/幻戏倒计时-3-v03-p02.png",
+    "assets/opening/蒂玛乌斯-v01-p01.png": "assets/templates/mozailu/opening/蒂玛乌斯-v01-p01.png",
+    "assets/opening/蒂玛乌斯-v01-p02.png": "assets/templates/mozailu/opening/蒂玛乌斯-v01-p02.png"
   }
 }

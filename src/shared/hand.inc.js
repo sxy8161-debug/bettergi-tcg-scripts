@@ -187,11 +187,13 @@ async handCount(expected = null) {
           // The fan's count badge is transient. Collect consecutive read-only
           // count frames quickly; full phase OCR between them can outlive it.
           // A fresh phase guard follows the bounded sampling BEFORE any input.
-          return this.handSample(f);
+          const sample = this.handSample(f);
+          return { ...sample, empty: (sample.count === null || sample.count === 0) && this.emptyHandIn(f) };
         });
       const reads = [],
         samples = [];
-      let previous = null;
+      let previous = null, emptySince = null;
+      const revision = this.inputRevision;
       for (let attempt = 0; attempt < 8; attempt++) {
         const sampledAt = Date.now();
         const sample = readCount(),
@@ -201,18 +203,30 @@ async handCount(expected = null) {
               : null;
         reads.push(result);
         samples.push(sample);
-        if (result !== null && result === previous) {
+        // Zero requires fresh structural absence as well as a stable view.
+        // A lone OCR zero, an old empty flag, or missing fee digits is not zero.
+        const empty = sample.empty === true;
+        const resolved = empty ? 0 : result === 0 ? null : result;
+        if (empty) emptySince ??= Date.now(); else emptySince = null;
+        reads[reads.length - 1] = resolved;
+        if (this.inputRevision !== revision) {
+          const error = new Error("手牌计数期间输入已变化"); error.code = "TCG_HAND_RETRY"; throw error;
+        }
+        if (resolved !== null && resolved === previous &&
+            (resolved !== 0 || Date.now() - emptySince >= 600)) {
           this.requireHandObservation(this.phase(), "hand-count-resolved");
-          this.publishHandPositions(samples, result);
-          if (this.emptyHandProven && result > 0) {
+          this.publishHandPositions(samples, resolved);
+          if (this.emptyHandProven && resolved > 0) {
             this.emptyHandProven = false;
             this.invalidateHand("visible-cards-after-empty-hand");
           }
-          this.trace("hand-count", { count: result, reads });
-          this.recordHandLayout(result);
-          return result;
+          this.trace("hand-count", { count: resolved, reads,
+            source: resolved === 0 ? "card-structure-absence" : sample.source,
+            ...(resolved === 0 ? { stableMs:Date.now()-emptySince, revision } : {}) });
+          this.recordHandLayout(resolved);
+          return resolved;
         }
-        previous = result;
+        previous = resolved;
         // Recycle/discount and drawn-card animations can outlast the transient
         // badge. Keep the same raised fan and wait read-only, rather than
         // immediately toggling it. The normal two-clean-frame path is unchanged.
@@ -231,7 +245,6 @@ async handCount(expected = null) {
       }
       // Missing badge/rim evidence is never a guessed zero or a reason to
       // click candidate positions. Retry read-only on the same raised fan.
-      if (this.emptyHandProven) return 0;
       const error = new Error("无法确认手牌数量");
       error.code = "TCG_HAND_RETRY";
       throw error;
@@ -260,6 +273,8 @@ invalidateHand(reason) {
       this.handCache = null;
       this.handCountHint = null;
       this.handPositionProof = null;
+      this.emptyHandProven = false;
+      this.pendingHandEvidence = null;
       if (this.confirmationSession) this.confirmationSession.handObservation = null;
     }
 // @endfragment bgi-host.invalidateHand
@@ -542,7 +557,8 @@ async observedHand(plan = null, scan = { titles: 0 }) {
           this.trace("hand-incremental", { mode:"remove", count:0, proof:"independent-empty-hand-effect" });
           return TCG.indexedHand(plan.hand);
         }
-        const n = await this.handCount(plan.hand.length);
+        const n = plan.countObservation?.revision === this.inputRevision
+          ? plan.countObservation.count : await this.handCount(plan.hand.length);
         if (n === plan.hand.length) {
           this.requireHandObservation(this.phase(), "before-incremental-reset");
           await this.reset();

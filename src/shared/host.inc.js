@@ -285,9 +285,27 @@
     /* @include src/shared/observation.inc.js#bgi-host.settledBoard */
     /* @include src/shared/board.inc.js#bgi-host.requireDiceBudget */
     /* @include src/shared/observe.inc.js#bgi-host.observe */
-    emptyHandIn(f,panel="handExpanded") {
-      const region=this.roi(panel,[1003,928,504,124]);
-      return this.has(f,"hand_empty",region,0.97,false)||this.has(f,"hand_empty_blue",region,0.97,false);
+    emptyHandIn(f) {
+      // Absence is measured on the CARD UI, not on a particular table skin.
+      // A failed expansion can leave folded cards. Any marker (even an
+      // incomplete row) or rim vetoes zero; missing price digits never count.
+      if (!this.handFanReady || !this.boardReady || this.choiceSession || this.pendingChoiceCard)
+        return false;
+      const phase = this.phaseIn(f);
+      if (phase.result || phase.phase !== "board" || phase.turn !== "user") return false;
+      // Match the intrinsic colored corner, not grayscale character-art
+      // gradients underneath an empty fan. The rim is independently grayscale.
+      if (this.handCostMarkersIn(f, this.roi("handExpanded", [450,750,1310,200]), true).length ||
+          this.handCostMarkersIn(f, this.roi("handFolded", [430,977,1050,42]), true).length ||
+          this.matches(f, "hand_rim", this.roi("handExpanded", [500,900,1260,135]), .85, false).length)
+        return false;
+      // The own-turn marker may survive a detail/payment overlay. Such a
+      // view is unknown even when the hand itself is hidden.
+      return !this.ocr(f, this.roi("details", [311,115,341,50])) &&
+        !this.ocr(f, this.roi("details", [135,122,238,42])) &&
+        !this.ocr(f, this.roi("phase", [600,510,720,65])) &&
+        !this.matches(f, "core/确定", this.roi("bottom", [770,900,380,90])).length &&
+        !this.cardPaymentControlsIn(f).length;
     }
     async proveEmptyHand(plan,settled) {
       const receipt=this.consumptionReceipt,a=plan?.action,b=plan?.before;
@@ -295,26 +313,19 @@
           !receipt?.inputSent || receipt.beforeKey!==TCG.boardKey(b) || receipt.id!==a.id ||
           receipt.index!==a.index || receipt.target!==(a.target??null) ||
           settled.phase!=="board" || settled.turn!=="user")return false;
-      if(!this.handFanReady)await this.expand(false);
-      let stable=0;
-      for(let attempt=0;attempt<3;attempt++) {
-        const p=this.frame(f=>({phase:this.phaseIn(f),count:this.handCountIn(f),
-          empty:this.emptyHandIn(f)}));
-        const matched=p.phase.phase==="board"&&p.phase.turn==="user"&&p.empty&&(p.count===null||p.count===0);
-        stable=matched?stable+1:0;
-        this.trace("empty-hand-native",{attempt,matched,stable,count:p.count,phase:p.phase});
-        if(p.count>0)return false;
-        if(stable>=2) {
-          const proof={kind:"native-empty-fan",stableReads:stable,sourceCount:1,...receipt};
-          if(!TCG.emptyHandEffect(a,b,{...settled,handEvidence:proof},false))return false;
-          this.pendingHandEvidence=proof;this.emptyHandProven=true;
-          this.handFanReady=false;this.handNeedsReset=false;this.boardReady=true;
-          this.trace("empty-hand-proof",{action:a,proof,netDice:TCG.total(settled.dice)-TCG.total(b.dice)});
-          return true;
-        }
-        if(attempt<2)await sleep(180);
-      }
-      return false;
+      const count = await this.handCount();
+      // Share this observation with the ordinary removal path, even if a
+      // deck's effect verifier needs more than empty-hand evidence.
+      plan.countObservation = { count, revision: this.inputRevision };
+      if (count !== 0) return false;
+      const proof = { ...receipt, kind:"native-empty-fan", stableReads:2, sourceCount:1,
+        method:"card-structure-absence", revision:this.inputRevision };
+      if (!TCG.emptyHandEffect(a,b,{...settled,handEvidence:proof},false)) return false;
+      this.pendingHandEvidence=proof;this.emptyHandProven=true;
+      // With zero cards, expansion cannot cover the board. No fold toggle.
+      this.handFanReady=false;this.handNeedsReset=false;this.boardReady=true;
+      this.trace("empty-hand-proof",{action:a,proof,netDice:TCG.total(settled.dice)-TCG.total(b.dice)});
+      return true;
     }
     
     /* @include src/shared/opening.inc.js#bgi-host.confirmOpening */

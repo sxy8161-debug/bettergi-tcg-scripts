@@ -33,9 +33,10 @@ function sheet(images){
 }
 function packCardAtlases(input){
  const files=new Map(input),index={},uiAtlas={};
- for(const stage of ["hand","opening","expanded","ui"]){
+ for(const stage of ["hand","expanded","ui"]){
   const images=[...input].filter(([name])=>templatePath.test(name)&&
-   (stage==="ui"?!cardPath.test(name):cardPath.test(name)&&name.startsWith("assets/"+stage+"/")));
+   (stage==="ui"?!cardPath.test(name):cardPath.test(name)&&
+    (stage==="hand"?/^assets\/(hand|opening)\//.test(name):name.startsWith("assets/expanded/"))));
   if(!images.length)continue;
   const name="assets/card-atlas/"+stage+".png",packed=sheet(images);
   if(files.has(name))throw Error("Duplicate atlas output: "+name);
