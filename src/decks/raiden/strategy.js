@@ -160,11 +160,7 @@
     const active=next.characters[s.active];
     function gain(who,amount){const x=next.characters[who];if(T.alive(x))x.energy=Math.min(T.team[who].maxEnergy,x.energy+amount);}
     if(a.type==="switch") {
-      next.active=a.target;benefit-=.7;const target=next.characters[a.target];
-      // A low-HP wearer is not a reward for EVERY switch. Only actual relief
-      // qualifies; two 1-HP characters must not bounce back and forth.
-      if(active.frozen&&!target.frozen)benefit+=1.3;
-      else if(active.hp<=3)benefit+=Math.min(1.3,Math.max(0,target.hp-active.hp)*.25);
+      next.active=a.target;benefit-=.7;
     }
     else if(a.type==="tune") {
       const bad=T.diceOrder.find(e=>e!==a.element&&e!=="Omni"&&(next.dice[e]||0)>0);if(!bad)return null;
@@ -238,7 +234,9 @@
       }
       if(who===0 && skill==="E")benefit+=m.eyeRound+2<m.round?3.8:.4;
       if(who===1 && skill==="Q")benefit+=m.dendroRound+1<m.round?2.1:.7;
-      const wanted=T.intent(s,m);
+      // A returning combat card uses the caster's risk/role, just like the
+      // same skill cast directly. The previous active character is not a bonus.
+      const wanted=T.intent({...s,active:who},m);
       if(wanted?.who===who && wanted.skill===skill)benefit+=1.3;
       if(skill==="Q"){
         next.characters[who].energy=0;
@@ -300,10 +298,21 @@
   }
   function advance(node,a,baseline) {
     const p=projected(node.state,node.memory,a);if(!p)return null;
+    // Until the opponent gets an action, retreat is only a position value.
+    // Recompute it after every fast step: returning to the exposed character
+    // before handoff provides no relief. Genuine handoff keeps the old weight.
+    const origin=node.reliefOrigin || (a.type==="switch"?
+      {who:node.state.active,hp:node.state.characters[node.state.active].hp,
+        frozen:node.state.characters[node.state.active].frozen}:null),
+      active=p.state.characters[p.state.active],
+      relief=!origin||origin.who===p.state.active?0:origin.frozen&&!active.frozen?1.3:
+        origin.hp<=3?Math.min(1.3,Math.max(0,active.hp-origin.hp)*.25):0,
+      discount=Math.pow(.9,node.turns);
     const child={...p,path:node.path.concat(a),casts:node.casts+(p.combat?1:0),
+      reliefOrigin:p.passesTurn?null:origin,
       turns:node.turns+(p.passesTurn?1:0),
-      score:node.score+p.benefit*Math.pow(.9,node.turns)-inputPenalty(a)};
-    child.value=child.score+evaluation(child.state,child.memory,baseline);
+      score:node.score+(p.benefit+(p.passesTurn?relief:0))*discount-inputPenalty(a)};
+    child.value=child.score+evaluation(child.state,child.memory,baseline)+(p.passesTurn?0:relief*discount);
     return child;
   }
   function plan(s,m,options={}){
@@ -366,7 +375,7 @@
         if(a.type==="switch" && node.path[node.path.length-1]?.type==="switch")continue;
         if(!T.projectionBudget.available())break search;
         expanded++;const child=advance(node,a,baseline);if(!child)continue;
-        const signature=T.boardKey(child.state)+JSON.stringify([child.memory.freeSwitch,child.memory.fastSwitch,
+        const signature=T.boardKey(child.state)+JSON.stringify([child.reliefOrigin,child.memory.freeSwitch,child.memory.fastSwitch,
           child.memory.thundergrassSupport,child.memory.artifactKinds,child.memory.gamblerUsed,child.memory.exileUsedRound,
           child.memory.weapons,child.memory.penance,child.memory.keqingInfusion,child.memory.resolve,child.memory.food,child.memory.talent,
           child.memory.sproutRound,child.memory.sproutUsedRound,child.memory.sproutUncertainRound]);

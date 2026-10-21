@@ -6,6 +6,42 @@ const close = (actual, expected) => assert.ok(Math.abs(actual-expected)<1e-9, `$
 
 module.exports = async function(test) {
   const {T} = load("raiden");
+  await test("action economy: native fast-switch detour is dominated by the same immediate Keqing skill",()=>{
+    const native=require("./fixtures/raiden-fast-relay-20261020.json"),{state:s,memory:m}=clone(native.state.data);
+    const snapshot=JSON.stringify([s,m]),directAction={type:"skill",who:2,skill:"E"};
+    assert.equal(T.skillLegal(s,directAction,m),true);
+    const direct=T.projectedAction(s,m,directAction);
+    let detour={state:s,memory:m},turns=0;
+    for(const action of [{type:"card",id:"fast",index:3,target:null},
+      {type:"switch",target:0},{type:"card",id:"wedge",index:0,target:2}]){
+      detour=T.projectedAction(detour.state,detour.memory,action);assert.ok(detour);
+      turns+=Number(detour.passesTurn);
+    }
+    assert.deepEqual(clone(detour.state.characters),clone(direct.state.characters));
+    assert.deepEqual(clone(detour.state.enemies),clone(direct.state.enemies));
+    assert.deepEqual(clone(detour.memory),clone(direct.memory));
+    assert.equal(turns,Number(direct.passesTurn));
+    assert.equal(T.total(direct.state.dice)-T.total(detour.state.dice),1);
+    // The same caster/skill must not gain an intent bonus from a standby detour.
+    close(detour.benefit,direct.benefit);
+    const chosen=T.choose(s,m);
+    assert.equal(T.actionKey(chosen),T.actionKey(directAction));
+    assert.equal(chosen.planning.sequence.length,1);
+    assert.equal(chosen.planning.terminal,false,"missing native defense is still unknown");
+    assert.equal(JSON.stringify([s,m]),snapshot);
+  });
+  await test("action economy: real high-HP relay remains useful with or without a fast switch",()=>{
+    const native=require("./fixtures/raiden-fast-relay-20261020.json");
+    for(const fast of [true,false]){
+      const {state:s,memory:m}=clone(native.state.data);
+      s.hand=[];s.dice={Omni:4};s.characters[0].energy=2;
+      s.enemies=[{hp:10,dead:false,active:true,aura:[],auraKnown:true}];
+      m.fastSwitch=fast;m.raidenBurst=false;m.resolve=3;
+      const a=T.choose(s,m);
+      assert.equal(a.type,"switch");assert.equal(a.target,0);
+      assert.ok(a.planning.sequence.includes("skill:0:Q"));
+    }
+  });
   const equip = {type:"card",id:"gambler",index:0,target:2};
   const skill = {type:"skill",who:2,skill:"E"};
   function fixture() {

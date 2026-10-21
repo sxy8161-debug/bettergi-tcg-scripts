@@ -52,6 +52,11 @@
       this.captureGeometry = null;
       this.captureGeometryError = null;
       this.metrics = {frames:0,captureMs:0,frameWorkMs:0,ocrCalls:0,ocrMs:0,memoHits:0,geometryChecks:0,geometryMs:0};
+      this.runStage = "entry";
+      this.runDiagnostics = { startedAt: Date.now(), phase: null,
+        timing: { observationMs: 0, planningMs: 0, inputMs: 0, settlementMs: 0, postActionMs: 0 },
+        counts: { planned: 0, submitted: 0, confirmed: 0 }, lastAction: null,
+        missing: { board: null, hand: null }, lastMissing: null };
       this.inputRevision = 0;
       this.lastCostSample = null;
       this.handPositionProof = null;
@@ -71,6 +76,9 @@
     /* @include src/shared/input.inc.js#tcg-ui.clickAt */
     /* @include src/shared/input.inc.js#bgi-host.moveTo */
     /* @include src/shared/capture.inc.js#bgi-host.trace */
+    /* @include src/shared/capture.inc.js#bgi-host.recordRunDiagnostic */
+    /* @include src/shared/capture.inc.js#bgi-host.runSummary */
+    /* @include src/shared/capture.inc.js#bgi-host.reportRunSummary */
     /* @include src/shared/capture.inc.js#bgi-host.frame */
     /* @include src/shared/capture.inc.js#bgi-host.adoptCapture */
     /* @include src/shared/capture.inc.js#bgi-host.checkInputGeometry */
@@ -91,7 +99,9 @@
     /* @include src/shared/input.inc.js#bgi-host.button */
     /* @include src/shared/input.inc.js#bgi-host.clickButton */
     phaseIn(f) {
-      return this.memoFrame(f, "phase", () => this.readPhaseIn(f));
+      const p = this.memoFrame(f, "phase", () => this.readPhaseIn(f));
+      this.runDiagnostics.phase = { phase: p.phase, turn: p.turn, at: Date.now() };
+      return p;
     }
     readPhaseIn(f) {
       // Native victory animation starts around y=500 before moving upward.

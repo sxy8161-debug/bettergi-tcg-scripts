@@ -49,6 +49,7 @@ checkStalled(message) {
 
 // @fragment lifecycle.choice
 async choice() {
+      this.host.runStage = "choice";
       try {
         await this.host.resolveChoice(null, this.memory);
         this.progress();
@@ -81,7 +82,8 @@ constructor(host, options) {
 async defer(error, codes, event, message) {
       if (!codes.includes(error.code)) throw error;
       this.checkStalled(message);
-      this.host.trace(event, { code: error.code, reason: String(error.message || error) });
+      this.host.trace(event, { code: error.code, missing: error.missing, phase: error.phase,
+        reason: String(error.message || error) });
       await sleep(400);
     }
 // @endfragment lifecycle.defer
@@ -151,6 +153,7 @@ notice(key, text) {
 
 // @fragment lifecycle.opening
 async opening() {
+      this.host.runStage = "opening";
       const flow = this.openingFlow;
       if (flow.opened || flow.picked || flow.rolled || flow.complete)
         throw new Error("开局阶段异常：再次出现初始手牌");
@@ -174,6 +177,7 @@ async opening() {
 
 // @fragment lifecycle.pick
 async pick() {
+      this.host.runStage = "pick";
       if (this.openingFlow.complete || this.actions > 0) return this.replacement();
       if (this.openingFlow.picked) throw new Error("开局阶段异常：首次出战后再次出现选人页");
       const choice = this.planOpening();
@@ -313,6 +317,7 @@ rejectUnchangedTune(action, before, after) {
 
 // @fragment lifecycle.replacement
 async replacement() {
+      this.host.runStage = "replacement";
       const host = this.host,
         memory = this.memory;
       this.readyState = null;
@@ -366,6 +371,7 @@ async replacement() {
 
 // @fragment lifecycle.roll
 async roll() {
+      this.host.runStage = "roll";
       const flow = this.openingFlow;
       if (!flow.complete && flow.rolled) throw new Error("开局阶段异常：首次掷骰后再次出现重投页");
       if (!flow.complete && !flow.picked && this.memory.openingTarget === null)
@@ -384,8 +390,10 @@ async roll() {
 // @fragment lifecycle.run
 async run() {
       try {
+        this.host.runStage = "entry";
         if (await this.enter() === false) return;
         while (Date.now() < this.deadline && this.actions < 180) {
+          this.host.runStage = "phase-wait";
           const sampledAt = Date.now();
           const p = this.host.phase();
           if (p.phase !== "board" || p.turn !== "user") this.readyState = null;
@@ -409,7 +417,7 @@ async run() {
         throw new Error("达到单局时间或动作上限");
       } catch (e) {
         const reason = String(e.message || e);
-        this.host.reportStop(reason);
+        this.host.reportStop(reason, e.code);
         log.error("牌手停止：" + reason);
         throw e;
       } finally {
@@ -420,38 +428,43 @@ async run() {
 
 // @fragment lifecycle.observe
 async observe() {
-      const host = this.host,
-        start = Date.now(),
-        metrics = host.metricSnapshot?.(),
+      const host = this.host, start = Date.now(), metrics = host.metricSnapshot?.(),
         reused = !!this.readyState;
-      let state;
+      host.runStage = "observation";
+      let state, outcome = "failed", failure = null, readError = null;
       try {
-        state = this.readyState || (await host.observe());
-      } catch (e) {
+        try { state = this.readyState || (await host.observe()); }
+        catch (e) {
+          readError = e;
+          this.readyState = null;
+          await this.defer(e, [...BOARD_RETRIES, "TCG_HAND_RETRY"], "observation-deferred", "牌桌识别超时（60秒）");
+          outcome = "deferred";
+          return null;
+        }
+        if (this.readyState)
+          host.trace("decision-state-reused", { handCount: this.readyState.hand.length });
         this.readyState = null;
-        await this.defer(e, [...BOARD_RETRIES, "TCG_HAND_RETRY"], "observation-deferred", "牌桌识别超时（60秒）");
-        return null;
+        if (state.phase !== "board" || state.turn !== "user") {
+          host.trace("decision-deferred", { phase: state.phase, turn: state.turn });
+          await sleep(300);
+          outcome = "deferred";
+          return null;
+        }
+        this.admitActionHand(state);
+        if (!this.openingFlow.complete) this.finishOpening();
+        T.refreshSkillCosts(this.memory,state);
+        T.noteBoard(this.memory, state);
+        host.trace("state", { round: this.memory.round, state, memory: this.memory });
+        outcome = "complete";
+        return state;
+      } catch (e) { failure = e; throw e; }
+      finally {
+        try {
+          host.trace("observation-timing", { ms: Date.now() - start, reused, outcome,
+            handRead: state?.handRead, code: readError?.code, missing: readError?.missing,
+            recognition: host.metricDelta?.(metrics) });
+        } catch (e) { if (!failure) throw e; } // Secondary diagnostic failure must not replace the original error.
       }
-      if (this.readyState)
-        host.trace("decision-state-reused", { handCount: this.readyState.hand.length });
-      host.trace("observation-timing", {
-        ms: Date.now() - start,
-        reused,
-        handRead: state.handRead,
-        recognition: host.metricDelta?.(metrics),
-      });
-      this.readyState = null;
-      if (state.phase !== "board" || state.turn !== "user") {
-        host.trace("decision-deferred", { phase: state.phase, turn: state.turn });
-        await sleep(300);
-        return null;
-      }
-      this.admitActionHand(state);
-      if (!this.openingFlow.complete) this.finishOpening();
-      T.refreshSkillCosts(this.memory,state);
-      T.noteBoard(this.memory, state);
-      host.trace("state", { round: this.memory.round, state, memory: this.memory });
-      return state;
     }
 // @endfragment lifecycle.observe
 
@@ -467,53 +480,69 @@ async execute(action, state) {
 async act() {
       const state = await this.observe();
       if (!state) return;
-      const host = this.host, memory = this.memory, started = Date.now(),
-        metrics = host.metricSnapshot?.(), action = T.choose(state, memory),
-        planningMs = Date.now() - started;
-      host.trace("decision", action);
-      if (action.type === "stop") throw new Error(action.reason);
-      const execution = await this.execute(action, state);
-      if (!execution.sent) return;
-      log.info("[第" + memory.round + "回合] " + actionCommentary(action, state, memory));
-      if (action.type === "probe" && execution.result?.probed) {
-        this.readyState = execution.result; this.progress(); return;
+      const host = this.host, memory = this.memory, started = Date.now(), metrics = host.metricSnapshot?.();
+      let action, inputAt = null, confirmationAt = null, postActionAt = null,
+        outcome = "failed", confirmed = false, failure = null;
+      host.runStage = "planning";
+      try {
+        action = T.choose(state, memory);
+        host.trace("decision", action);
+        if (action.type === "stop") throw new Error(action.reason);
+        inputAt = Date.now(); host.runStage = "input";
+        const execution = await this.execute(action, state);
+        if (!execution.sent) { outcome = "not-submitted"; return; }
+        log.info("[第" + memory.round + "回合] " + actionCommentary(action, state, memory));
+        if (action.type === "probe" && execution.result?.probed) {
+          outcome = "probed"; this.readyState = execution.result; this.progress(); return;
+        }
+        confirmationAt = Date.now(); host.runStage = "confirmation";
+        const after = await this.awaitConfirmation(action, state, memory);
+        postActionAt = Date.now(); host.runStage = "post-action";
+        confirmed = !!after.confirmed;
+        if (after.confirmed) {
+          T.commit(memory, action, state, after);
+          host.trace("confirmed", { action, after, memory });
+        } else if (!(after.handRead === "full" && this.rejectUnchangedTune(action, state, after))) {
+          T.deferUncertain(memory, action, state);
+          host.trace("action-uncertain", { action, after, memory });
+          log.warn("动作效果未确认，已重新同步，不重复输入。");
+        }
+        T.noteBoard(memory, after);
+        const refreshHand = after.confirmed && after.handRefreshRequired === true;
+        if (refreshHand) {
+          // Consumption can precede card insertion (native draw 3 -> 2). Do not
+          // plan from that partial hand. This also covers non-draw categories
+          // declared full by handPlan. No predicted count or replayed input.
+          host.invalidateHand("consumed-hand-changing-card-needs-fresh-hand");
+          host.emptyHandProven = false;
+          host.trace("draw-hand-refresh-required", { id: action.id, beforeCount: state.hand.length,
+            observedCount: after.hand.length, handPlanMode: "full", consumptionConfirmed: true, effectsComplete: false });
+        }
+        if (refreshHand || after.confirmed && after.freshObservationRequired) {
+          // A new observe(), not a blanket sleep or a model-damage predicate.
+          // Drop the recent-board shortcut too; unchanged hand identity may stay.
+          this.readyState = null;
+          host.boardReady = false; host.lastObservedAt = 0; host.lastObservedRevision = -1;
+          host.preparedHandInput = null;
+          if (after.quietObservationRequired) host.autoRisk = true;
+          host.trace("post-confirmation-refresh-required", { action, handRefresh: refreshHand,
+            combatWithoutObservedTransition: after.freshObservationRequired === true,
+            quietObservationRequired: after.quietObservationRequired === true,
+            consumptionConfirmed: after.confirmed, effectsComplete: false });
+        } else if (after.phase === "board" && after.turn === "user" && T.legalState(after)) this.readyState = after;
+        this.actions++; this.progress();
+        outcome = confirmed ? "confirmed" : "unconfirmed";
+      } catch (e) { failure = e; throw e; }
+      finally {
+        const ended = Date.now();
+        try {
+          host.trace("action-timing", { action: action ? T.actionKey(action) : null, outcome, confirmed,
+            planningMs: (inputAt ?? ended) - started,
+            inputMs: (confirmationAt ?? ended) - (inputAt ?? ended),
+            settlementMs: (postActionAt ?? ended) - (confirmationAt ?? ended),
+            postActionMs: ended - (postActionAt ?? ended), totalMs: ended - started,
+            recognition: host.metricDelta?.(metrics), scope: "actual-runtime-not-offline-estimate" });
+        } catch (e) { if (!failure) throw e; } // Keep cancellation/program errors intact.
       }
-      const inputFinished = Date.now(), after = await this.awaitConfirmation(action, state, memory);
-      host.trace("action-timing", { action: T.actionKey(action), planningMs,
-        inputMs: inputFinished - started - planningMs, settlementMs: Date.now() - inputFinished,
-        totalMs: Date.now() - started, recognition: host.metricDelta?.(metrics),
-        confirmed: !!after.confirmed, scope: "actual-runtime-not-offline-estimate" });
-      if (after.confirmed) {
-        T.commit(memory, action, state, after);
-        host.trace("confirmed", { action, after, memory });
-      } else if (!(after.handRead === "full" && this.rejectUnchangedTune(action, state, after))) {
-        T.deferUncertain(memory, action, state);
-        host.trace("action-uncertain", { action, after, memory });
-        log.warn("动作效果未确认，已重新同步，不重复输入。");
-      }
-      T.noteBoard(memory, after);
-      const refreshHand = after.confirmed && after.handRefreshRequired === true;
-      if (refreshHand) {
-        // Consumption can precede card insertion (native draw 3 -> 2). Do not
-        // plan from that partial hand. This also covers non-draw categories
-        // declared full by handPlan. No predicted count or replayed input.
-        host.invalidateHand("consumed-hand-changing-card-needs-fresh-hand");
-        host.emptyHandProven = false;
-        host.trace("draw-hand-refresh-required", { id: action.id, beforeCount: state.hand.length,
-          observedCount: after.hand.length, handPlanMode: "full", consumptionConfirmed: true, effectsComplete: false });
-      }
-      if (refreshHand || after.confirmed && after.freshObservationRequired) {
-        // A new observe(), not a blanket sleep or a model-damage predicate.
-        // Drop the recent-board shortcut too; unchanged hand identity may stay.
-        this.readyState = null;
-        host.boardReady = false; host.lastObservedAt = 0; host.lastObservedRevision = -1;
-        host.preparedHandInput = null;
-        if (after.quietObservationRequired) host.autoRisk = true;
-        host.trace("post-confirmation-refresh-required", { action, handRefresh: refreshHand,
-          combatWithoutObservedTransition: after.freshObservationRequired === true,
-          quietObservationRequired: after.quietObservationRequired === true,
-          consumptionConfirmed: after.confirmed, effectsComplete: false });
-      } else if (after.phase === "board" && after.turn === "user" && T.legalState(after)) this.readyState = after;
-      this.actions++; this.progress();
     }
 // @endfragment lifecycle.act

@@ -209,18 +209,121 @@ ocr(f, area) {
 // @endfragment bgi-host.ocr
 
 // @fragment bgi-host.reportStop
-reportStop(reason) {
+reportStop(reason, code) {
       // Preserve the original stop even if its final log write fails.
       try {
-        this.trace("stop", { reason });
+        this.trace("stop", { reason, code });
       } catch (e) {
         log.warn("停止日志保存失败：" + e.message);
       }
     }
 // @endfragment bgi-host.reportStop
 
+// @fragment bgi-host.recordRunDiagnostic
+recordRunDiagnostic(event, data, now) {
+      const d = this.runDiagnostics;
+      if (event === "start") d.startedAt = now;
+      if (event === "observation-timing") d.timing.observationMs += data.ms;
+      if (event === "action-timing") {
+        for (const key of ["planningMs", "inputMs", "settlementMs", "postActionMs"])
+          d.timing[key] += data[key] || 0;
+        // A recovered execute() can return sent:false after native confirmation.
+        // Never overwrite that evidence, or infer submission from execute.sent.
+        if (d.lastAction?.key === data.action && d.lastAction.status === "planned")
+          d.lastAction.status = data.outcome === "failed" ? "failed-before-submission" : data.outcome;
+      }
+      if (event === "decision") {
+        d.counts.planned++;
+        d.lastAction = { key: TCG.actionKey(data), status: "planned", at: now };
+      }
+      const status = { "input-submitted": "pending", confirmed: "confirmed",
+        "action-uncertain": "unconfirmed", "native-input-rejected": "rejected",
+        "tuning-retry-alternative": "rejected" }[event];
+      if (status && data.action) {
+        d.lastAction = { key: TCG.actionKey(data.action), status, at: now };
+        if (event === "input-submitted") d.counts.submitted++;
+        if (event === "confirmed") d.counts.confirmed++;
+      }
+      const gap = (kind, fields) => {
+        const previous = d.missing[kind];
+        if (!fields.length) {
+          if (previous) d.lastMissing = { ...previous, resolved: true, resolvedAt: now };
+          d.missing[kind] = null;
+        } else {
+          const same = previous && JSON.stringify(previous.fields) === JSON.stringify(fields);
+          d.missing[kind] = { fields: [...fields], firstAt: same ? previous.firstAt : now, lastAt: now, resolved: false };
+          d.lastMissing = d.missing[kind];
+        }
+      };
+      if (Array.isArray(data?.missing)) {
+        if (data.missing.length || event === "board-settle-wait") gap("board", data.missing);
+      } else if (data?.code === "TCG_DICE_RETRY") gap("board", ["dice"]);
+      if (["hand-count-unresolved", "hand-read-deferred"].includes(event) ||
+          ["TCG_HAND_RETRY", "TCG_HAND_UNRESOLVED"].includes(data?.code))
+        gap("hand", [event === "hand-count-unresolved" ? "hand.count" : "hand"]);
+      if (event === "hand-read-completed" && Number.isInteger(data.count)) gap("hand", []);
+      const state = event === "state" ? data.state :
+        ["state-resynced", "confirmed"].includes(event) ? data.after : null;
+      if (state?.phase === "board" && state.turn === "user" && TCG.legalState(state) && !this.observationIssues(state).length) {
+        gap("board", []);
+        if (Array.isArray(state.hand)) gap("hand", []);
+      }
+    }
+// @endfragment bgi-host.recordRunDiagnostic
+
+// @fragment bgi-host.runSummary
+runSummary(event, data, now) {
+      const d = this.runDiagnostics, elapsedMs = now - d.startedAt;
+      const describe = gap => gap && { ...gap,
+        spanMs: (gap.resolved ? gap.resolvedAt : now) - gap.firstAt,
+        lastSeenAgoMs: now - gap.lastAt };
+      return { outcome: event === "result" ? "completed" : event === "terminal-entry" ? "already-ended" : "stopped",
+        result: data.result || null, reason: data.reason, code: data.code,
+        stage: this.runStage, phase: d.phase && { ...d.phase, ageMs: now - d.phase.at }, elapsedMs,
+        timing: { ...d.timing, otherMs: Math.max(0, elapsedMs - Object.values(d.timing).reduce((a,b) => a+b, 0)) },
+        counts: { ...d.counts }, lastAction: d.lastAction && { ...d.lastAction },
+        missing: Object.values(d.missing).filter(Boolean).map(describe), lastMissing: describe(d.lastMissing),
+        recognition: this.metricSnapshot() };
+    }
+// @endfragment bgi-host.runSummary
+
+// @fragment bgi-host.reportRunSummary
+reportRunSummary(s) {
+      const seconds = ms => (ms / 1000).toFixed(1) + "秒";
+      const stages = { entry: "启动", "phase-wait": "阶段等待", observation: "观察", planning: "决策",
+        input: "输入及恢复", confirmation: "效果确认", "post-action": "确认后记账",
+        opening: "起手", pick: "选人", replacement: "阵亡换人", roll: "重投", choice: "挑选卡牌" };
+      const statuses = { planned: "仅计划", pending: "已提交、待确认", confirmed: "已确认",
+        unconfirmed: "未确认", rejected: "游戏拒绝", "not-submitted": "未完成提交", probed: "仅检视",
+        "failed-before-submission": "未形成提交记录即失败" };
+      const fieldName = field => {
+        const match = /^own\[(\d)\]\.(energy|hp|status)$/.exec(field);
+        return match ? (TCG.team[Number(match[1])]?.name || match[1]) +
+          { energy: "充能", hp: "生命", status: "状态" }[match[2]] :
+          ({ dice: "骰子", active: "出战角色", hand: "手牌", "hand.count": "手牌数量", phase: "页面阶段", turn: "行动方" }[field] || field);
+      };
+      const outcome = s.outcome === "completed" ? "正常结束（" + (s.result === "win" ? "胜利" : s.result === "lose" ? "失败" : "结果未知") + "）" :
+        s.outcome === "already-ended" ? "启动时已在结束页，不计本轮结果" : "脚本停止";
+      const missing = s.missing.length ? s.missing.map(g => g.fields.map(fieldName).join("、") +
+        "（未解决记录跨度" + seconds(g.spanMs) + "，距末次缺读" + seconds(g.lastSeenAgoMs) + "）").join("；") : "无未解决的缺读记录";
+      log.info("[对局摘要] " + outcome + "；处理阶段：" + (stages[s.stage] || s.stage) +
+        "；总用时" + seconds(s.elapsedMs) + "，观察" + seconds(s.timing.observationMs) +
+        "，输入/恢复" + seconds(s.timing.inputMs) + "，确认" + seconds(s.timing.settlementMs) +
+        "（均含重试，非纯等待）" + "；计划/提交/确认：" + s.counts.planned + "/" + s.counts.submitted + "/" + s.counts.confirmed +
+        "；最后动作：" + (s.lastAction ? s.lastAction.key + " " + (statuses[s.lastAction.status] || s.lastAction.status) : "无") +
+        "；缺读：" + missing + (s.reason ? "；停止原因：" + s.reason : ""));
+    }
+// @endfragment bgi-host.reportRunSummary
+
 // @fragment bgi-host.trace
 trace(event, data) {
+      const now = Date.now();
+      this.recordRunDiagnostic(event, data, now);
+      if (["result", "stop", "terminal-entry"].includes(event)) {
+        const summary = this.runSummary(event, data, now);
+        data = { ...data, summary };
+        this.reportRunSummary(summary);
+      }
       const text = JSON.stringify({ at: new Date().toISOString(), event, data });
       if (this.logAppend === null) {
         const indexPath = "logs/tcg-log-index.json";
