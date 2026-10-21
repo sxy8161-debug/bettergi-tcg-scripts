@@ -450,7 +450,8 @@
         s.diceKnown===true&&total(s.dice)<total(b.dice) ||
         Array.isArray(s.hand)&&JSON.stringify(bag(b.hand))!==JSON.stringify(bag(s.hand)) ||
         techniques[a.technique].switches===true&&known(s.active)&&s.active!==b.active;
-      return transition || damaged(b,s) || alive(now) && known(now.energy) &&
+      return transition || b.diceKnown===true&&s.diceKnown===true&&total(s.dice)<total(b.dice) ||
+        damaged(b,s) || alive(now) && known(now.energy) &&
         (a.skill==="Q"?now.energy<old.energy:now.energy>old.energy);
     }
     if(!Array.isArray(s.hand))return false;

@@ -359,7 +359,7 @@
       // Random refunds and modified costs are adopted from observation, not Raiden's fixed prediction.
       this.expectedDice=null;this.gamblerBudget=null;this.choiceReceipt=null;this.choiceDetails=[];this.boardReady=false;
       if(a.type==="card"||a.type==="tune")await this.inputHand(a,before,memory,prepared);
-      else if(a.type==="skill")await this.inputSkill(a,before,memory,T.size(T.skillCost(a.who,a.skill,memory,before)));
+      else if(a.type==="skill")await this.inputSkill(a,before,memory);
       else if(a.type==="switch")await this.inputSwitch(a,before,memory);
       else if(a.type==="end")await this.inputEnd();
       else throw Error("未支持的月绽放动作："+a.type);
@@ -397,7 +397,7 @@
     }
     async inputSkill(a,before,memory){
       if(a.skill==="T")return this.inputTechnique(a,before,memory);
-      return super.inputSkill(a,before,memory,null,true);
+      return super.inputSkill(a,before);
     }
     adoptObservedState(state,reason){super.adoptObservedState(state,reason);this.expectedDice=null;this.gamblerBudget=null;}
     async confirm(a,before,m){return super.confirm(combatConfirmation(a,before),before,m);}

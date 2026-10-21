@@ -5,7 +5,6 @@
   // Verified skill names from DSTCG's repository card dictionary. The native
   // skill/payment preview hides the usual turn marker; it is not an unknown
   // board. Require BOTH a uniquely matched skill name and its type, not merely a panel.
-  const skillNames = TCG.team.map(c => c.skills);
   // This asset is the tooltip ABOVE the control, not its clickable area.
   // Use it only as a scene marker. First-pick confirmation uses the official
   // character-card path, not the separate tooltip/control geometry.
@@ -162,65 +161,7 @@
       throw error;
     }
 
-    skillPreviewIn(f) {
-      const native = super.skillPreviewIn(f), nativeName = native.name, detail = native.detail;
-      let name = nativeName, enlargedName = null,
-        matched = {identity:native.identity, nameMatch:native.nameMatch};
-      const needsFingerprint = TCG.norm(nativeName) === "电雷驰";
-      // Try the same pixels first; this does not add another game input.
-      if (!matched.identity || needsFingerprint) {
-        enlargedName = this.numericAt(f, this.roi("details", [135, 122, 238, 42]), 3);
-        const enlarged = this.matchSkillPreview(enlargedName, detail);
-        if (enlarged.identity) { name = enlargedName; matched = enlarged; }
-      }
-      let fingerprint = null,
-        aliasDetail = null;
-      // Native 2026-10-09 probe: all four title crops at 1x/2x/3x/4x
-      // consistently lose 掣. Preserve this spelling's independent description
-      // proof instead of silently bypassing it through the shared fuzzy match.
-      if (needsFingerprint) matched = {identity:null, nameMatch:null};
-      if (
-        needsFingerprint &&
-        TCG.norm(enlargedName) === "电雷驰"
-      ) {
-        const fullDetail = this.ocr(f, this.roi("details", [70, 205, 320, 450]));
-        aliasDetail = fullDetail;
-        const signature = TCG.norm(fullDetail);
-        // The native description includes weapon/buff damage (2 -> 3 with
-        // Crescent Pike). Identity uses the stable effect, not base damage.
-        if (
-          detail.includes("元素战技") &&
-          signature.includes("元素战技") &&
-          /造成[0-9]+点雷元素伤害/.test(signature) &&
-          signature.includes("夜魂加持") &&
-          signature.includes("获得1点") &&
-          signature.includes("夜魂值") &&
-          signature.includes("生成1层敏捷切换") &&
-          signature.includes("切换角色") &&
-          signature.includes("快速行动")
-        ) {
-          matched = {identity:{who:0, skill:"E"}, nameMatch:{title:skillNames[0].E, method:"native-description"}};
-          fingerprint = { source: "native-20261009-exact-alias-and-rules", fullDetail };
-          name = skillNames[0].E;
-        }
-      }
-      return {
-        name,
-        nativeName,
-        enlargedName,
-        detail,
-        aliasDetail,
-        fingerprint,
-        ...matched,
-      };
-    }
-
-    skillFeeIn(f, action, verifiedIdentity = undefined) {
-      // Calibrated native preview fee row; identity is independently checked.
-      // A normal-board skill icon or a cost from another card is never proof.
-      const identity =
-        verifiedIdentity === undefined ? this.skillPreviewIn(f).identity : verifiedIdentity;
-      if (identity?.who !== action.who || identity?.skill !== action.skill) return null;
+    skillFeeIn(f, action) {
       // Read the CURRENT action icon's die fee, not the nominal fee in the
       // left description. Native 1080P preview has Q energy in a separate
       // gold badge to the right: exclude it from this narrow numeric crop.
@@ -377,7 +318,7 @@
           await this.inputHand(action, before, memory);
           break;
         case "skill":
-          await this.inputSkill(action, before, memory, cost, true);
+          await this.inputSkill(action, before);
           break;
         case "switch":
           await this.inputSwitch(action, before, memory);

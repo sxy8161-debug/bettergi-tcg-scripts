@@ -10,11 +10,6 @@
   /* @include src/shared/geometry.inc.js#tcg-ui.costHandSample */
   /* @include src/shared/geometry.inc.js#tcg-ui.handLayoutCount */
   /* @include src/shared/geometry.inc.js#tcg-ui.enemyHpXs */
-  // Verified skill names from DSTCG's repository card dictionary. The native
-  // skill/payment preview hides the usual turn marker; it is not an unknown
-  // board. Require BOTH a uniquely matched skill name and its type, not merely a panel.
-  const skillNames = TCG.team.map(c => c.skills);
-  /* @include src/shared/geometry.inc.js#tcg-ui.skillTypes */
   // This asset is the tooltip ABOVE the control, not its clickable area.
   // Use it only as a scene marker. First-pick confirmation uses the official
   // character-card path, not the separate tooltip/control geometry.
@@ -141,125 +136,21 @@
       return p;
     }
     /* @include src/shared/board.inc.js#tcg-ui.admitFreshActionBoard */
-    matchSkillPreview(name, detail) {
-      // The native header's expand glyph can be OCR'd as a separate "A".
-      // Keep the raw OCR for diagnostics. Do not remove Chinese text or costs.
-      const raw = TCG.norm(name);
-      const text = /^[A-Za-z]?[\u3400-\u9fff]+[A-Za-z]?$/.test(raw) &&
-        (raw.match(/[A-Za-z]/g) || []).length <= 1 ? raw.replace(/[A-Za-z]/g, "") : raw;
-      const unknown = { identity: null, nameMatch: null };
-      if (!/^[\u3400-\u9fff]{2,16}$/.test(text)) return unknown;
-      const distance = (a, b) => {
-        let row = Array.from({length:b.length + 1}, (_, i) => i);
-        for (let i = 1; i <= a.length; i++) {
-          const next = [i];
-          for (let j = 1; j <= b.length; j++)
-            next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-          row = next;
-        }
-        return row[b.length];
-      };
-      const candidates = [];
-      // Rank the whole registered team, not just the expected action. A wrong
-      // role/slot must still fail at requireSkillPreview; ties never authorize.
-      for (let who = 0; who < skillNames.length; who++) for (const skill of ["NA", "E", "Q"]) {
-        const title = TCG.norm(skillNames[who][skill]);
-        const alias = (TCG.team[who].skillAliases?.[skill] || []).some(n => TCG.norm(n) === text);
-        const edits = alias ? 0 : distance(text, title);
-        if (edits <= (title.length >= 5 ? 2 : 1))
-          candidates.push({who, skill, title:skillNames[who][skill], edits, alias});
-      }
-      candidates.sort((a, b) => a.edits - b.edits);
-      const best = candidates[0];
-      if (!best || candidates[1]?.edits === best.edits || !detail.includes(skillTypes[best.skill])) return unknown;
-      return { identity:{who:best.who, skill:best.skill},
-        nameMatch:{title:best.title, edits:best.edits, method:best.alias ? "registered-alias" : best.edits ? "fuzzy" : "exact"} };
-    }
-    skillPreviewIn(f) {
-      // Native E preview read "神变·恶曜开眼\n3" with the old tall ROI.
-      // Exclude the cost row instead of deleting arbitrary digits from OCR.
-      const name = this.ocr(f, this.roi("details", [135, 122, 238, 42]));
-      const detail = this.ocr(f, this.roi("details", [70, 210, 320, 85]));
-      return { name, detail, ...this.matchSkillPreview(name, detail) };
-    }
-    /* @include src/shared/input.inc.js#bgi-host.requireSkillPreview */
-    /* @include src/shared/input.inc.js#bgi-host.emptySkillPreview */
-    /* @include src/shared/input.inc.js#bgi-host.characterSkillPreview */
     /* @include src/shared/input.inc.js#bgi-host.characterOverviewIn */
     /* @include src/shared/input.inc.js#bgi-host.dismissCharacterOverview */
-    async requireOpenedSkill(action, before, x, readFee = false, feeProbe = false) {
-      try {
-        return await this.requireSkillPreview(action, feeProbe, readFee);
-      } catch (error) {
-        if (!["TCG_SKILL_PREVIEW_ABSENT", "TCG_SKILL_PREVIEW_CHARACTER"].includes(error.code)) throw error;
-        let overview = null;
-        if (error.code === "TCG_SKILL_PREVIEW_CHARACTER") {
-          overview = this.frame(f => {
-            const preview = {...this.skillPreviewIn(f), phase:this.phaseIn(f)};
-            if (!this.emptySkillPreview(preview) && !this.characterSkillPreview(preview)) return null;
-            const panel = this.characterOverviewIn(f);
-            if (panel && this.characterSkillPreview(preview) && TCG.characterName(panel.name) !==
-                TCG.characterName(preview.name || preview.nativeName || preview.enlargedName)) return null;
-            return panel;
-          });
-          if (!overview) throw error;
-          this.trace("skill-preview-overview", {...overview, feeProbe, recoveryLimit:1});
-          this.boardReady=false;await this.reset();
-        }
-        // Reopen only an absent first-click preview, never an already sent skill.
-        // Two fresh full boards must prove all resources/characters unchanged;
-        // a fresh empty-detail sample also guards against a late-arriving panel.
-        for (let sample = 0; sample < 2; sample++) {
-          let board;
-          try { board = this.board(); }
-          catch (unsettled) {
-            if (unsettled.code !== "TCG_DICE_RETRY") throw unsettled;
-            const changed = new Error("技能详情缺失且骰子未读清，重新观察而不补点");
-            changed.code = "TCG_STATE_REFRESH";
-            throw changed;
-          }
-          if (
-            board.phase !== "board" ||
-            board.turn !== "user" ||
-            !board.diceKnown ||
-            boardDifferences(before, board).length !== 0
-          ) {
-            const changed = new Error("技能详情缺失且牌桌已变化，重新观察而不补点");
-            changed.code = "TCG_STATE_REFRESH";
-            throw changed;
-          }
-          if (sample === 0) await sleep(300);
-        }
-        const stillEmpty = this.frame((f) => ({
-          ...this.skillPreviewIn(f),
-          phase: this.phaseIn(f),
-        }));
-        if (!this.emptySkillPreview(stillEmpty)) throw error;
-        await this.requireNoWarning();
-        this.trace("skill-preview-reopen", {
-          who: action.who,
-          skill: action.skill,
-          proof: overview ? "verified-overview-reset-two-unchanged-boards-and-empty-details" :
-            "two-unchanged-boards-and-empty-details",
-          feeProbe,
-          limit: 1,
-        });
-        this.clickAt(...this.point("bottom", x, 957));
-        await sleep(120);
-        return this.requireSkillPreview(action, feeProbe, readFee);
-      }
-    }
     /* @include src/shared/board.inc.js#bgi-host.diceIn */
     /* @include src/shared/opening.inc.js#bgi-host.readRollDice */
     /* @include src/shared/opening.inc.js#bgi-host.actionReroll */
     
     async probeSkill(action,before,memory) {
-      if(action.who!==before.active)throw new Error("费用检视只能用于当前角色");
       const x={NA:1608,E:1716,Q:1824}[action.skill];
-      this.clickAt(...this.point("bottom",x,957));await sleep(120);await this.requireOpenedSkill(action,before,x,false,true);
+      if(action.who!==before.active || !x)throw new Error("费用检视只能用于当前角色的固定技能槽");
+      this.clickAt(...this.point("bottom",x,957));await sleep(1200);
       let fee=null,last=null,stable=0;
       for(let i=0;i<4;i++){
-        const n=this.frame(f=>this.skillFeeIn(f,action));stable=n!==null&&n===last?stable+1:1;last=n;
+        const sample=this.frame(f=>({phase:this.phaseIn(f),fee:this.skillFeeIn(f,action)}));
+        this.requireHandObservation(sample.phase,"skill-fee-probe");
+        const n=sample.fee;stable=n!==null&&n===last?stable+1:1;last=n;
         if(n!==null&&stable>=2){fee=n;break;}await sleep(180);
       }
       // A fee probe NEVER casts. Cancel, then prove unchanged real resources.

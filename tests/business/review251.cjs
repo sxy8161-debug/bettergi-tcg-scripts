@@ -142,7 +142,7 @@ module.exports=async function(test){
     const {T,Host}=load("iansan"),h=new Host({}),s=board(T),m=T.freshMemory();
     s.active=2;s.dice={Anemo:2};s.characters[2].energy=2;m.soupDiscount[2]=null;m.troupe[2]=null;
     h.trace=()=>{};h.clickAt=()=>{};h.reset=async()=>{};h.requireUnchangedBoard=async()=>{};
-    h.requireOpenedSkill=async()=>{};h.frame=fn=>fn({});let fee=2;h.skillFeeIn=()=>fee;
+    h.phaseIn=()=>({phase:"unknown",turn:"none"});h.frame=fn=>fn({});let fee=2;h.skillFeeIn=()=>fee;
     for(const skill of ["E","Q"]){fee=skill==="E"?2:3;await h.probeSkill({type:"probe",who:2,skill,key:skill},s,m);}
     assert.equal(T.size(T.skillCost(2,"E",m,s)),2);assert.equal(T.size(T.skillCost(2,"Q",m,s)),3);
     assert.equal(T.choose(s,m).type,"skill");assert.equal(T.choose(s,m).skill,"E");
@@ -150,7 +150,7 @@ module.exports=async function(test){
   await test("C02 failed quotes coexist; board changes and action boundaries expire only skill evidence",async()=>{
     for(const [e,q]of [[2,null],[3,2]]){
       const {T,Host}=load("iansan"),h=new Host({}),s=board(T),m=T.freshMemory();s.active=2;s.dice={Anemo:2};s.characters[2].energy=2;
-      h.clickAt=()=>{};h.reset=async()=>{};h.requireUnchangedBoard=async()=>{};h.requireOpenedSkill=async()=>{};h.frame=fn=>fn({});h.trace=()=>{};
+      h.clickAt=()=>{};h.reset=async()=>{};h.requireUnchangedBoard=async()=>{};h.phaseIn=()=>({phase:"unknown",turn:"none"});h.frame=fn=>fn({});h.trace=()=>{};
       for(const [skill,fee]of [["E",e],["Q",q]]){h.skillFeeIn=()=>fee;await h.probeSkill({type:"probe",who:2,skill,key:skill},s,m);}
       assert.equal(T.skillQuote(s,m,{who:2,skill:"E"}).n,e);assert.equal(T.skillQuote(s,m,{who:2,skill:"Q"}).n,q);
       assert.equal(T.skillProbeAttempted(s,m,{who:2,skill:"Q"}),true);

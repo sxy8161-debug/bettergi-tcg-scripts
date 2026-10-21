@@ -530,7 +530,7 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
   await test("actual skill host uses two icon clicks; Diluc four-cost preview is admitted",async()=>{
     const inputs=[],c=loadContext({...nativeInput((...xy)=>inputs.push(xy)),log:{info(){},warn(){},error(){}}}),h=new c.TCGBetterGI.BetterGIHost({});
     h.trace=()=>{};h.requireUnchangedBoard=async()=>{};h.frame=fn=>fn({});h.phaseIn=()=>({phase:"unknown",turn:"none"});
-    h.skillPreviewIn=()=>({identity:{who:2,skill:"Q"},name:"黎明",detail:"元素爆发"});h.numericAt=()=>"4";h.warnings=()=>({lack:false,text:""});
+    h.ocr=()=>{throw Error("ordinary skill identity must not require OCR");};h.numericAt=()=>"4";h.warnings=()=>({lack:false,text:""});
     assert.equal(h.skillFeeIn({}, {who:2,skill:"Q"}),4);
     const s=board([],2),m=memory();s.characters[2].energy=3;
     await h.executeInput({type:"skill",who:2,skill:"Q"},s,m);

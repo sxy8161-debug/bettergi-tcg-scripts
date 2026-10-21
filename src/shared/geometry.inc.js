@@ -309,7 +309,3 @@ function requireCaptureSize(size) {
     }
   }
 // @endfragment tcg-ui.requireCaptureSize
-
-// @fragment tcg-ui.skillTypes
-const skillTypes = { NA: "普通攻击", E: "元素战技", Q: "元素爆发" };
-// @endfragment tcg-ui.skillTypes

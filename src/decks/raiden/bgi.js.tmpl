@@ -69,10 +69,6 @@
       error.code="TCG_CHOICE_RETRY";error.phase=last;throw error;
     }
     skillFeeIn(f,action) {
-      // Calibrated native preview fee row; identity is independently checked.
-      // A normal-board skill icon or a cost from another card is never proof.
-      const identity=this.skillPreviewIn(f).identity;
-      if(identity?.who!==action.who || identity?.skill!==action.skill)return null;
       // Read the CURRENT action icon's die fee, not the nominal fee in the
       // left description. Native 1080P preview has Q energy in a separate
       // gold badge to the right: exclude it from this narrow numeric crop.
@@ -237,7 +233,7 @@
         this.emptyHandProven = false;
       }
       if (action.type === "card" || action.type === "tune") await this.inputHand(action,before,memory);
-      else if(action.type==="skill") await this.inputSkill(action,before,memory,cost,!!memory.thundergrassSupport);
+      else if(action.type==="skill") await this.inputSkill(action,before);
       else if(action.type==="switch") await this.inputSwitch(action,before,memory);
       else if(action.type==="end") await this.inputEnd();
       else throw new Error("禁止执行动作："+action.type);

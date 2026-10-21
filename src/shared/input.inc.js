@@ -107,22 +107,6 @@ async dismissCharacterOverview(reason) {
     }
 // @endfragment bgi-host.dismissCharacterOverview
 
-// @fragment bgi-host.characterSkillPreview
-characterSkillPreview(p) {
-      const names = [p.name, p.nativeName, p.enlargedName].map((v) => TCG.norm(v || ""));
-      const named = names.filter(Boolean);
-      return (
-        !p.identity &&
-        !TCG.norm(p.detail || "") &&
-        !TCG.norm(p.aliasDetail || "") &&
-        named.length > 0 &&
-        named.every((name) => name === named[0] && TCG.characterName(name) >= 0) &&
-        p.phase?.phase === "board" &&
-        p.phase.turn === "user"
-      );
-    }
-// @endfragment bgi-host.characterSkillPreview
-
 // @fragment bgi-host.clickButton
 async clickButton(asset, roi) {
       if (asset === "出战角色") throw new Error("出战角色模板是提示文字，不是按钮");
@@ -133,19 +117,6 @@ async clickButton(asset, roi) {
       await sleep(200);
     }
 // @endfragment bgi-host.clickButton
-
-// @fragment bgi-host.emptySkillPreview
-emptySkillPreview(p) {
-      return (
-        !p.identity &&
-        ![p.name, p.nativeName, p.enlargedName, p.detail, p.aliasDetail].some((v) =>
-          TCG.norm(v || ""),
-        ) &&
-        p.phase?.phase === "board" &&
-        p.phase.turn === "user"
-      );
-    }
-// @endfragment bgi-host.emptySkillPreview
 
 // @fragment bgi-host.moveTo
 moveTo(x, y) {
@@ -208,52 +179,21 @@ async requireSwitchPreview(action, memory) {
     }
 // @endfragment bgi-host.requireSwitchPreview
 
-// @fragment bgi-host.requireSkillPreview
-async requireSkillPreview(action, feeProbe=false, readFee=false) {
-      let stable = 0, last = null, fee = null, feeStable = 0, absent = true, missing = true;
-      for (let attempt = 0; attempt < 10; attempt++) {
-        const sampledAt = Date.now();
-        last = this.frame(f => {
-          const preview = this.skillPreviewIn(f);
-          return { ...preview, phase: this.phaseIn(f),
-            fee: readFee && !feeProbe && ["E","Q"].includes(action.skill)
-              ? this.skillFeeIn(f, action, preview.identity) : null,
-            warning: feeProbe ? null : this.warnings(f) };
-        });
-        if (!feeProbe) await this.requireNoWarning(last.warning);
-        const matched = last.identity?.who === action.who && last.identity?.skill === action.skill &&
-          ["unknown", "board"].includes(last.phase.phase) && last.phase.turn !== "enemy";
-        this.trace("skill-preview", { attempt, matched, ...last });
-        absent=absent && this.emptySkillPreview(last);
-        missing=missing && (this.emptySkillPreview(last) || this.characterSkillPreview(last));
-        stable = matched ? stable + 1 : 0;
-        feeStable = matched && last.fee!==null ? last.fee===fee ? feeStable+1 : 1 : 0;
-        fee = last.fee;
-        if (stable >= 2) return { fee:feeStable>=2?fee:null };
-        const remaining = (matched ? 120 : 250) - (Date.now() - sampledAt);
-        if (attempt < 9 && remaining > 0) await sleep(remaining);
-      }
-      const error=new Error("技能确认页未核实目标技能：" + (last?.name || "空标题"));
-      if(absent)error.code="TCG_SKILL_PREVIEW_ABSENT";
-      else if(missing)error.code="TCG_SKILL_PREVIEW_CHARACTER";
-      throw error;
-    }
-// @endfragment bgi-host.requireSkillPreview
-
 // @fragment bgi-host.inputSkill
-async inputSkill(action, before, memory, cost, readFee = false) {
+async inputSkill(action, before) {
+      // executeInput already verified the current actor, board and resources.
+      // Fixed role + fixed slot identifies the skill; no title/type OCR.
       const x = { NA: 1608, E: 1716, Q: 1824 }[action.skill];
+      if (!x || action.who !== before.active) throw new Error("技能槽位或当前出战角色不符");
       this.clickAt(...this.point("bottom",x,957));
-      await sleep(120);
-      const preview = await this.requireOpenedSkill(action, before, x, readFee);
-      if (this.expectedDice !== null && preview.fee !== null) {
-        this.expectedDice = TCG.total(before.dice) - preview.fee;
-        this.trace("skill-fee-budget", { who: action.who, skill: action.skill,
-          nominal: cost, actual: preview.fee, expectedDice: this.expectedDice,
-          source: "current-confirmed-preview" });
-      }
+      await sleep(1200);
+      const preview = this.frame(f => ({ phase:this.phaseIn(f), warning:this.warnings(f) }));
+      this.requireHandObservation(preview.phase, "before-skill-confirm");
+      await this.requireNoWarning(preview.warning);
       this.clickAt(...this.point("bottom",x,957));
-      this.trace("skill-confirm-clicked", { who: action.who, skill: action.skill, point: this.point("bottom",x,957) });
+      // Sent is not confirmed. The existing pending session observes payment
+      // and native effects; no missing tooltip or successful click proves a cast.
+      this.trace("skill-confirm-clicked", { who:action.who, skill:action.skill, point:this.point("bottom",x,957) });
     }
 // @endfragment bgi-host.inputSkill
 

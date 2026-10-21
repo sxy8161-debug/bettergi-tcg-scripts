@@ -3,11 +3,11 @@ const assert=require("node:assert/strict"),{load}=require("./runtime.cjs");
 const clone=value=>JSON.parse(JSON.stringify(value));
 module.exports=async function(test){
   const id="input";
-  function fixture(interrupt){
+  function fixture(interrupt,deck="raiden"){
     let time=0,scene={phase:"board",turn:"user"},previews=0;
     class Clock extends Date{static now(){return 100000+time;}}
     let point=null;
-    const inputs=[],inputTimes=[],{env:c}=load("raiden",{Date:Clock,sleep:async ms=>{time+=ms;},
+    const inputs=[],inputTimes=[],{env:c}=load(deck,{Date:Clock,sleep:async ms=>{time+=ms;},
       genshin:{scaleTo1080PRatio:1},captureGameRegion:()=>({Width:1920,Height:1080,
         Prev:{Width:3840,Height:2160,Prev:null},dispose(){}}),
       GameCaptureRegion:{GameRegion1080PPosMove:(...xy)=>{point=xy;}},
@@ -18,7 +18,7 @@ module.exports=async function(test){
     h.frame=fn=>fn({});h.board=()=>clone(state);h.boardReady=true;h.phase=()=>clone(scene);
     // Interrupt before either restored OCR preview can authorize confirmation.
     h.phaseIn=()=>{if(scene.phase==="unknown"&&++previews===1&&interrupt==="preview")scene={phase:"choice",turn:"none"};return clone(scene);};
-    h.warnings=()=>({lack:false,text:""});
+    h.warnings=()=>({lack:false,text:""});h.matches=()=>[];
     h.ocr=(_,{rect: roi})=>roi[0]===311?T.team[2].name:roi[0]===700?"将所选角色切换为出战角色":roi[0]===1720?"切换角色":"";
     h.trace=event=>{if(event==="title-read"&&interrupt==="title")scene={phase:"choice",turn:"none"};};
     const click=h.clickAt.bind(h);h.clickAt=(x,y)=>{const p=click(x,y);if(x===1820)scene={phase:"unknown",turn:"none"};return p;};
@@ -37,97 +37,79 @@ module.exports=async function(test){
     assert.deepEqual(f.inputs,[[1175,720],[1820,958],[1820,958]]);
     assert.equal(f.inputs.length,3);
   });
-  await test(id+": restored skill OCR requires the selected name and type before one confirmation",async()=>{
-    for(const scenario of ["valid","alias","empty","wrong-name","fuzzy-wrong-name","wrong-type","late-choice"]){
-      const f=fixture(),events=[];
+  await test(id+": fixed actor and slot submit once without skill-name, type or preview-image recognition",async()=>{
+    for(const [deck,who,skill,x] of [["raiden",0,"NA",1608],["iansan",0,"E",1716],["moonbloom",0,"E",1716],["mozailu",2,"Q",1824]]){
+      const f=fixture(undefined,deck),events=[];f.state.active=who;
+      f.state.characters[who].energy=f.T.team[who].maxEnergy;
       f.h.trace=(event,data)=>events.push({event,data});
-      f.h.phaseIn=()=>scenario==="late-choice"?{phase:"choice",turn:"none"}:{phase:"unknown",turn:"none"};
-      f.h.ocr=(_,{rect:roi})=>{
-        if(scenario==="empty")return "";
-        if(roi[0]===135)return scenario==="wrong-name"?f.T.team[0].skills.E:
-          scenario==="fuzzy-wrong-name"?"神变恶耀开眼":
-          scenario==="alias"?"拂花偶叶":f.T.team[1].skills.E;
-        if(roi[0]===70)return scenario==="wrong-type"?"普通攻击":"元素战技";
-        throw Error("Unexpected restored skill OCR region");
-      };
-      f.h.executeInput=(a,b,m)=>f.h.inputSkill(a,b,m,3);
-      const action={type:"skill",who:1,skill:"E"};
-      if(["valid","alias"].includes(scenario)){
-        await f.h.execute(action,f.state,f.T.freshMemory());
-        assert.equal(f.inputs.length,2);
-        assert.equal(events.filter(e=>e.event==="skill-preview"&&e.data.matched).length,2);
-        assert.equal(events.filter(e=>e.event==="input-submitted").length,1);
-      }else{
-        await assert.rejects(()=>f.h.execute(action,f.state,f.T.freshMemory()),
-          /未核实目标技能/);
-        assert.equal(f.inputs.length,1);assert.ok(!events.some(e=>e.event==="input-submitted"));
-      }
+      f.h.phaseIn=()=>({phase:"unknown",turn:"none"});
+      f.h.ocr=f.h.numericAt=f.h.matches=()=>{throw Error("Ordinary skill submission must not identify the preview");};
+      await f.h.execute({type:"skill",who,skill},f.state,f.T.freshMemory());
+      assert.deepEqual(f.inputs,[[x,957],[x,957]],deck);
+      assert.equal(events.filter(e=>e.event==="input-submitted").length,1,deck);
+      assert.ok(f.inputTimes[1]-f.inputTimes[0]>=1200,"allow the first click's animation to open");
     }
   });
-  await test(id+": reported Raiden title with trailing UI glyph reaches one skill confirmation",async()=>{
-    // Reporter run-slot-07, 2026-10-20T15:31:22.202Z..24.408Z, SHA256
-    // 533680b8de3e940133c6bc76d6bf2d67a28986198fe31771a6b5b42b7963dd72:
-    // all ten native title reads were 源流\nA; the type was 普通攻击.
-    // This replays recorded OCR results, not pixels or a native game run.
-    const f=fixture(),events=[];let samples=0;
-    f.state.active=0;
-    f.h.trace=(event,data)=>events.push({event,data});
-    f.h.ocr=(_,{rect:roi})=>roi[0]===135?"源流\nA":"普通攻击\n造成2点物理伤害。";
-    f.h.phaseIn=()=>samples++===0?{phase:"board",turn:"user"}:{phase:"unknown",turn:"none"};
-    await f.h.inputSkill({type:"skill",who:0,skill:"NA"},f.state,f.T.freshMemory(),3);
+  await test(id+": resource, actor, freeze and late-phase guards stop before the final skill click",async()=>{
+    for(const scenario of ["insufficient","wrong-actor","frozen","uncharged","warning","late-choice","enemy"]){
+      const f=fixture(),events=[];f.state.active=0;
+      f.h.trace=(event,data)=>events.push({event,data});
+      const action={type:"skill",who:0,skill:scenario==="uncharged"?"Q":"NA"};
+      if(scenario==="insufficient")f.state.dice={Omni:2};
+      if(scenario==="wrong-actor")action.who=1;
+      if(scenario==="frozen")f.state.characters[0].frozen=true;
+      f.h.phaseIn=()=>scenario==="late-choice"?{phase:"choice",turn:"none"}:
+        scenario==="enemy"?{phase:"board",turn:"enemy"}:{phase:"unknown",turn:"none"};
+      if(scenario==="warning"){f.h.warnings=()=>({lack:true,text:""});f.h.reset=async()=>{};}
+      await assert.rejects(()=>f.h.execute(action,f.state,f.T.freshMemory()),
+        scenario==="warning"?e=>e.code==="TCG_INPUT_REJECTED":
+        ["late-choice","enemy"].includes(scenario)?e=>e.code==="TCG_OBSERVATION_INTERRUPTED":/技能资源\/充能预检失败/);
+      assert.equal(f.inputs.length,["warning","late-choice","enemy"].includes(scenario)?1:0,scenario);
+      assert.ok(!events.some(e=>e.event==="input-submitted"),scenario);
+    }
+  });
+  await test(id+": dice decrease confirms through the existing pending session without another input",async()=>{
+    const f=fixture(),action={type:"skill",who:0,skill:"NA"},m=f.T.freshMemory();f.state.active=0;
+    f.h.phaseIn=()=>({phase:"unknown",turn:"none"});
+    await f.h.execute(action,f.state,m);
+    let reads=0;
+    f.h.observe=async()=>{const s=clone(f.state);if(++reads>1)s.dice={Omni:2};return s;};
+    const result=await f.h.confirm(action,f.state,m);
+    assert.equal(result.confirmed,true);assert.equal(result.freshObservationRequired,true);
+    assert.deepEqual(f.inputs,[[1608,957],[1608,957]],"observations never resend the skill");
+    assert.equal(f.h.confirmationSession,null);
+  });
+  await test(id+": vanished warning and unchanged resources are not a successful cast or permission to repeat",async()=>{
+    const f=fixture(),action={type:"skill",who:0,skill:"NA"},m=f.T.freshMemory();f.state.active=0;
+    f.h.phaseIn=()=>({phase:"board",turn:"user"});
+    f.h.observe=async()=>clone(f.state);f.h.observedResourceProof=async()=>({revision:f.h.inputRevision});
+    await f.h.execute(action,f.state,m);
+    const result=await f.h.confirm(action,f.state,m);
+    assert.equal(result.confirmed,false);
+    f.T.deferUncertain(m,action,f.state);
+    const next=f.T.choose(f.state,m);
+    assert.notEqual(f.T.actionKey(next),f.T.actionKey(action),"existing refusal memory excludes unresolved input");
     assert.deepEqual(f.inputs,[[1608,957],[1608,957]]);
-    assert.equal(events.filter(e=>e.event==="skill-confirm-clicked").length,1);
-    assert.equal(events.filter(e=>e.event==="skill-preview"&&e.data.matched).length,2);
-    assert.equal(events.find(e=>e.event==="skill-preview").data.name,"源流\nA");
   });
-  await test(id+": fuzzy skill titles retain bounded evidence, types and unique identity",()=>{
-    const f=fixture();let name="源流",detail="普通攻击";
-    f.h.ocr=(_,{rect:roi})=>roi[0]===135?name:detail;
-    for(const value of ["源流","源流\nA","A\n源流","源流A","原流","源留"]){
-      name=value;assert.deepEqual(clone(f.h.skillPreviewIn({}).identity),{who:0,skill:"NA"});
-    }
-    for(const value of ["源","攻击","源流\n3","源流AB","源A流","说明源流","源流\n普通攻击","源流\n祈颂射艺",""]){
-      name=value;assert.equal(f.h.skillPreviewIn({}).identity,null,value);
-    }
-    name="源流\nA";
-    for(const value of ["","元素战技"]){detail=value;assert.equal(f.h.skillPreviewIn({}).identity,null);}
-    detail="普通攻击";f.T.team[1].skills.NA="源留";name="源刘";
-    assert.equal(f.h.skillPreviewIn({}).identity,null,"equally close registered names");
-    f.T.team[1].skills.NA="源流";name="源流";
-    assert.equal(f.h.skillPreviewIn({}).identity,null,"ambiguous registered name");
-  });
-  await test(id+": all adapters share fuzzy titles without dropping dedicated skill aliases",()=>{
-    for(const [deck,who,skill,name,detail] of [
-      ["raiden",1,"E","拂花偶叶\nA","元素战技"],
-      ["iansan",1,"Q","璨焰金貌舞\nA","元素爆发"],
-      ["moonbloom",2,"NA","游吐信\nA","普通攻击"],
-      ["mozailu",0,"E","水中幻愿\nA","元素战技"],
-      ["raiden",0,"E","神变恶耀开限","元素战技"],
-      ["mozailu",0,"E","水中幻原","元素战技"]]){
-      const {env:c}=load(deck),h=new c.TCGBetterGI.BetterGIHost(c.TCGPlayer.playerOptions({}));
-      h.ocr=(_,{rect:roi})=>roi[0]===135?name:detail;
-      h.numericAt=()=>name;
-      assert.deepEqual(clone(h.skillPreviewIn({}).identity),{who,skill},deck);
+  await test(id+": actual skill verification handles payment, refunds and zero-cost energy changes",()=>{
+    for(const deck of ["raiden","iansan","moonbloom","mozailu"]){
+      const f=fixture(undefined,deck),b=f.state,a={type:"skill",who:0,skill:"NA"};b.active=0;
+      const paid=clone(b);paid.dice={Omni:2};assert.equal(f.T.verify(a,b,paid),true,deck+"/payment");
+      assert.equal(f.T.verify(a,b,clone(b)),false,deck+"/unchanged");
+      const refunded=clone(b);refunded.characters[0].energy=1;
+      assert.equal(f.T.verify(a,b,refunded),true,deck+"/no-net-dice-change");
     }
   });
-  await test(id+": missed skill opening can reopen once only after unchanged boards and empty panel",async()=>{
-    for(const changed of [false,true]){
-      const f=fixture(),events=[];let boards=0;
-      f.h.trace=(event,data)=>events.push({event,data});
-      f.h.phaseIn=()=>f.inputs.length<2?{phase:"board",turn:"user"}:{phase:"unknown",turn:"none"};
-      f.h.ocr=(_,{rect:roi})=>f.inputs.length<2?"":roi[0]===135?f.T.team[1].skills.E:
-        roi[0]===70?"元素战技":"";
-      f.h.board=()=>{boards++;const b=clone(f.state);if(changed)b.characters[1].hp--;return b;};
-      const action={type:"skill",who:1,skill:"E"};
-      if(changed){
-        await assert.rejects(()=>f.h.inputSkill(action,f.state,f.T.freshMemory(),3),e=>e.code==="TCG_STATE_REFRESH");
-        assert.equal(f.inputs.length,1);
-      }else{
-        await f.h.inputSkill(action,f.state,f.T.freshMemory(),3);
-        assert.equal(boards,2);assert.equal(f.inputs.length,3);
-        assert.equal(events.filter(e=>e.event==="skill-preview-reopen").length,1);
-        assert.equal(events.filter(e=>e.event==="skill-confirm-clicked").length,1);
-      }
+  await test(id+": read-only numeric fee inspection never confirms a skill or reads its name",async()=>{
+    for(const quote of ["2",""]){
+      const f=fixture(undefined,"iansan"),m=f.T.freshMemory(),events=[];f.state.active=0;
+      f.h.trace=(event,data)=>events.push({event,data});f.h.phaseIn=()=>({phase:"unknown",turn:"none"});
+      f.h.ocr=()=>{throw Error("Fee probe must not read skill identity");};f.h.numericAt=()=>quote;
+      const result=await f.h.execute({type:"probe",who:0,skill:"E"},f.state,m);
+      assert.equal(result.probed,true);assert.equal(result.confirmed,false);
+      assert.equal(f.T.skillQuote(f.state,m,{who:0,skill:"E"}).n,quote?2:null);
+      assert.equal(f.inputs.filter(p=>p[0]===1716).length,1);
+      assert.ok(!events.some(e=>e.event==="input-submitted"));
     }
   });
 };

@@ -4,7 +4,7 @@
     {name:"菈乌玛",element:"Dendro",maxHp:11,maxEnergy:2,skills:{NA:"林麓旅踏",E:"圣言述咏·终宵永眠",Q:"圣言述咏·众心为月"}},
     {name:"哥伦比娅",element:"Hydro",maxHp:10,maxEnergy:3,skills:{NA:"月露泼降",E:"万古潮汐",Q:"她的乡愁"}},
     // Native 2026-10-14 11:06 preview: OCR drops the rare 虵 in all six reads.
-    {name:"奈芙尔",element:"Dendro",maxHp:10,maxEnergy:2,skills:{NA:"游虵吐信",E:"弈术·千夜一舞",Q:"圣约·真眸幻戏"},skillAliases:{NA:["游吐信"]}}
+    {name:"奈芙尔",element:"Dendro",maxHp:10,maxEnergy:2,skills:{NA:"游虵吐信",E:"弈术·千夜一舞",Q:"圣约·真眸幻戏"}}
   ];
   const team = roster.slice();
   const cards = [
