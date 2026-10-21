@@ -579,6 +579,13 @@
         skillElement(m,cast.who,cast.skill))m.sproutUncertainRound=m.round;
   }
   function commit(m, action, before, after=null) {
+    // Input retains its adopted cost even when the new observation expires
+    // quotes. Pure projections/direct commits read their own fee before clear.
+    const basis=action.skillCostBasis,
+      bound=basis && basis.actionKey===actionKey(action) && basis.beforeKey===boardKey(before) &&
+        basis.round===m.round && basis.support===m.thundergrassSupport && basis.used===m.blessingUsed &&
+        ["native-skill-preview","rules"].includes(basis.source) && Number.isInteger(basis.cost) && basis.cost>=0,
+      usedSkillCost=action.type==="skill" ? (bound ? basis.cost : size(skillCost(action.who,action.skill,m,before))) : null;
     clearSkillCosts(m);
     commitSprout(m,action,before);
     // Board layouts shrink after defeats. Count only complete known enemy
@@ -600,7 +607,7 @@
       if (action.skill === "NA" && m.normalDiscount[who] > 0) m.normalDiscount[who]--;
       if(action.skill==="Q" && m.artifactKinds?.[who]==="exile")m.exileUsedRound[who]=m.round;
       const base=action.skill==="Q"?(who===2?4:3):action.skill==="E"?3:null;
-      if(base!==null && size(skillCost(who,action.skill,m,before))<base)m.blessingUsed++;
+      if(base!==null && usedSkillCost<base)m.blessingUsed++;
     }
     if (action.type !== "card" || !byId[action.id]) return;
     const a = before.active;

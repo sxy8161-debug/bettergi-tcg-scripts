@@ -222,6 +222,14 @@
       const cost = action.type === "skill" ? TCG.size(TCG.skillCost(action.who, action.skill, memory,before)) :
         action.type === "switch" ? (memory.freeSwitch ? 0 : 1) :
         action.type === "card" ? TCG.size(TCG.byId[action.id].cost) : 0;
+      if (action.type === "skill") {
+        const quote = TCG.skillQuote(before,memory,action);
+        // Keep the adopted fee on this action, not in the next board's quote
+        // cache. This is an input basis, never evidence that the cast succeeded.
+        action.skillCostBasis = { actionKey:TCG.actionKey(action),beforeKey:TCG.boardKey(before),
+          round:memory.round,support:memory.thundergrassSupport,used:memory.blessingUsed,cost,
+          source:quote?.source==="native-skill-preview" && quote.n===cost ? quote.source : "rules" };
+      }
       this.expectedDice = action.type === "end" ? null : TCG.total(before.dice) - cost +
         (action.type === "card" ? (action.id === "wovenThunder" || action.id === "lost" ? 1 : action.id === "companion" ? 2 : 0) : 0);
       const wearer=action.type==="switch"?action.target:action.type==="skill"?action.who:

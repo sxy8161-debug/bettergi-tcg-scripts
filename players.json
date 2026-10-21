@@ -4,7 +4,7 @@
     "raiden": {
       "title": "雷神柯莱刻晴",
       "source": "repo/js/RaidenColleiKeqingPlayer",
-      "version": "1.4.11",
+      "version": "1.4.12",
       "recognition": "src/decks/raiden/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],
