@@ -143,6 +143,9 @@
         after.hand=this.finishHandObservation(after.hand,{retainedHand:before.hand});
         for(const key of [a.key,T.cardProbeKey(after,after.hand[a.index],a.requirement)])
           if(!memory.probeKeys.includes(key))memory.probeKeys.push(key);
+        // Like checkCardInput, publish observed hand facts to this read-only
+        // action's state before a board refresh can reuse its unchanged hand.
+        before.hand=after.hand;
         this.acceptHand(after.hand,"hand-attachment-markers");
         this.trace("hand-attachment-markers",{empowered:after.hand.filter(h=>h.attachments?.empowered===true).map(h=>h.index),
           count:after.hand.length,detailInputs:0});
@@ -169,6 +172,7 @@
           const key=T.cardProbeKey(after,observed,request.requirement);
           memory.probeKeys.push(request.key);if(key!==request.key)memory.probeKeys.push(key);
         }
+        before.hand=after.hand;
         this.acceptHand(after.hand,"card-facts-probed");
         this.trace("card-facts-probed",{id:request.id,index:request.index,currentCost:observed.currentCost,
           attachments:observed.attachments,dependency:request.dependency,batchRead:reads});

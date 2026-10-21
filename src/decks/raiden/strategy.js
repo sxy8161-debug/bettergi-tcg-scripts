@@ -3,7 +3,6 @@
 (function(root){
   "use strict";
   const T=root.TCG,copy=x=>JSON.parse(JSON.stringify(x));
-  const legacyChoose=T.choose;
   function cardSkill(a,s){
     if(a.type==="skill")return a;
     if(a.type!=="card")return null; // Burning a combat card is not casting it.
@@ -322,15 +321,26 @@
     const depth=options.depth||6,width=options.width||20;
     const baseline=evaluation(s,m,0),start={state:s,memory:m,score:0,path:[],casts:0,turns:0};
     let frontier=[start],best=null,expanded=0;
+    const consider=child=>{
+      if((child.casts>0||child.path[0].type==="card") && preparationUsed(child.path) && betterPlan(child,best))best=child;
+    };
+    // Evaluate the immediate candidates before spending the shared budget on
+    // deeper funding routes. Keep these same scored nodes; never run a second
+    // selector when the budget runs out (including a useful heal/charge card).
+    const roots=new Map();
+    for(const a of eligible(s,m)){
+      if(!T.projectionBudget.available())break;
+      expanded++;const child=advance(start,a,baseline);if(!child)continue;
+      roots.set(a,child);consider(child);
+    }
     // Compare complete tune->...->skill funding before beam pruning. Intermediate
     // negative card costs must not erase a reachable E/Q. Execute only its first
     // step, then replan from the actual observed hand and dice as usual.
     // Give legal conversion/charge/switch cards the same complete funding
     // comparison as pure tuning, so negative intermediate setup is not pruned.
     const starts=[start];
-    for(const a of eligible(s,m))if(a.type==="card"&&["wovenThunder","companion","voltage","stars","calx","shift","fast"].includes(a.id)){
-      if(!T.projectionBudget.available())break;
-      const child=advance(start,a,baseline);expanded++;if(child)starts.push(child);
+    for(const [a,child] of roots){
+      if(a.type==="card"&&["wovenThunder","companion","voltage","stars","calx","shift","fast"].includes(a.id))starts.push(child);
     }
     funding: for(const seed of starts)for(const who of [s.active,...[0,1,2].filter(i=>i!==s.active)])for(const skill of ["Q","E","NA"]) {
       const goal={who,skill};if(!T.followupReachable(seed.state,seed.memory,goal))continue;
@@ -350,7 +360,7 @@
       if(!valid||node.path.length>=depth||!T.skillLegal(node.state,goal,node.memory))continue;
       if(!T.projectionBudget.available())break funding;
       const child=advance(node,{type:"skill",...goal},baseline);expanded++;if(!child)continue;
-      if(preparationUsed(child.path)&&betterPlan(child,best))best=child;
+      consider(child);
       if(!child.leaf&&child.path.length<depth)frontier.push(child);
       // Retain the whole Q -> actual switch -> teammate Q prefix before beam
       // pruning. Same rule projection/value and the SAME 1500-node budget.
@@ -363,30 +373,34 @@
         if(T.actionRefused(handoff.state,handoff.memory,burst)||!T.skillLegal(handoff.state,burst,handoff.memory))continue;
         if(!T.projectionBudget.available())break;
         const done=advance(handoff,burst,baseline);expanded++;if(!done)continue;
-        if(preparationUsed(done.path)&&betterPlan(done,best))best=done;
+        consider(done);
         if(!done.leaf&&done.path.length<depth)frontier.push(done);
       }
     }
     search: for(let step=0;step<depth;step++){
       const next=[],seen=new Map();
-      for(const node of frontier)for(const a of eligible(node.state,node.memory)){
+      for(const node of frontier)for(const a of node===start?roots.keys():eligible(node.state,node.memory)){
         if(node.path.length>=depth)continue;
         // No bounce cycle, repeated useless protection, or future unknown draw.
         if(a.type==="switch" && node.path[node.path.length-1]?.type==="switch")continue;
-        if(!T.projectionBudget.available())break search;
-        expanded++;const child=advance(node,a,baseline);if(!child)continue;
+        if(node!==start&&!T.projectionBudget.available())break search;
+        // Reuse the immediate projection, retaining the existing beam order.
+        if(node!==start)expanded++;
+        const child=node===start?roots.get(a):advance(node,a,baseline);if(!child)continue;
         const signature=T.boardKey(child.state)+JSON.stringify([child.reliefOrigin,child.memory.freeSwitch,child.memory.fastSwitch,
           child.memory.thundergrassSupport,child.memory.artifactKinds,child.memory.gamblerUsed,child.memory.exileUsedRound,
           child.memory.weapons,child.memory.penance,child.memory.keqingInfusion,child.memory.resolve,child.memory.food,child.memory.talent,
           child.memory.sproutRound,child.memory.sproutUsedRound,child.memory.sproutUncertainRound]);
         if(!seen.has(signature)||seen.get(signature).value<child.value)seen.set(signature,child);
-        if((child.casts>0||child.path[0].type==="card") && preparationUsed(child.path) && betterPlan(child,best))best=child;
+        consider(child);
       }
       next.push(...seen.values());next.sort((x,y)=>y.value-x.value);
       frontier=next.filter(x=>!x.leaf).slice(0,width);if(!frontier.length)break;
     }
-    if(!best || best.value<=.08 && T.enemyCount(best.state)!==0)return {action:null,expanded};
-    return {action:best.path[0],sequence:best.path,value:best.value,expanded,terminal:best.provenFinish===true};
+    const worthwhile=best && (best.value>.08 || T.enemyCount(best.state)===0),
+      status=!T.projectionBudget.available()?"budget-exhausted":worthwhile?"action":"no-worthwhile-action";
+    if(!worthwhile)return {action:null,status,expanded};
+    return {action:best.path[0],status,sequence:best.path,value:best.value,expanded,terminal:best.provenFinish===true};
   }
   function needProbe(s,m){
     if(!["shatterbolt","sharpkernel"].includes(m.thundergrassSupport) || s.quicken?.known)return null;
@@ -405,13 +419,14 @@
     return T.projectionBudget.run(1500,()=>choose(s,m));
   };
   function choose(s,m){
-    if(!T.legalState(s))return legacyChoose(s,m);
+    if(!T.legalState(s))return {type:"stop",reason:"回合、手牌、血量、状态或充能存在未知值，禁止猜测执行"};
     const probe=needProbe(s,m);if(probe)return probe;
     const p=plan(s,m);
-    if(p.action)return {...p.action,score:Math.round(p.value*10),planning:{depth:6,expanded:p.expanded,
+    if(p.action)return {...p.action,score:Math.round(p.value*10),planning:{depth:6,expanded:p.expanded,status:p.status,
       value:Number(p.value.toFixed(3)),sequence:p.sequence.map(a=>T.actionKey(a)),terminal:p.terminal===true},
       reason:"比较出牌/调和/切人/技能组合，选择当前可核实收益最高的首步"};
-    return legacyChoose(s,m);
+    return {type:"end",planning:{depth:6,expanded:p.expanded,status:p.status},
+      reason:p.status==="budget-exhausted"?"搜索预算用尽，已完整评估的路线中没有值得执行的动作，结束本轮":"没有可支付且值得执行的动作，结束本轮"};
   }
   T.blessingChoice=function(s,m){
     if(!s || !Array.isArray(s.characters))return "shatterbolt";

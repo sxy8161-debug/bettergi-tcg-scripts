@@ -306,7 +306,7 @@ function boardDifferences(before, after) {
 // @endfragment tcg-ui.boardDifferences
 
 // @fragment tcg-ui.characterIn
-characterIn(f, who, enemy = false, enemyLayoutCount = 3, readAura = false) {
+characterIn(f, who, enemy = false, enemyLayoutCount = 3, readStatus = false) {
       const count = enemy ? enemyLayoutCount : 3;
       const hpXs = enemy ? enemyHpXs[count] : enemyHpXs[3];
       const hpX = hpXs[who];
@@ -364,20 +364,21 @@ characterIn(f, who, enemy = false, enemyLayoutCount = 3, readAura = false) {
       }
       if (enemy) {
         // Positive aura matches only. Missing templates do NOT prove no aura.
-        const aura = readAura && !dead ? this.auraIn(f, hpX, loweredValid ? 212 : 170) : [];
-        const frozen=!dead&&this.has(f,"state/StateFreeze",this.roi("board", [stateX,stateY,167,382]),0.9);
+        const aura = readStatus && !dead ? this.auraIn(f, hpX, loweredValid ? 212 : 170) : [];
+        const frozen = readStatus && !dead &&
+          this.has(f, "state/StateFreeze", this.roi("board", [stateX, stateY, 167, 382]), 0.9);
         return {
           hp,
           dead: dead ? true : hp === null ? null : false,
           active: !dead && loweredValid && !conflict,
           aura,
           auraKnown: aura.length > 0 && aura.length <= 2,
-          frozen: frozen?true:null,
+          frozen: frozen ? true : null,
         };
       }
       const cx = [812, 1022, 1233][who];
-      const charged = this.matches(f, "charge", this.roi("board", [cx, 612, 32, 180]), 0.86).length;
-      const empty = this.matches(f, "uncharge", this.roi("board", [cx, 612, 32, 180]), 0.86).length;
+      const charged = dead ? 0 : this.matches(f, "charge", this.roi("board", [cx, 612, 32, 180]), 0.86).length;
+      const empty = dead ? 0 : this.matches(f, "uncharge", this.roi("board", [cx, 612, 32, 180]), 0.86).length;
       const energy = charged + empty === TCG.team[who].maxEnergy ? charged : null;
       const statusROI = [stateX, stateY, 167, 382];
       const frozen =
@@ -447,8 +448,12 @@ enemiesIn(f) {
         )
           return unknown();
       return best.cards.map((c, i) => {
+        // Freeze, like aura, does not select a layout. Read only admitted slots
+        // in this same frame, after overlap and unreadable-outer-card checks.
         const aura = c.dead === true ? [] : this.auraIn(f, best.xs[i], c.active ? 212 : 170);
-        return { ...c, aura, auraKnown: aura.length > 0 && aura.length <= 2 };
+        const frozen = c.dead !== true &&
+          this.has(f, "state/StateFreeze", this.roi("board", [best.xs[i] + 17, 105, 167, 382]), 0.9);
+        return { ...c, aura, auraKnown: aura.length > 0 && aura.length <= 2, frozen: frozen ? true : null };
       });
     }
 // @endfragment tcg-ui.enemiesIn

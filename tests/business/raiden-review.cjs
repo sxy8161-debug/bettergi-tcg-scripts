@@ -6,6 +6,77 @@ const close = (actual, expected) => assert.ok(Math.abs(actual-expected)<1e-9, `$
 
 module.exports = async function(test) {
   const {T} = load("raiden");
+  await test("single planner: invalid observations stop; a completed unprofitable search ends without a second policy",()=>{
+    const s=board(T),m=T.freshMemory();s.active=1;s.characters[1].hp=1;
+    for(const i of [0,2])Object.assign(s.characters[i],{dead:true,hp:0});
+    m.round=2;m.defeated=[true,false,true];
+    s.enemies=[{hp:10,dead:false,active:true,auraKnown:true,aura:[],defenseKnown:true,shield:20}];
+    assert.ok(T.strategyEligible(s,m).some(a=>a.type==="skill"));
+    const snapshot=JSON.stringify([s,m]),plan=T.plan(s,m),chosen=T.choose(s,m);
+    assert.equal(plan.action,null);assert.equal(plan.status,"no-worthwhile-action");
+    assert.equal(chosen.type,"end");assert.equal(chosen.planning.status,plan.status);
+    assert.equal(JSON.stringify([s,m]),snapshot);
+    s.characters[1].energy=null;assert.equal(T.choose(s,m).type,"stop");
+    s.characters[1].energy=0;s.dice={};assert.equal(T.choose(s,m).type,"end");
+  });
+  await test("single planner: zero-cost healing and effective energy/conversion cards remain scored candidates",()=>{
+    const heal=board(T,["sweet"]),memory=T.freshMemory();heal.dice={};heal.characters[0].hp=2;
+    const healed=T.choose(heal,memory);assert.equal(healed.id,"sweet");assert.ok(healed.planning);
+    memory.food[0]=true;assert.equal(T.choose(heal,memory).type,"end");
+    for(const id of ["voltage","stars","calx","companion"]){
+      const s=board(T,[id]),m=T.freshMemory();s.characters[0].energy=1;
+      s.dice={Omni:id==="stars"?5:4};
+      if(id==="calx"){s.characters[1].energy=1;m.raidenBurst=true;}
+      if(id==="companion"){s.characters[0].energy=2;s.dice={Electro:1,Pyro:2};}
+      const chosen=T.choose(s,m);assert.equal(chosen.id,id);
+      assert.ok(chosen.planning.sequence.includes("skill:0:Q"),"funding has a payable burst continuation");
+      const after=T.projectedAction(s,m,chosen);assert.ok(after);
+      assert.ok(T.skillLegal(after.state,{who:0,skill:"Q"},after.memory));
+    }
+  });
+  await test("single planner: final preparation cards need a usable continuation, not a nonempty-hand workaround",()=>{
+    const s=board(T,["shift"]),m=T.freshMemory();s.dice={Dendro:3};
+    s.characters[0].frozen=true;Object.assign(s.characters[2],{hp:0,dead:true});
+    const shift=T.choose(s,m);assert.equal(shift.id,"shift");
+    assert.ok(shift.planning.sequence.includes("switch:1"));assert.ok(shift.planning.sequence.includes("skill:1:E"));
+    s.dice={Dendro:2};assert.equal(T.choose(s,m).type,"end");
+    const smoked=board(T,["smoked"]);smoked.active=2;smoked.dice={Electro:2};
+    for(const i of [0,1])Object.assign(smoked.characters[i],{dead:true,hp:0});
+    const chosen=T.choose(smoked,T.freshMemory());assert.equal(chosen.id,"smoked");
+    assert.ok(chosen.planning.sequence.includes("skill:2:NA"));
+    smoked.dice={};assert.equal(T.choose(smoked,T.freshMemory()).type,"end");
+  });
+  await test("single planner: tuning and equipment are retained only with attainable use",()=>{
+    const s=board(T,["raven"]),m=T.freshMemory();s.active=1;s.dice={Dendro:2};
+    assert.equal(T.choose(s,m).type,"end","equipment alone has no completed payoff");
+    s.dice={Dendro:8};const equip=T.choose(s,m);assert.equal(equip.id,"raven");
+    assert.ok(equip.planning.sequence.includes("skill:1:E"));
+    const tune=board(T,["sweet"]);tune.active=1;tune.dice={Dendro:2,Pyro:1};
+    tune.enemies[0].aura=["Electro"];tune.enemies[0].auraKnown=true;
+    const chosen=T.choose(tune,T.freshMemory());assert.equal(chosen.type,"tune");
+    const after=T.projectedAction(tune,T.freshMemory(),chosen);
+    assert.ok(T.skillLegal(after.state,{who:1,skill:"E"},after.memory));
+    tune.dice={Dendro:1,Pyro:1};assert.equal(T.choose(tune,T.freshMemory()).type,"end");
+  });
+  await test("single planner: exhausted budget keeps the evaluated action and releases its decision scope",()=>{
+    const s=board(T,["voltage","sweet"]),m=T.freshMemory();s.characters[0].hp=2;
+    const limited=T.projectionBudget.run(1,()=>T.choose(s,m));
+    assert.equal(limited.planning.status,"budget-exhausted");assert.equal(limited.projections.used,1);
+    assert.equal(limited.type,"skill");assert.ok(T.skillLegal(s,limited,m));
+    assert.equal(limited.planning.sequence.length,1,"no unevaluated deeper plan or legacy fallback");
+    const normal=T.choose(s,m);assert.equal(normal.projections.limit,1500);
+    assert.ok(normal.projections.used>1&&normal.projections.used<=1500);
+  });
+  await test("single planner: native refusals exclude the same action from roots, funding and reselection",()=>{
+    const s=board(T,["voltage"]),m=T.freshMemory();s.characters[0].energy=1;s.dice={Omni:4};
+    const first=T.choose(s,m);assert.equal(first.id,"voltage");T.rejectAction(m,first,s);
+    const next=T.choose(s,m);assert.notEqual(T.actionKey(next),T.actionKey(first));
+    assert.ok(!next.planning.sequence.includes(T.actionKey(first)));
+    assert.equal(T.actionRefused(s,m,next),false);
+    const candidates=T.strategyEligible(s,m);
+    for(const a of candidates)T.rejectAction(m,a,s);
+    assert.equal(T.choose(s,m).type,"end");
+  });
   function feeFixture(outcome="confirmed",retry=false) {
     let now=100000,clicks=0,totalClicks=0,casts=0,deferred=false;
     class Clock extends Date { static now(){return now;} }

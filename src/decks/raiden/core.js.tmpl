@@ -330,22 +330,6 @@
     if(actionRefused(local,m,{type:"skill",...goal}))return false;
     return skillLegal(local,goal,m) || Array.isArray(local.hand) && !!tuningPlan(local,m,goal);
   }
-  function switchPreparationReachable(s,m,goal) {
-    const goals=[goal,{who:goal.who,skill:"E"},{who:goal.who,skill:"NA"}];
-    if(goals.some(g=>followupReachable(s,m,g)))return true;
-    const hh=s.hand||[];
-    const shift=hh.find(h=>h.id==="shift"&&!actionRefused(s,m,{type:"card",id:h.id,index:h.index,target:null}));
-    if(!m.freeSwitch && shift && hh.length>1) {
-      const local={...s,hand:hh.filter(h=>h!==shift)};
-      if(goals.some(g=>followupReachable(local,{...m,freeSwitch:true},g)))return true;
-    }
-    const companion=hh.find(h=>h.id==="companion"&&!actionRefused(s,m,{type:"card",id:h.id,index:h.index,target:null})),pay=companion&&payment(s.dice,byId.companion.cost,team[s.active].element);
-    if(pay) {
-      const local={...s,hand:hh.filter(h=>h!==companion),dice:{...pay.remaining,Omni:(pay.remaining.Omni||0)+2}};
-      if(goals.some(g=>followupReachable(local,m,g)))return true;
-    }
-    return false;
-  }
   function replacement(s,m) {
     if(!Array.isArray(s?.characters) || s.characters.length!==3 ||
       s.characters.some(c=>!c || c.dead!==true && !alive(c)))return null;
@@ -369,116 +353,6 @@
       Array.isArray(s.hand) && s.hand.every(handCardKnown) && s.diceKnown === true &&
       Object.values(s.dice).every(known) && total(s.dice) <= 16 && s.characters.every((c, i) =>
         c && (c.dead === true || (alive(c) && typeof c.frozen === "boolean" && known(c.energy) && c.energy <= team[i].maxEnergy)));
-  }
-  function choose(s, m) {
-    if (!legalState(s)) return { type: "stop", reason: "回合、手牌、血量、状态或充能存在未知值，禁止猜测执行" };
-    let wanted = intent(s, m);
-    if(wanted && wanted.who!==s.active && !switchPreparationReachable(s,m,wanted)) {
-      wanted=survivorIntent(s,m);
-    }
-    const a = s.active, active = s.characters[a], diceCount = total(s.dice);
-    const wantSwitch = wanted && wanted.who !== a;
-    const skill = wanted && wanted.who === a ? wanted.skill : null;
-    const candidates = [];
-    function offer(action, score, reason) {
-      if (!actionRefused(s,m,action)) candidates.push({ ...action, score, reason });
-    }
-    const desiredCost = wanted ? skillCost(wanted.who, wanted.skill, m,s) : { any: 3 };
-    const reserve = size(desiredCost) + (wantSwitch && !m.freeSwitch ? 1 : 0);
-    for (const h of s.hand) {
-      const c = byId[h.id];
-      if (!c) continue; // Unknown rules still forbid playing; tuning only needs verified identity.
-      const pay = payment(s.dice, c.cost, team[a].element);
-      if (!pay) continue;
-      const remaining = total(pay.remaining);
-      const action = { type: "card", id: c.id, index: h.index, target: null };
-      if(c.type === "support" && m.thundergrassSupport !== c.id && s.characters.some(alive)) {
-        // CatalyzingField is not currently read. Selecting/playing a blessing
-        // never proves its conditional skill discount. Keep nominal reserves.
-        if(remaining>=reserve)offer(action,c.id==="shatterbolt"?91:65,
-          "雷草支援先付实际费用，保留后续技能预算；减费是否生效以真实回读为准");
-        else if(remaining>=1 && m.round<=3)offer(action,35,"用闲置资源建立下轮雷草骰支援，不假设激化领域永久存在");
-      }
-      // These zero-cost statuses have no independent visible resource effect.
-      // Keep a final copy until the next draw, instead of pretending failed count OCR proves zero cards.
-      if (s.hand.length === 1 && ["shift", "fast", "smoked"].includes(c.id)) continue;
-      if (c.id === "wovenThunder" && diceCount < 16) offer(action, 100, "零费雷骰，扩充本轮行动资源");
-      if (c.id === "voltage" && known(active.energy) && active.energy < team[a].maxEnergy &&
-          !wantSwitch && active.frozen === false && remaining >= 3) offer(action, 94, "优先充能；不假设只能给一人充能");
-      if (c.id === "shift" && wantSwitch && !m.freeSwitch) offer(action, 96, "下一次切换减一骰");
-      if (c.id === "fast" && wantSwitch && !m.fastSwitch && diceCount >= reserve) offer(action, 92, "快切后仍有资源打出目标技能");
-      if (c.id === "companion" && wanted) {
-        const d = { ...pay.remaining, Omni: (pay.remaining.Omni || 0) + 2 };
-        if (!payment(s.dice, { ...desiredCost, any: (desiredCost.any || 0) + (wantSwitch && !m.freeSwitch ? 1 : 0) }, team[wanted.who].element) &&
-            payment(d, { ...desiredCost, any: (desiredCost.any || 0) + (wantSwitch && !m.freeSwitch ? 1 : 0) }, team[wanted.who].element)) {
-          offer(action, 89, "用两枚骰子换两枚万能骰；并非凭空增加两骰");
-        }
-      }
-      if ((c.id === "stars" || c.id === "calx") && !wantSwitch && skill && skill !== "Q" &&
-          active.energy < team[a].maxEnergy && active.frozen === false) {
-        const donors = s.characters.filter((x, i) => i !== a && alive(x) && x.energy > 0).length;
-        const gain = c.id === "stars" ? 1 : Math.min(2, donors);
-        if (gain && active.energy + gain >= team[a].maxEnergy &&
-            payment(pay.remaining, skillCost(a, "Q", m,s), team[a].element) &&
-            (c.id !== "calx" || m.raidenBurst || s.characters[0].dead===true)) offer(action, c.id === "calx" ? 93 : 87, "本次补能能直接接可支付的大招");
-      }
-      if (c.type === "food" && !m.food[a] && active.frozen === false) {
-        action.target = a;
-        if (c.id === "lotus" && active.hp <= 4 && remaining >= reserve) offer(action, 98, "低血量出战角色先防致命伤");
-        if (c.id === "hashbrown" && active.hp <= 7 && remaining >= reserve) offer(action, 85, "有后续行动预算时治疗两点");
-        if (c.id === "sweet" && active.hp <= 8) offer(action, active.hp <= 3 ? 97 : 70, "零费治疗；遵守每人每轮一次料理");
-        if (c.id === "smoked" && !wantSwitch && skill === "NA" && diceCount >= 2) offer(action, 91, "即将普攻，先减一无色骰");
-        if (c.id === "mint" && !wantSwitch && skill === "NA" && a === 2 && activeKeqingInfusion(m) && remaining >= 4) offer(action, 80, "预计连续两次附魔普攻，薄荷卷才划算");
-      }
-      if (c.id === "gambler" && a === 2 && !wantSwitch && !m.artifacts[a] &&
-          remaining >= reserve && s.enemies.some(e => alive(e) && e.hp <= 4)) {
-        offer({ ...action, target: a }, 82, "可能击倒敌人前装备赌徒，不空耗启动骰");
-      }
-      if (c.type === "weapon" && c.weaponTarget === a && !wantSwitch && !m.weapons[a] &&
-          active.hp >= 5 && active.frozen === false && skill !== "Q" &&
-          payment(pay.remaining, desiredCost, team[a].element)) {
-        offer({ ...action, target: a }, 66, "仅给适配的出战角色装备基础武器，且保留下一技能的元素骰");
-      }
-      if (c.id === "floralSidewinder" && a === 1 && !wantSwitch && skill === "E" && !m.talent && active.frozen === false) {
-        offer({ ...action, target: 1 }, 84, "三草骰天赋直接释放战技，而不是额外四费");
-      }
-      if (c.id === "wedge" && alive(s.characters[2]) && s.characters[2].frozen === false && wanted && wanted.who === 2 &&
-          (wanted.skill!=="Q" || !payment(s.dice,{...skillCost(2,"Q",m,s),any:a===2 || m.freeSwitch?0:1},"Electro"))) {
-        if(a!==2)offer({ ...action, target: 2 },83,"雷楔返场并放战技/附魔，不另付普通切换骰");
-        else if(wanted.skill!=="Q")offer({type:"skill",who:2,skill:"E"},83,"刻晴已出战，直接战技消耗雷楔获得附魔，省去出牌操作");
-      }
-      if (c.id === "draw" && s.hand.length <= 9 &&
-          (remaining >= reserve || (s.hand.length <= 2 && diceCount < reserve))) offer(action, 62, "有预算或缺乏可行动资源时过牌");
-    }
-    if (wanted) {
-      if (wantSwitch && alive(s.characters[wanted.who]) && diceCount >= (m.freeSwitch ? 0 : 1)) {
-        // Do not pay for a hopeless switch. Zero-cost switch also requires a follow-up budget.
-        if (diceCount >= reserve && [wanted,{who:wanted.who,skill:"E"},{who:wanted.who,skill:"NA"}]
-            .some(g=>followupReachable(s,m,g))) offer({ type: "switch", target: wanted.who }, 60, "存活者有可达后续技能，按充能/草伤/生存预算换人");
-      } else if (!wantSwitch && skillLegal(s, wanted, m)) {
-        offer(wanted, skill === "Q" ? 86 : 59, skill === "Q" ? "充能和骰子均已核实，释放大招" : "执行当前阶段的合法技能");
-      }
-      // A cheaper normal attack is preferable to ending with usable dice.
-      if (!wantSwitch && skill === "Q" && !skillLegal(s,wanted,m) && skillLegal(s,{who:a,skill:"E"},m)) {
-        offer({type:"skill",who:a,skill:"E"},43,"大招费用不足，保留已满充能并用可支付战技输出");
-      }
-      if (!wantSwitch && skill !== "NA" && !skillLegal(s,wanted,m) && skillLegal(s, { who: a, skill: "NA" }, m)) {
-        offer({ type: "skill", who: a, skill: "NA" }, 40, "战技无法支付时用合法普攻续能");
-      }
-      if(!wantSwitch && !skillLegal(s,wanted,m)) {
-        const goals=[wanted,...(skill==="Q"?[{type:"skill",who:a,skill:"E"}]:[]),
-          ...(skill!=="NA"?[{type:"skill",who:a,skill:"NA"}]:[])];
-        for(const [i,goal] of goals.entries()) {
-          // Never burn towards an unreachable goal. Lower-score fallback tuning
-          // cannot override a legal E/NA merely to convert an extra die.
-          const plan=tuningPlan(s,m,goal);
-          if(plan)offer({type:"tune",index:plan.card.index,id:plan.card.id,element:team[a].element},i===0?45:goal.skill==="E"?42:39,
-            "目标"+goal.skill+"可达，还缺"+plan.needed+"枚元素骰；只调和一张后重新观察");
-        }
-      }
-    }
-    candidates.sort((x, y) => y.score - x.score);
-    return candidates[0] || { type: "end", reason: "没有可支付且值得执行的动作，结束本轮" };
   }
   /* @include src/shared/rules.inc.js#tcg-rules.bag */
   /* @include src/shared/rules.inc.js#tcg-rules.cardCountDecreased */
@@ -689,7 +563,7 @@
     return {keep:cards.filter((c,i)=>!replace[i]),replace,duplicateWeapons:[]};
   }
   root.TCG = { projectionBudget, openingContext, openingPlan, team, cards, byId, norm, identify, observedCard, handCardKnown, characterName, total, size, payment, rerollPlan,
-    openingSetting, known, alive, freshMemory, nextRound, OpeningFlow, freshActionBoard, skillCost, skillLegal, cardLegal, cardInputError, intent, survivorIntent, followupReachable, switchPreparationReachable, replacement, noteBoard, tuningPlan, legalState, choose, verify, commit, emptyHandEffect, diceOrder,
+    openingSetting, known, alive, freshMemory, nextRound, OpeningFlow, freshActionBoard, skillCost, skillLegal, cardLegal, cardInputError, intent, survivorIntent, followupReachable, replacement, noteBoard, tuningPlan, legalState, verify, commit, emptyHandEffect, diceOrder,
     indexedHand, reconcileHand, actionRefused, blockAction,
     skillQuote,skillProbeAttempted,recordSkillCost,clearSkillCosts,refreshSkillCosts,drawConsumptionProven,
     drawPayment:(s,a,m)=>byId[a.id]?.type==="draw"?byId[a.id].cost:null,
