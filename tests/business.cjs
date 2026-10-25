@@ -16,4 +16,4 @@ if(require.main===module){
 module.exports=run;
 module.exports.files=["tests/business.cjs","tests/business/runtime.cjs","tests/shared/harness.cjs",
   ...publicDecks.flatMap(id=>fs.readdirSync(path.join(__dirname,"decks",id,"suite")).filter(n=>n.endsWith(".cjs")).map(n=>"tests/decks/"+id+"/suite/"+n)),
-  "tests/business/fixtures/moon-countdown-native-20261017.json","tests/business/fixtures/raiden-folded-markers-1440-20261018.json","tests/business/fixtures/roll-1600-native-20261018.json","tests/business/fixtures/raiden-fast-relay-20261020.json",...modules.map(n=>"tests/business/"+n+".cjs")];
+  "tests/business/fixtures/moon-countdown-native-20261017.json","tests/business/fixtures/raiden-folded-markers-1440-20261018.json","tests/business/fixtures/roll-1600-native-20261018.json","tests/business/fixtures/raiden-fast-relay-20261020.json","tests/business/fixtures/player-native-regressions-20261025.json",...modules.map(n=>"tests/business/"+n+".cjs")];

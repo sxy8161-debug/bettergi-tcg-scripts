@@ -139,9 +139,7 @@ async function run(test,loadContext=overrides=>load(root,overrides)){
     m.defeated[1]=true;assert.equal(T.rerollPlan(items,m).primary,"Cryo","do not reroll for a defeated relay");
   });
   await test("ailin: slot10 startup relays a funded charged arrow even with unknown aura, without bypassing refusal or survival",()=>{
-    const events=fs.readFileSync(path.resolve(__dirname,"../../../../reports/board-wait-strategy-20261023/native-baseline-slot10.log"),"utf8")
-      .trim().split(/\r?\n/).map(JSON.parse),
-      original=events.find(e=>e.event==="state"&&e.at==="2026-10-23T05:44:17.339Z").data,
+    const original=require("../../../business/fixtures/player-native-regressions-20261025.json").ailinStartup.observation,
       s=clone(original.state),m=clone(original.memory),unchanged=JSON.stringify([s,m]);
     assert.equal(T.choose(s,m).type,"switch");assert.equal(T.choose(s,m).target,1);
     assert.equal(JSON.stringify([s,m]),unchanged);

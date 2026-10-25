@@ -492,10 +492,7 @@ async function run(test,loadContext=defaultLoad) {
     assert.equal(JSON.stringify([s,m]),before,"planning cannot consume observed hand or charge");
   });
   await test("native0113 late preceding-skill energy cannot confirm the next unpaid attack",()=>{
-    const e=fs.readFileSync(path.join(base,"reports/consecrated-development-20261023/slot03-0113-review/native-run-20261024-194337-win.log"),"utf8")
-      .trim().split(/\r?\n/).map(JSON.parse),i=e.findIndex(x=>x.event==="decision"&&x.at==="2026-10-24T11:54:31.518Z"),
-      before=e.slice(0,i).findLast(x=>x.event==="state").data.state,
-      result=e.slice(i+1).find(x=>x.event==="confirmed"),a=result.data.action,after=result.data.after;
+    const {before,action:a,after}=clone(require("../../../business/fixtures/player-native-regressions-20261025.json").consecratedLateEnergy);
     assert.equal(a.skill,"NA");assert.equal(T.total(after.dice),T.total(before.dice));
     assert.ok(after.characters[2].energy>before.characters[2].energy);
     assert.equal(T.verify(a,before,after),false,"no dice paid: the old E energy is not this NA's proof");
@@ -909,22 +906,14 @@ async function run(test,loadContext=defaultLoad) {
     assert.equal(host.confirmationSession,null);
   });
   await test("native slot08 food preparation must end in a usable burst, not just free room for an already charged E",()=>{
-    const raw=fs.readFileSync(path.join(base,"reports/max-minutes30-20261024/native0115-slot08-timeout.log"));
-    assert.equal(sha(raw),"cb3d1c6e23750bf60a1d6dc8464030faef179caacd7eb479b4a4f3a07356322e");
-    const e=raw.toString("utf8").trim().split(/\r?\n/).map(JSON.parse),
-      i=e.findIndex(x=>x.event==="decision"&&x.at==="2026-10-24T14:30:45.185Z"),
-      x=e.slice(0,i).findLast(x=>x.event==="state").data,before=JSON.stringify(x);
+    const x=clone(require("../../../business/fixtures/player-native-regressions-20261025.json").consecratedFood.observation),before=JSON.stringify(x);
     const m=clone(x.memory),a=T.choose(x.state,m);
     assert.notEqual(a.id,"adeptus");assert.equal(JSON.stringify(x),before);
     const routes=T.projectionBudget.run(240,()=>({routes:T.attackRoutes(x.state,m)})).routes;
     assert.ok(!routes.some(r=>r.first.id==="adeptus"&&r.terminal.skill!=="Q"));
   });
   await test("native charged Serpent under pressure spends its stronger burst instead of another draw attack",()=>{
-    const raw=fs.readFileSync(path.join(base,"reports/consecrated-development-20261023/slot10-0117-review/native-lose.log"));
-    assert.equal(sha(raw),"3a2f1e25cb0d6ff3e843e1a4107f805946d91d2e4cbc639ab6810e9250df6fd8");
-    const e=raw.toString("utf8").trim().split(/\r?\n/).map(JSON.parse),
-      i=e.findIndex(x=>x.event==="decision"&&x.at==="2026-10-24T16:14:58.248Z"),
-      x=e.slice(0,i).findLast(x=>x.event==="state").data,before=JSON.stringify(x);
+    const x=clone(require("../../../business/fixtures/player-native-regressions-20261025.json").consecratedPressure.observation),before=JSON.stringify(x);
     const m=clone(x.memory),a=T.choose(x.state,m);
     assert.equal(T.actionLegal(x.state,a,m),true);
     assert.equal(a.plan.terminal.who,1);assert.equal(a.plan.terminal.skill,"Q");
