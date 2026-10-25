@@ -1,11 +1,5 @@
 {
   "sourceRepository": "sxy8161-debug/bettergi-tcg-scripts",
   "releaseRepository": "sxy8161-debug/bettergi-tcg-scripts-release",
-  "releaseBranch": "release",
-  "players": {
-    "raiden": "RaidenColleiKeqingPlayer",
-    "iansan": "IansanGamingSayuPlayer",
-    "moonbloom": "MoonbloomPlayer",
-    "mozailu": "MonaSayuDilucPlayer"
-  }
+  "releaseBranch": "release"
 }

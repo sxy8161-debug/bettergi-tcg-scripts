@@ -1,0 +1,192 @@
+/* @include src/shared/host.inc.js */
+(function(root){
+  "use strict";
+  const {charX,number,mousePoint}=root.TCGBetterGI;
+  class BetterGIHost extends root.TCGBetterGI.BetterGIHost{
+    constructor(options){super(options);this.soupReceipt=null;this.summonReceipt=null;this.talentTargets={teaParty:0};
+      this.targetBanners=["对所选我方召唤物生效"];}
+    /* @include src/shared/soup-choice.inc.js */
+    initialObservationBoard(){return this.board(true);}
+    readSelectedCardFacts(f,card){
+      // Reuse the existing stable-title frame only for an intended tune.
+      // A generated food is not inherently untunable: this is a current
+      // native attachment, not a rule inferred from the card name or NPC.
+      const action=this.currentAction;
+      if(action?.type!=="tune"||action.id!==card.id)return;
+      const rows=this.ocrRows(f,this.roi("details",[680,100,355,620])).map(r=>TCG.norm(r.text)),
+        heading=rows.findIndex(t=>t==="附着效果状态"||t==="附着状态");
+      if(heading>=0&&rows.slice(heading+1).includes("不可调和")){
+        const error=Error("游戏当前手牌附着禁止调和："+card.name);
+        error.code="TCG_NATIVE_REJECTION";throw error;
+      }
+    }
+    boardsMatch(before,after,purpose="observation",action=null){
+      // Optional OCR availability is not a turn/HP/dice transition. Decisions
+      // receive only current, two-sample extras below. Inputs whose legality
+      // depends on those extras still compare their exact source facts.
+      if(!before||!after)return false;
+      if(purpose==="execution"&&!action)return super.boardsMatch(before,after,purpose,action);
+      const support=purpose==="execution"&&action.type==="card"&&["support","legend"].includes(TCG.byId[action.id]?.type),
+        summon=purpose==="execution"&&action.type==="card"&&["blessingM","surf","dragon"].includes(action.id);
+      const core=s=>({...s,supportCounts:null,summonLayout:null}),same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+      if(!super.boardsMatch(core(before),core(after),purpose,action))return false;
+      if(purpose==="execution"&&before.skillFees?.who===after.skillFees?.who&&
+          ["E","Q"].some(skill=>{const a=before.skillFees?.entries[skill]?.n,b=after.skillFees?.entries[skill]?.n;
+            return TCG.known(a)&&TCG.known(b)&&a!==b;}))return false;
+      // A positive count/name/occupancy change still resets the quiet window.
+      // Only unavailable optional fields are ignored, never known differences.
+      const compatible=(a,b,fields)=>!a||!b||a.length===b.length&&a.every((slot,i)=>
+        fields.every(k=>slot[k]==null||b[i][k]==null||same(slot[k],b[i][k])));
+      return (support?same(before.supportCounts,after.supportCounts):
+        compatible(before.supportCounts?.slots,after.supportCounts?.slots,["index","present","counter"]))&&
+        (summon?same([before.summonCountKnown,before.summonLayout],[after.summonCountKnown,after.summonLayout]):
+          ["own","enemy"].every(side=>compatible(before.summonLayout?.[side],after.summonLayout?.[side],["index","present","name","uses"])));
+    }
+    stabilizeBoardExtras(previous,current){
+      if(!previous)return current;
+      const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b),result={...current};
+      if(!same(previous.supportCounts,current.supportCounts)){
+        // Never let fluctuating rim/counter reads dispose a known partner or
+        // authorize a vacant slot/discount. No old positive value is returned.
+        result.supportCounts={...current.supportCounts,known:false};
+      }
+      if(!same(previous.summonLayout,current.summonLayout))result.summonCountKnown=false;
+      return result;
+    }
+    pendingMaxHpAllowance(who){
+      const owner=this.confirmationSession,a=owner?.plan?.action,r=this.consumptionReceipt;
+      // Only widen this read's upper bound. Native HP and independent card
+      // consumption still prove the effect; no predicted healing is returned.
+      return a?.type==="card"&&a.id==="autumnFrost"&&a.target===who&&r?.inputSent===true&&
+        r.id===a.id&&r.index===a.index&&r.target===who&&
+        owner.key===TCG.actionKey(a)+"/"+r.beforeKey?1:0;
+    }
+    prepareBoardObservation(){this.moveTo(...this.point("board",1555,545));}
+    /* @include src/shared/support.inc.js#bgi-host.supportSlotsIn */
+    summonSlotsIn(f,enemy=false){
+      const slots=[];
+      for(let index=0;index<4;index++){
+        const x=1395+170*(index%2),y=(enemy?123:600)+198*Math.floor(index/2),
+          rims=this.matches(f,"hand_rim",this.roi("board",[x+55,y-15,100,175]),.85,false),
+          left=this.matches(f,"ailin/summon-rim",this.roi("board",[x-45,y-15,65,175]),.90,false),
+          rim=rims.length>0||left.length>0,conflict=rims.length>1&&Math.max(...rims.map(r=>r.x))-Math.min(...rims.map(r=>r.x))>12,
+          // The ordinary board's badge is left of the enlarged target-page
+          // edge. Read the complete badge in this slot, even when a rim misses.
+          uses=number(this.numericAt(f,this.roi("board",[x+65,y-25,100,90]),3));
+        const matches=enemy?[]:[[["cold","cold-native","cold-board","cold-board-slot07"],"厨艺机关·低温冷藏模式"],[["cat","cat-native","cat-board"],"怪笑猫猫帽"],[["half","half-board"],"半幻人"]]
+          .filter(([assets])=>assets.some(asset=>this.matches(f,"ailin/"+asset,this.roi("board",[x-45,y+10,165,125]),.90,true).length));
+        // Card frames vary with summon type. A cold-summon border must not
+        // veto a positively matched cat/half. Conversely unreadable uses on
+        // visible artwork/border is unknown, never an empty slot.
+        if(!rim&&uses===null&&matches.length===0){slots.push({index,present:false});continue;}
+        if(conflict||uses===null||uses<1||uses>16||matches.length>1){slots.push({index,present:null});continue;}
+        slots.push({index,present:true,uses,name:matches.length===1?matches[0][1]:null,
+          point:this.point("board",x+65,y+80)});
+      }
+      return slots;
+    }
+    boardExtrasIn(f,phase,active=null){
+      if(phase.phase!=="board")return {};
+      const own=this.summonSlotsIn(f),enemy=this.summonSlotsIn(f,true),
+        complete=[...own,...enemy].every(s=>s.present!==null),receipt=this.summonReceipt;
+      // The visible badges already expose modified fees. Read them with the
+      // board, without opening previews or adding an input/wait cycle.
+      const skillFees=phase.turn==="user"&&active!==null?{who:active,entries:Object.fromEntries(
+        ["E","Q"].map(skill=>[skill,{n:this.skillFeeIn(f,{who:active,skill})}]))}:null;
+      return {summons:own.filter(s=>s.present===true),enemySummons:enemy.filter(s=>s.present===true),
+        summonCount:own.filter(s=>s.present===true).length,enemySummonCount:enemy.filter(s=>s.present===true).length,
+        summonCountKnown:complete,summonLayout:{own,enemy},supportCounts:this.supportSlotsIn(f),
+        soupReceipt:this.soupReceipt,summonReceipt:receipt,skillFees};
+    }
+    skillFeeIn(f,a){
+      const x=a.skill==="Q"?1780:a.skill==="E"?1698:a.skill==="CA"?1590:null;
+      if(x===null)return null;const n=number(this.numericAt(f,this.roi("bottom",[x,1010,36,35]),4));
+      return n!==null&&n>=0&&n<=16?n:null;
+    }
+    /* @include src/shared/equipment-input.inc.js */
+    selectedSummonsIn(f,before){
+      // Search only pre-action real slots. A half-tulpa drawn by the game's
+      // outcome preview is not a new selectable target or an observed summon.
+      return (before.summons||[]).filter(s=>s.point&&this.matches(f,"ailin/target-selected",
+        this.observedRoi("board",[s.point[0]-65,s.point[1]-65,130,130]),.90,true).length===1);
+    }
+    async confirmSummonDiscard(a,b){
+      const expected=b.summons?.find(s=>s.index===a.summonIndex&&s.name===a.summonName);
+      if(!expected||!b.summonCountKnown)throw Error("召唤物目标没有当前观察依据");
+      const origin=TCG.actionKey(a)+"/"+TCG.boardKey(b);
+      if(this.choiceSession&&this.choiceSession.origin!==origin)throw Error("另一个选择仍待完成");
+      this.choiceSession||={kind:"summon-target",origin,target:expected.index,name:expected.name,
+        uses:expected.uses,point:expected.point.slice(),selectedInputSent:false,confirmed:false};
+      // The shared pending-action owner resumes this page. A timeout cannot
+      // re-drag M, reselect the target, or send the confirm a second time.
+    }
+    async resolveSummonTarget(before){
+      const session=this.choiceSession,owner=this.confirmationSession,a=owner?.plan?.action;
+      if(session?.kind!=="summon-target"||a?.id!=="blessingM"||
+        session.origin!==owner.key||!before||TCG.actionKey(a)+"/"+TCG.boardKey(before)!==owner.key)
+        throw Error("召唤物选择没有当前动作归属");
+      let exitKey="",exitReads=0;
+      for(let attempt=0;attempt<24;attempt++){
+        const sampledAt=Date.now(),revision=this.inputRevision;
+        const sample=this.frame(f=>({phase:this.phaseIn(f),banner:this.cardBannerIn(f),
+          selected:this.selectedSummonsIn(f,before),
+          controls:this.ocrRows(f,this.roi("bottom",[770,900,380,90])).filter(r=>TCG.norm(r.text)==="确定"),
+          warning:this.warnings(f)}));
+        await this.requireNoWarning(sample.warning);
+        if(session.confirmed&&["board","pick","roll","settlement","result"].includes(sample.phase.phase)){
+          const key=JSON.stringify(sample.phase);
+          exitReads=key===exitKey?exitReads+1:1;exitKey=key;
+          if(exitReads>=2){this.summonReceipt={...this.summonReceipt,exited:true};this.choiceSession=null;
+            this.handNeedsReset=true;this.boardReady=false;
+            this.trace("summon-target-exited",this.summonReceipt);return sample.phase;}
+        }else {exitReads=0;exitKey="";}
+        const targetPage=sample.phase.phase==="unknown"&&sample.phase.turn==="none"&&
+          TCG.norm(sample.banner)==="对所选我方召唤物生效";
+        if(targetPage&&!session.confirmed){
+          const selected=sample.selected.length===1&&sample.selected[0].index===session.target;
+          if(!selected&&!session.selectedInputSent){
+            session.selectedInputSent=true;this.clickAt(...session.point);await sleep(120);continue;
+          }
+          if(selected&&sample.controls.length===1){
+            const button=sample.controls[0];session.confirmed=true;
+            this.summonReceipt={origin:session.origin,id:a.id,index:session.target,name:session.name,
+              uses:session.uses,exited:false};
+            this.clickAt(button.x+button.w/2,button.y+button.h/2);
+            this.trace("summon-target-confirmed",this.summonReceipt);await sleep(120);continue;
+          }
+        }
+        await this.waitForSample(sampledAt,250,revision);
+      }
+      const e=Error("召唤物目标或确认控件仍待核实");e.code="TCG_CHOICE_RETRY";throw e;
+    }
+    async executeInput(a,b,m){
+      this.soupReceipt=null;this.summonReceipt=null;
+      if(a.type==="skill"&&!TCG.skillLegal(b,a,m))throw Error("技能资源/充能预检失败");
+      if(a.type==="card"&&!TCG.cardLegal(b,a,m))throw Error("卡牌目标、费用或前置条件不合法");
+      await this.requireUnchangedBoard(b,a);
+      if(a.type==="probe")return this.probeSkill(a,b,m);
+      const cost=a.type==="skill"?TCG.size(TCG.skillCost(a.who,a.skill,m,b)):a.type==="card"?
+        TCG.size(TCG.cardCost(a.id,a.target,m)):a.type==="switch"?TCG.size(TCG.switchCost(m)):0,
+        randomRefund=a.type==="card"&&(a.id==="blessingM"||a.id==="toss"||
+          ["food","team-food"].includes(TCG.byId[a.id]?.type)&&m.supports.some(x=>x.id==="chef"&&x.refundRound!==m.round));
+      this.expectedDice=a.type==="end"||randomRefund?null:TCG.total(b.dice)-cost+TCG.total(TCG.cardRefund(a,m,b));
+      const wearer=a.type==="switch"?a.target:b.active;
+      this.gamblerBudget=m.artifactKinds[wearer]==="gambler"?{owner:wearer,remaining:TCG.gamblerRemaining(m,wearer),enemies:TCG.enemyCount(b)}:null;
+      this.boardReady=false;
+      if(a.type==="card"||a.type==="tune")await this.inputHand(a,b,m);
+      else if(a.type==="skill")await this.inputSkill(a,b);
+      else if(a.type==="switch")await this.inputSwitch(a,b,m);
+      else if(a.type==="end")await this.inputEnd();
+      else throw Error("未支持的动作："+a.type);
+      this.autoRisk=a.type==="skill"||a.type==="card"&&!!(TCG.byId[a.id]?.combatSkill||TCG.byId[a.id]?.combatAction);
+    }
+    confirmationExtras(){return {soupReceipt:this.soupReceipt,summonReceipt:this.summonReceipt};}
+  }
+  // Equipment/food payment stays common; M alone owns its summon target page.
+  const equipmentConfirm=BetterGIHost.prototype.cardConfirm;
+  BetterGIHost.prototype.cardConfirm=function(a,b){return a.id==="blessingM"?this.confirmSummonDiscard(a,b):equipmentConfirm.call(this,a,b);};
+  const soupResolve=BetterGIHost.prototype.resolveChoice;
+  BetterGIHost.prototype.resolveChoice=function(b,m){return this.choiceSession?.kind==="summon-target"?
+    this.resolveSummonTarget(b):soupResolve.call(this,b,m);};
+  root.TCGBetterGI={...root.TCGBetterGI,BetterGIHost};
+})(globalThis);

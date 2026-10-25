@@ -1,0 +1,306 @@
+/* GPL-3.0. Only confirmed own actions are booked; HP/dice/hand remain observations. */
+(function(root){
+  "use strict";
+  const {team,cards,soupOptions,shareCode,guide}=root.TCGAilinCatalog;
+  const byId=Object.fromEntries(cards.map(c=>[c.id,c]));
+  const cardTitleAliases={运筹:"运筹帷幄",运筹惟:"运筹帷幄",卵师傅:"卯师傅",雾松秋分:"雾凇秋分"},characterAliases={};
+  /* @include src/shared/rules.inc.js#tcg-rules.norm */
+  /* @include src/shared/rules.inc.js#tcg-rules.identify */
+  /* @include src/shared/rules.inc.js#tcg-rules.observedCard */
+  /* @include src/shared/rules.inc.js#tcg-rules.handCardKnown */
+  /* @include src/shared/rules.inc.js#tcg-rules.indexedHand */
+  /* @include src/shared/rules.inc.js#tcg-rules.characterName */
+  /* @include src/shared/rules.inc.js#tcg-rules.diceOrder */
+  /* @include src/shared/rules.inc.js#tcg-rules.known */
+  /* @include src/shared/rules.inc.js#tcg-rules.alive */
+  /* @include src/shared/rules.inc.js#tcg-rules.total */
+  /* @include src/shared/rules.inc.js#tcg-rules.size */
+  /* @include src/shared/rules.inc.js#tcg-rules.boardKey */
+  /* @include src/shared/rules.inc.js#tcg-rules.actionKey */
+  /* @include src/shared/rules.inc.js#tcg-rules.enemyCount */
+  /* @include src/shared/rules.inc.js#tcg-rules.bag */
+  /* @include src/shared/rules.inc.js#tcg-rules.cardCountDecreased */
+  /* @include src/shared/rules.inc.js#tcg-rules.removedOne */
+  /* @include src/shared/rules.inc.js#tcg-rules.OpeningFlow */
+  /* @include src/shared/rules.inc.js#tcg-rules.freshActionBoard */
+  /* @include src/shared/rules.inc.js#tcg-rules.rerollCounter */
+  /* @include src/shared/combat.inc.js#tcg-rules.elementReaction */
+  /* @include src/shared/combat.inc.js#tcg-rules.damageAgainst */
+  function payment(dice,cost,preserve="Pyro") {
+    const secondaryPaymentWeights={},emptyPaymentWeight={weight:0};
+    /* @include src/shared/rules.inc.js#tcg-rules.countedPaymentBody */
+  }
+  function freshMemory(){
+    return {round:0,used:[0,0,0],defeated:[false,false,false],lastActive:0,
+      props:0,talents:[false,false,false],artifactKinds:[null,null,null],
+      gladiatorUsed:[false,false,false],gamblerUsed:[0,0,0],food:[false,false,false],
+      foodDiscount:[0,0,0],nextDamage:[0,0,0],gildedDamage:[0,0,0],soupDiscount:[0,0,0],soupDamage:[0,0,0],extraMaxHp:[0,0,0],
+      supports:[{id:"cooking",slot:0,remaining:2}],supportStateKnown:true,supportSlots:1,disposedSupports:0,
+      coldSummon:0,catSummon:0,summonsKnown:true,talentColdUsed:false,
+      legendUsed:false,boar:0,freeSwitch:false,fastSwitch:false,
+      enemyAliveCount:null,skillCosts:null,probeKeys:[],uncertainActions:[],refusedActions:[]};
+  }
+  function nextRound(m){
+    m.round++;m.gladiatorUsed=[false,false,false];m.gamblerUsed=[0,0,0];m.food=[false,false,false];
+    m.soupDiscount=[0,0,0];m.soupDamage=[0,0,0];m.gildedDamage=[0,0,0];
+    m.talentColdUsed=false;m.boar=0;m.freeSwitch=false;
+    if(m.round>1){m.coldSummon=Math.max(0,m.coldSummon-1);m.catSummon=Math.max(0,m.catSummon-1);}
+    m.refusedActions=[];m.uncertainActions=[];clearSkillCosts(m);
+  }
+  function legalState(s){
+    return !!s&&s.phase==="board"&&s.turn==="user"&&known(s.active)&&s.active<3&&
+      Array.isArray(s.characters)&&s.characters.length===3&&alive(s.characters[s.active])&&
+      s.diceKnown===true&&s.dice&&Object.keys(s.dice).every(e=>diceOrder.includes(e))&&
+      Object.values(s.dice).every(known)&&total(s.dice)<=16&&
+      Array.isArray(s.hand)&&s.hand.every(handCardKnown)&&s.characters.every((c,i)=>
+        c?.dead===true||alive(c)&&typeof c.frozen==="boolean"&&known(c.energy)&&c.energy<=team[i].maxEnergy);
+  }
+  function skillReduction(who,skill,m,s){
+    let reduction=(m.foodDiscount[who]||0)+(m.soupDiscount[who]||0);
+    if(["NA","CA"].includes(skill)&&m.artifactKinds[who]==="gladiator"&&!m.gladiatorUsed[who]&&s?.hand?.length<=2)reduction++;
+    return reduction;
+  }
+  function skillCost(who,skill,m,s=null){
+    const base=skill==="NA"?{element:team[who].element,n:1,any:2}:{element:team[who].element,n:3},
+      reduction=skillReduction(who,skill,m,s);
+    const any=Math.min(base.any||0,reduction);if(base.any)base.any-=any;base.n=Math.max(0,base.n-(reduction-any));
+    const quote=s&&skillQuote(s,m,{who,skill});
+    const observed=s?.skillFees?.who===who?s.skillFees.entries[skill]:null;
+    if(skill!=="NA"&&known(observed?.n)){
+      // Projections change only our known discounts. The current native fee
+      // (including increases) travels with the observed board, not its dice key.
+      base.n=Math.max(0,observed.n+(observed.reduction??reduction)-reduction);
+    }
+    if(quote?.source==="native-skill-preview"&&known(quote.n)){
+      base.n=base.any===undefined?quote.n:Math.min(base.n,quote.n);
+      if(base.any!==undefined)base.any=Math.max(0,quote.n-base.n);
+    }
+    return base;
+  }
+  function skillLegal(s,a,m){
+    return a.who===s.active&&!!team[a.who]?.skills[a.skill]&&alive(s.characters[a.who])&&
+      s.characters[a.who].frozen===false&&(a.skill!=="Q"||s.characters[a.who].energy>=team[a.who].maxEnergy)&&
+      !!payment(s.dice,skillCost(a.who,a.skill,m,s),team[a.who].element);
+  }
+  function cardCost(id,target,m){
+    const cost={...byId[id].cost};
+    if(byId[id].type==="support"&&m.supportStateKnown&&m.supports.some(x=>x.id==="dunyarzad"&&x.discountRound!==m.round))cost.aligned=Math.max(0,(cost.aligned||0)-1);
+    return cost;
+  }
+  const switchCost=m=>({any:m.freeSwitch?0:1});
+  function cardLegal(s,a,m){
+    const c=byId[a.id];if(!c||s.hand[a.index]?.id!==a.id)return false;
+    const targeted=["artifact","food","talent"].includes(c.type);
+    if(targeted&&(!known(a.target)||a.target>2||!alive(s.characters[a.target])))return false;
+    if(!targeted&&a.target!=null)return false;
+    if(c.type==="talent"&&(a.target!==0||s.active!==0||s.characters[0].frozen))return false;
+    if(c.type==="food"&&m.food[a.target]!==false)return false;
+    if(c.type==="team-food"&&s.characters.some((ch,i)=>alive(ch)&&m.food[i]!==false))return false;
+    if(c.type==="support"&&(!m.supportStateKnown||m.supportSlots>=4))return false;
+    if(c.type==="legend"&&(m.legendUsed||!m.supportStateKnown||m.supportSlots>=4))return false;
+    if(a.id==="surf"&&!(s.summonCountKnown&&s.summonCount+s.enemySummonCount>=2))return false;
+    if(a.id==="dragon"&&!(s.summonCountKnown&&s.summonCount<4))return false;
+    if(a.id==="blessingM"&&!(s.summonCountKnown&&s.summons?.some(x=>x.index===a.summonIndex&&x.name===a.summonName&&known(x.uses))))return false;
+    return !!payment(s.dice,cardCost(a.id,a.target,m),team[s.active].element);
+  }
+  function gamblerRemaining(m,i){return Math.max(0,3-(m.gamblerUsed[i]||0));}
+  function cardRefund(a,m,b){
+    if(a.type!=="card")return {};
+    if(byId[a.id]?.type==="artifact"&&m.boar>0&&m.artifactKinds[a.target])return {Omni:1};
+    if(a.id==="companion")return {Omni:2};
+    return {};
+  }
+  function noteBoard(m,s,owner=m.lastActive){
+    if(!s?.characters)return;
+    s.characters.forEach((ch,i)=>{if(ch.dead===true&&!m.defeated[i]){
+      m.defeated[i]=true;m.artifactKinds[i]=null;m.talents[i]=false;
+      m.foodDiscount[i]=m.soupDiscount[i]=m.soupDamage[i]=m.nextDamage[i]=m.gildedDamage[i]=0;if(i===1)m.props=0;
+    }});
+    const n=enemyCount(s);if(n!==null){
+      if(m.enemyAliveCount!==null&&m.artifactKinds[owner]==="gambler")m.gamblerUsed[owner]=Math.min(3,m.gamblerUsed[owner]+Math.max(0,m.enemyAliveCount-n));
+      m.enemyAliveCount=n;
+    }
+    if(known(s.active))m.lastActive=s.active;
+    if(s.ailinFacts?.source==="native-character-status"&&known(s.ailinFacts.props)&&s.ailinFacts.props<=3)m.props=s.ailinFacts.props;
+    if(s.summonCountKnown){
+      m.summonsKnown=s.summons.every(x=>!!x.name);
+      m.coldSummon=s.summons.find(x=>x.name==="厨艺机关·低温冷藏模式")?.uses??(m.summonsKnown?0:null);
+      m.catSummon=s.summons.find(x=>x.name==="怪笑猫猫帽")?.uses??(m.summonsKnown?0:null);
+    }else if(s.summonCountKnown===false){m.summonsKnown=false;m.coldSummon=m.catSummon=null;}
+    const native=s.supportCounts;
+    if(native?.source==="native-support-rims"){
+      if(!native.known){m.supportStateKnown=false;return;}
+      m.supports=m.supports.filter(support=>{
+        if(known(support.slot)&&native.slots[support.slot]?.present===false){m.disposedSupports++;return false;}
+        return true;
+      });
+      const claimed=new Set(m.supports.filter(x=>known(x.slot)).map(x=>x.slot));
+      for(const support of m.supports.filter(x=>!known(x.slot))){
+        const candidates=(support.emptyBefore||[]).filter(i=>native.slots[i]?.present===true&&!claimed.has(i));
+        if(candidates.length===1){support.slot=candidates[0];claimed.add(support.slot);delete support.emptyBefore;}
+      }
+      for(const support of m.supports){
+        const n=native.slots[support.slot]?.counter;
+        if(support.id==="cooking"&&known(n)&&n<=2)support.remaining=n;
+        if(support.id==="silver"&&known(n)&&n<=4)support.elementCount=n;
+      }
+      m.supportSlots=native.count;
+      m.supportStateKnown=m.supports.every(x=>known(x.slot))&&native.slots.every(slot=>
+        slot.present!==true||claimed.has(slot.index));
+    }
+  }
+  function soupReceiptValid(a,b,after){const r=after?.soupReceipt;return r?.exited===true&&r.origin===actionKey(a)+"/"+boardKey(b)&&r.target===a.target&&Object.values(soupOptions).includes(r.effect);}
+  function commit(m,a,b,after){
+    if(after.confirmed!==true)throw Error("未确认动作不能记账");
+    clearSkillCosts(m);
+    const cast=a.type==="skill"?a:a.type==="card"?byId[a.id]?.combatSkill:null;
+    if(cast){
+      const who=cast.who;m.used[who]++;
+      if(a.type==="skill"){
+        if(["NA","CA"].includes(cast.skill)&&m.artifactKinds[who]==="gladiator"&&b.hand.length<=2)m.gladiatorUsed[who]=true;
+        m.foodDiscount[who]=0;m.soupDiscount[who]=0;
+      }
+      m.nextDamage[who]=0;m.gildedDamage[who]=0;if(m.soupDamage[who]>0)m.soupDamage[who]--;
+      if(who===0&&cast.skill==="E")m.coldSummon=2;
+      if(who===1){
+        if(["CA","Q"].includes(cast.skill)){m.props=known(m.props)?Math.min(3,m.props+1):null;m.catSummon=Math.min(2,m.catSummon+1);}
+        if(cast.skill==="E")m.props=0;
+      }
+      if(who!==0&&["NA","CA"].includes(cast.skill)&&m.talents[0]&&!m.talentColdUsed&&m.coldSummon>0)m.talentColdUsed=true;
+      if(who===2&&["E","Q"].includes(cast.skill))m.summonsKnown=false;
+    }
+    if(a.type==="card"){
+      const c=byId[a.id];
+      if(c.type==="artifact"){
+        if(m.boar>0&&m.artifactKinds[a.target])m.boar--;
+        m.artifactKinds[a.target]=a.id;
+      }
+      if(c.type==="talent")m.talents[0]=true;
+      if(c.type==="support"){
+        const reducer=m.supports.find(x=>x.id==="dunyarzad"&&x.discountRound!==m.round);
+        if(reducer)reducer.discountRound=m.round;
+        for(const x of m.supports)if(x.id==="dunyarzad")x.drawUsed=true;
+        m.supports.push({id:a.id,discountRound:-1,refundRound:-1,drawUsed:false,
+          emptyBefore:b.supportCounts?.known?b.supportCounts.slots.filter(s=>s.present===false).map(s=>s.index):[]});
+        m.supportSlots++;m.supportStateKnown=false;
+      }
+      if(c.type==="legend"){
+        m.legendUsed=true;
+        if(!m.supports.some(s=>s.id==="flame")){
+          m.supports.push({id:"flame",emptyBefore:b.supportCounts?.known?b.supportCounts.slots.filter(s=>s.present===false).map(s=>s.index):[]});
+          m.supportSlots++;m.supportStateKnown=false;
+        }
+      }
+      if(a.id==="boar")m.boar=2;
+      if(["food","team-food"].includes(c.type)){
+        const targets=c.type==="team-food"?b.characters.flatMap((ch,i)=>alive(ch)?[i]:[]):[a.target];
+        for(const i of targets)m.food[i]=true;
+        if(a.id==="wavekissedSands")for(const i of targets)m.foodDiscount[i]=1;
+        if(a.id==="verdantGift")for(const i of targets)m.nextDamage[i]=1;
+        if(a.id==="gildedHall")m.gildedDamage[a.target]=2;
+        if(a.id==="autumnFrost")m.extraMaxHp[a.target]++;
+        if(a.id==="soup"&&soupReceiptValid(a,b,after)){
+          if(after.soupReceipt.effect==="discount")m.soupDiscount[a.target]=2;
+          if(after.soupReceipt.effect==="fury")m.soupDamage[a.target]=2;
+          if(after.soupReceipt.effect==="maxhp")m.extraMaxHp[a.target]++;
+        }
+        for(const x of m.supports)if(x.id==="chef"){x.refundRound=m.round;x.drawUsed=true;}
+      }
+      if(["surf","dragon","blessingM"].includes(a.id))m.summonsKnown=false;
+    }
+    if(a.type==="switch")m.freeSwitch=false;
+    noteBoard(m,after,cast?.who??b.active);
+  }
+  function rejectAction(m,a,b){clearSkillCosts(m);blockAction(m,a,b);}
+  function deferUncertain(m,a,b){
+    clearSkillCosts(m);blockAction(m,a,b,true);m.summonsKnown=false;
+    if(a.type==="skill"||byId[a.id]?.combatSkill){m.props=null;m.soupDiscount=[0,0,0];m.foodDiscount=[0,0,0];m.nextDamage=[0,0,0];m.gildedDamage=[0,0,0];m.soupDamage=[0,0,0];}
+    if(a.type==="card"){
+      const c=byId[a.id];if(c.type==="support"||c.type==="legend")m.supportStateKnown=false;
+      if(c.type==="legend")m.legendUsed=true;
+      if(["food","team-food"].includes(c.type)){
+        if(c.type==="team-food")m.food=[null,null,null];else m.food[a.target]=null;
+      }
+    }
+  }
+  function handPlan(a,b,m){
+    const h=indexedHand(b.hand),c=byId[a.id];
+    if(a.type==="probe")return {mode:"unchanged",hand:h};
+    if((a.type==="card"||a.type==="tune")&&h[a.index]?.id!==a.id)throw Error("手牌索引与身份不一致");
+    const remaining=indexedHand(h.filter((_,i)=>a.type!=="card"||i!==a.index));
+    // These actions consume only their source, never reorder or replace the
+    // remaining dishes. New boiler/draw cards are still read from the row;
+    // equal native family counts retain the old dishes' relative order.
+    const retains=["card","skill","switch"].includes(a.type);
+    const full=(refreshAfterConsumption=false)=>({mode:"full",refreshAfterConsumption,
+      ...(retains?{retainedHand:remaining,retainedHandOrder:true}:{})});
+    // A partner entry only draws when an existing Dunyarzad still owns its
+    // one-time trigger. Rechecking the row is not itself a pending draw.
+    if(a.type==="card"&&c?.type==="support"&&m?.supportStateKnown&&
+        m.supports.every(s=>s.id!=="dunyarzad"||s.drawUsed===true))
+      return {mode:"remove",hand:remaining};
+    // A quick food has no opponent handoff or Cryo reaction. Once every
+    // current Chef's one-time draw is used (or no Chef is present), it only
+    // consumes its own card. Unknown support ownership cannot authorize this.
+    if(a.type==="card"&&c?.type==="food"&&!c.combatAction&&m?.supportStateKnown&&
+        m.supports.every(s=>s.id!=="chef"||s.drawUsed===true))
+      return {mode:"remove",hand:remaining};
+    // Either player can react with Cryo, the boiler can insert a dish, and
+    // Heart/partners can draw. Full means read actual identities, not predict them.
+    if(a.type==="skill"||a.type==="switch"||a.type==="end")return full();
+    if(a.type==="card"&&(["draw","support","talent","food","team-food","combat","summon","summon-discard"].includes(c?.type)))
+      return full(["draw","support","talent","food","team-food","combat"].includes(c.type));
+    if(a.type==="card"||a.type==="tune"){
+      return {mode:"remove",hand:indexedHand(h.filter((_,i)=>i!==a.index))};
+    }
+    return {mode:"full"};
+  }
+  function verify(a,b,c,transition=false){
+    if(!a||!b||!c)return false;if(c.result)return true;
+    if(a.type==="end")return c.turn==="enemy"||["roll","settlement"].includes(c.phase);
+    if(a.type==="switch")return c.active===a.target&&b.active!==a.target;
+    if(a.type==="skill")return transition||c.turn==="enemy"||!!c.dice&&(
+      total(c.dice)<total(b.dice)||known(c.characters?.[a.who]?.energy)&&c.characters[a.who].energy!==b.characters[a.who].energy||
+      Array.isArray(c.enemies)&&JSON.stringify(c.enemies.map(e=>e.hp))!==JSON.stringify(b.enemies.map(e=>e.hp)));
+    if(a.type==="tune")return c.turn==="user"&&removedOne(b.hand,c.hand,a.id)&&total(c.dice)===total(b.dice)&&(c.dice[a.element]||0)===(b.dice[a.element]||0)+1;
+    if(a.type!=="card"||!Array.isArray(c.hand))return false;
+    if(a.id==="soup"&&!soupReceiptValid(a,b,c))return false;
+    if(a.id==="blessingM"){
+      const r=c.summonReceipt;
+      if(r?.exited!==true||r.origin!==actionKey(a)+"/"+boardKey(b)||r.id!==a.id||r.index!==a.summonIndex||r.name!==a.summonName)return false;
+    }
+    return drawConsumptionProven(a,b,c)||cardCountDecreased(b.hand,c.hand,a.id);
+  }
+  function emptyHandEffect(a,b,c){
+    if(handPlan(a,b,freshMemory()).mode!=="remove"||b.hand.length!==1||c.phase!=="board"||c.turn!=="user"||c.active!==b.active)return false;
+    const p=c.handEvidence;
+    return p?.kind==="native-empty-fan"&&p.stableReads>=2&&p.inputSent===true&&p.sourceCount===1&&
+      p.id===a.id&&p.index===a.index&&p.target===(a.target??null)&&p.beforeKey===boardKey(b);
+  }
+  function keepOpening(id,hand=[],index=null){
+    // One dice-fixing card in total; keep the leftmost, regardless of its name.
+    if(index!==null&&["companion","toss"].includes(id))
+      return hand.findIndex(h=>["companion","toss"].includes(h.id))===index;
+    return ["teaParty","heart","gladiator","dunyarzad","chef","silver","pilgrimage","companion","toss"].includes(id);
+  }
+  function openingPlan(hand,original){
+    if(hand?.length!==5||!hand.every(handCardKnown)||original?.length!==5)throw Error("起手五张手牌未核实");
+    const replace=hand.map((h,i)=>h.supported?!keepOpening(h.id,hand,i):original[i]);return {replace,keep:hand.filter((_,i)=>!replace[i]),duplicateWeapons:[]};
+  }
+  function rerollPlan(items,m){
+    const who=m.used[0]===0&&!m.defeated[0]?0:m.lastActive===0&&!m.defeated[1]?1:
+      m.defeated[m.lastActive]?m.defeated.findIndex(v=>!v):m.lastActive,
+      primary=team[who].element,secondary=who===0&&!m.defeated[1]?"Pyro":null;
+    let kept=0;return {primary,secondary,elements:[primary,secondary,"Omni"].filter(Boolean),
+      indices:items.flatMap((x,i)=>x.element==="Omni"||x.element===primary||x.element===secondary&&kept++<3?[i]:[])};
+  }
+  root.TCG={team,cards,byId,soupOptions,shareCode,guide,norm,identify,observedCard,handCardKnown,indexedHand,reconcileHand,
+    actionRefused,blockAction,skillQuote,skillProbeAttempted,recordSkillCost,clearSkillCosts,refreshSkillCosts,drawConsumptionProven,
+    characterName,diceOrder,known,alive,total,size,payment,boardKey,actionKey,freshMemory,nextRound,OpeningFlow,
+    legalState,freshActionBoard,switchCost,skillReduction,skillCost,skillLegal,cardCost,cardLegal,cardRefund,gamblerRemaining,
+    enemyCount,elementReaction,damageAgainst,noteBoard,commit,rejectAction,deferUncertain,handPlan,verify,
+    verifyResynchronized:(a,b,c,t)=>legalState(c)&&verify(a,b,c,t),emptyHandEffect,removalEffect:()=>false,soupReceiptValid,
+    openingSetting:()=>"优先装备与启动牌",openingContext:()=>({}),keepOpening,openingPlan,rerollPlan,rerollCounter,
+    drawPayment:(s,a,m)=>byId[a.id]?.type==="draw"?cardCost(a.id,a.target,m):null,
+    refusalCost:(s,m,a)=>a.type==="skill"?skillCost(a.who,a.skill,m,s):a.type==="card"?cardCost(a.id,a.target,m):a.type==="switch"?switchCost(m):{}};
+})(globalThis);

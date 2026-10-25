@@ -84,7 +84,7 @@
     return { round: 0, raidenBurst: false, colleiBurst: false, used: [0, 0, 0],
       eyeRound: -10, dendroRound: -10, keqingInfusion: null, resolve:0,
       food: [false, false, false], normalDiscount: [0, 0, 0],
-      freeSwitch: false, fastSwitch: false, artifacts: [false, false, false],
+      freeSwitch: false, fastSwitch: false,
       weapons: [false, false, false], talent: false, uncertainActions: [], refusedActions: [], defeated: [false,false,false], thundergrassSupport:null,
       sproutRound:-1,sproutUsedRound:-1,sproutUncertainRound:-1,
       artifactKinds:[null,null,null],exileUsedRound:[-1,-1,-1],gamblerUsed:[0,0,0],
@@ -377,7 +377,8 @@
       action.type === "card" && action.id === "draw" ? Math.min(10, hand.length + 1) :
       action.type === "card" && action.id === "penance" ? Math.max(0,Math.min(10,hand.length-(hand.some(h=>h.id==="wedge")?2:0))) :
       action.type === "card" && ["floralSidewinder", "wedge"].includes(action.id) ? Math.max(0, hand.length - 1) : null;
-    return { mode: "full", hand: null, expectedCount };
+    return { mode: "full", hand: null, expectedCount,
+      refreshAfterConsumption: action.type === "card" && ["draw","floralSidewinder","wedge","penance"].includes(action.id) };
   }
   function verify(action, before, after, transition = false) {
     if(!action || !before || !after)return false;
@@ -491,7 +492,6 @@
     if (action.id === "smoked") m.normalDiscount[action.target] = 1;
     if (action.id === "mint") m.normalDiscount[action.target] = 3;
     if (["gambler","exile"].includes(action.id)) {
-      m.artifacts[action.target]=action.id==="gambler";
       m.artifactKinds[action.target]=action.id;
       if(action.id==="gambler")m.gamblerUsed[action.target]=0;
     }

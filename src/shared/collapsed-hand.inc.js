@@ -29,8 +29,6 @@
     const distance=(m,i)=>Math.abs(m.x-firstExpected-i*STEP)+Math.abs(m.y-983);
     const marks=selected.map((g,i)=>g.slice().sort((a,b)=>distance(a,i)-distance(b,i)||Math.abs(a.y-983)-Math.abs(b.y-983))[0]);
     const n=marks.length;
-    if(!n)return {status:"unavailable",reason:"no-visible-cost-row",count:null,slots:[]};
-    if(n>10)return {status:"unknown",reason:"extra-markers",count:null,slots:[]};
     const first=median(marks.map((m,i)=>m.x-i*STEP)),yy=median(marks.map(m=>m.y));
     if(Math.abs(first+(n-1)*STEP/2-CENTER)>4||Math.abs(yy-983)>4||
       marks.some((m,i)=>Math.abs(m.x-first-i*STEP)>5||Math.abs(m.y-yy)>4))
@@ -72,7 +70,11 @@
           const scores=view.patches.map((file,k)=>file===null?NaN:score(slot,bank.patches[k],file));
           const rank={id:view.id,view:view.name,scores,scoreFloor:view.scoreFloor,titleCandidates:view.titleCandidates,
             score:scores.length===bank.patches.length&&scores.length>0&&scores.every(Number.isFinite)?Math.min(...scores):-1};
-          if(!identities.has(view.id)||rank.score>identities.get(view.id).score)identities.set(view.id,rank);
+          // Several real dishes share one explicitly declared artwork family.
+          // Their views compete as that same unresolved family, not as two
+          // exact identities which veto each other before a title is read.
+          const identity=view.titleCandidates?"family:"+view.titleCandidates.slice().sort().join("/"):view.id;
+          if(!identities.has(identity)||rank.score>identities.get(identity).score)identities.set(identity,rank);
       }
       const ranks=[...identities.values()].sort((a,b)=>b.score-a.score);
       const best=ranks[0],gap=best&&ranks[1]?best.score-ranks[1].score:0;

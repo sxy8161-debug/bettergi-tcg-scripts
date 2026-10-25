@@ -3,6 +3,97 @@ const assert=require("node:assert/strict"),{load}=require("./runtime.cjs");
 const clone=value=>JSON.parse(JSON.stringify(value));
 module.exports=async function(test){
   const id="input";
+  await test(id+": changed complete preflight replans immediately; only missing fields retry",async()=>{
+    const {T,Host}=load("ailin"),base=require("./runtime.cjs").board(T),changed=clone(base);
+    changed.dice={Omni:2};
+    for(const sequence of [[changed,changed],[changed,base,base]]){
+      const h=new Host({}),events=[];let reads=0;
+      h.boardReady=true;h.board=()=>clone(sequence[Math.min(reads++,sequence.length-1)]);
+      h.trace=(event,data)=>events.push({event,data});
+      h.clickAt=()=>{throw Error("preflight cannot send input");};
+      {
+        await assert.rejects(()=>h.requireUnchangedBoard(base),e=>e.code==="TCG_STATE_REFRESH");
+        assert.equal(reads,1,"never wait for obsolete resources to return");
+        assert.deepEqual(clone(events.at(-1).data.changes.dice),clone({before:T.diceOrder.map(e=>base.dice[e]||0),after:T.diceOrder.map(e=>changed.dice[e]||0)}));
+      }
+    }
+    const h=new Host({}),gap=clone(changed);gap.characters[0].energy=null;
+    let reads=0;h.boardReady=true;h.board=()=>{reads++;return clone(gap);};
+    await assert.rejects(()=>h.requireUnchangedBoard(base),e=>e.code==="TCG_STATE_REFRESH");
+    assert.equal(reads,6,"incomplete reads are not stable new facts");
+    let events=[];h.trace=(event,data)=>events.push({event,data});h.prepareBoardObservation=()=>{};
+    reads=0;h.autoRisk=true;h.board=()=>clone([base,changed,changed][Math.min(reads++,2)]);
+    await h.settledBoard();
+    assert.ok(events.some(e=>e.event==="board-settle-wait"&&e.data.changes?.dice),"existing samples explain the stability reset");
+  });
+  await test(id+": recent complete observation checks phase only; stale or intervening input reads one board",async()=>{
+    const {T,Host}=load("ailin"),base=require("./runtime.cjs").board(T);
+    for(const mode of ["recent","stale","input","choice"]){
+      const h=new Host({});let reads=0;
+      h.boardReady=true;h.lastObservedState=base;h.lastObservedAt=Date.now()-(mode==="stale"?2000:0);
+      h.lastObservedRevision=h.inputRevision-(mode==="input"?1:0);
+      h.phase=()=>mode==="choice"?{phase:"choice",turn:"none"}:{phase:"board",turn:"user"};
+      h.board=()=>{reads++;return clone(base);};h.clickAt=()=>{throw Error("preflight is read-only");};
+      if(mode==="choice")await assert.rejects(()=>h.requireUnchangedBoard(base),e=>e.code==="TCG_OBSERVATION_INTERRUPTED");
+      else assert.deepEqual(clone(await h.requireUnchangedBoard(base)),clone(base));
+      assert.equal(reads,["recent","choice"].includes(mode)?0:1);
+    }
+    const h=new Host({});h.trace=()=>{};h.frame=fn=>fn({});
+    const forbidden=()=>{throw Error("non-user action observation must not scan board resources");};
+    h.characterIn=h.diceIn=h.enemiesIn=h.boardExtrasIn=forbidden;
+    for(const phase of [{phase:"board",turn:"enemy"},{phase:"unknown",turn:"none"}]){
+      h.boardReady=true;h.phaseIn=()=>clone(phase);
+      await assert.rejects(()=>h.requireUnchangedBoard(base),e=>
+        e.code===(phase.phase==="unknown"?"TCG_STATE_REFRESH":"TCG_OBSERVATION_INTERRUPTED")&&e.phase.phase===phase.phase);
+    }
+    // The post-hand read also needs only phase once the opponent takes over.
+    h.settledBoard=async()=>clone(base);h.initialObservationBoard=()=>clone(base);
+    h.observedHand=async()=>{h.inputRevision++;return [];};
+    h.phaseIn=()=>({phase:"board",turn:"enemy"});
+    assert.equal((await h.observe()).turn,"enemy");
+  });
+  await test(id+": tuning keeps real pre-reset count proof and does not reopen the consumed hand",async()=>{
+    const {T,Host}=load("ailin"),before=require("./runtime.cjs").board(T,["toss","chef"]),
+      action={type:"tune",id:"toss",index:0,element:"Cryo"},plan={mode:"remove",hand:T.indexedHand(before.hand.slice(1)),action,before};
+    for(const count of [1,2,null]){
+      const h=new Host({});h.handFanReady=true;h.frame=fn=>fn({});h.phaseIn=()=>({phase:"board",turn:"user"});
+      h.handCountIn=()=>count;h.consumptionReceipt={id:action.id,index:0,target:null,beforeKey:T.boardKey(before),inputSent:true};
+      const proof=await h.removalEvidenceBeforeReset(plan);
+      if(count!==1){assert.equal(proof,null);continue;}
+      h.handFanReady=h.handNeedsReset=false;
+      h.handCount=async()=>{throw Error("do not expand again after native removal proof");};
+      const hand=await h.observedHand({...plan,preResetEvidence:proof});
+      assert.deepEqual(clone(hand),clone(plan.hand));
+    }
+  });
+  await test(id+": paid removal uses the current complete board without requiring a redundant second read",()=>{
+    const {T,Host}=load("raiden"),h=new Host({}),before=require("./runtime.cjs").board(T,["gambler","draw"]),
+      action={type:"card",id:"gambler",index:0,target:0},plan={...T.handPlan(action,before),action,before},after=clone(before);
+    after.dice={Omni:T.total(before.dice)-T.size(T.byId.gambler.cost)};
+    after.nativeStability={reads:1,key:T.boardKey({...after,hand:[]}),inputRevision:h.inputRevision};
+    h.consumptionReceipt={id:action.id,index:0,target:0,beforeKey:T.boardKey(before),inputSent:true,nativeConfirmed:true};
+    assert.equal(h.paidRemovalProven(plan,after),true);
+    assert.equal(h.paidRemovalProven(plan,{...after,nativeStability:null}),false);
+    const wrong=clone(after);wrong.dice={Omni:T.total(before.dice)};
+    wrong.nativeStability.key=T.boardKey({...wrong,hand:[]});
+    assert.equal(h.paidRemovalProven(plan,wrong),false);
+  });
+  await test(id+": full support area is a blocking native choice, never a completed or repeated card",async()=>{
+    const {T,Host}=load("ailin"),h=new Host({}),before={phase:"board",turn:"user",active:0,diceKnown:true,dice:{Omni:1},
+      characters:T.team.map(t=>({hp:t.maxHp,energy:0,dead:false,frozen:false})),enemies:[],
+      hand:T.indexedHand([T.observedCard("西尔弗和迈勒斯",0)])},
+      action={type:"card",id:"silver",index:0,target:null};
+    let clicks=0;h.frame=fn=>fn({});h.has=(_f,asset)=>asset==="user_turn";
+    h.clickAt=()=>{clicks++;};h.ocr=(_f,area)=>area.panel==="phase"&&area.rect[0]===560?
+      "支援区已满，需先选择一张支援牌弃置":"";
+    h.cardPaymentControlsIn=()=>{throw Error("A support discard choice is not payment");};
+    const phase=h.phaseIn({});assert.equal(phase.phase,"choice");assert.equal(phase.choiceKind,"support-discard");
+    h.requireNoWarning=async()=>{};
+    await assert.rejects(()=>h.cardConfirm(action,before),e=>e.code==="TCG_SUPPORT_FULL");
+    h.phase=()=>phase;
+    await assert.rejects(()=>h.confirm(action,before,T.freshMemory()),e=>e.code==="TCG_SUPPORT_FULL");
+    assert.equal(clicks,0);assert.equal(h.confirmationSession,null);
+  });
   function fixture(interrupt,deck="raiden"){
     let time=0,scene={phase:"board",turn:"user"},previews=0;
     class Clock extends Date{static now(){return 100000+time;}}
@@ -36,6 +127,34 @@ module.exports=async function(test){
     const f=fixture();await f.h.execute({type:"switch",target:2},f.state,f.T.freshMemory());
     assert.deepEqual(f.inputs,[[1175,720],[1820,958],[1820,958]]);
     assert.equal(f.inputs.length,3);
+  });
+  await test(id+": switch payment not opened during handoff returns to observation without submission",async()=>{
+    const f=fixture(),events=[];f.h.phaseIn=()=>({phase:"board",turn:"user"});
+    f.h.ocr=(_f,{rect:r})=>r[0]===311?f.T.team[2].name:"";
+    f.h.trace=(event,data)=>events.push({event,data});
+    await assert.rejects(()=>f.h.execute({type:"switch",target:2},f.state,f.T.freshMemory()),e=>e.code==="TCG_STATE_REFRESH");
+    assert.deepEqual(f.inputs,[[1175,720],[1820,958]],"no final payment click or blind replay");
+    assert.equal(f.h.autoRisk,true);
+    assert.equal(events.some(e=>e.event==="input-submitted"),false);
+  });
+  await test(id+": long first-slot tuning drag holds down before moving, settles at destination and always releases",async()=>{
+    for(const failHold of [false,true]){
+      let time=0,point=null,held=false,pressedAt=null,arrivedAt=null,up=0,grabbed=false;
+      const interrupted=Error("cancel during mouse-down hold"),moves=[],
+        {env:c}=load("ailin",{sleep:async ms=>{time+=ms;if(failHold&&held&&moves.length===0)throw interrupted;},
+          genshin:{scaleTo1080PRatio:1},captureGameRegion:()=>({Width:1920,Height:1080,
+            Prev:{Width:3840,Height:2160,Prev:null},dispose(){}}),
+          GameCaptureRegion:{GameRegion1080PPosMove:(...xy)=>{point=xy;if(held){
+            if(moves.length===0){assert.ok(time-pressedAt>=100,"game must acquire the leftmost card before the first long move");grabbed=true;}
+            moves.push(xy);if(xy[0]===1867&&xy[1]===518)arrivedAt=time;
+          }}},leftButtonDown:()=>{held=true;pressedAt=time;},leftButtonUp:()=>{
+            if(!failHold){assert.ok(grabbed);assert.ok(time-arrivedAt>=100,"settle in the tuning drop zone before release");}
+            held=false;up++;
+          }}),h=new c.TCGBetterGI.BetterGIHost({});
+      if(failHold)await assert.rejects(()=>h.drag(719,945,1867,518),e=>e===interrupted);
+      else {await h.drag(719,945,1867,518);assert.deepEqual(point,[1867,518]);}
+      assert.equal(held,false);assert.equal(up,1,"no retry or stuck mouse button on cancellation");
+    }
   });
   await test(id+": fixed actor and slot submit once without skill-name, type or preview-image recognition",async()=>{
     for(const [deck,who,skill,x] of [["raiden",0,"NA",1608],["iansan",0,"E",1716],["moonbloom",0,"E",1716],["mozailu",2,"Q",1824]]){
@@ -78,6 +197,75 @@ module.exports=async function(test){
     assert.equal(result.confirmed,true);assert.equal(result.freshObservationRequired,true);
     assert.deepEqual(f.inputs,[[1608,957],[1608,957]],"observations never resend the skill");
     assert.equal(f.h.confirmationSession,null);
+  });
+  await test(id+": early combat payment hands its observation risk to Player; late enemy phase cannot become a decision",async()=>{
+    const {T,Host,Player}=load("consecrated"),h=new Host({}),p=new Player(h,{maxMinutes:15}),
+      s=require("./runtime.cjs").board(T),a={type:"skill",who:0,skill:"E"};
+    s.dice={Omni:8};p.memory=T.freshMemory({newGame:true});h.memory=p.memory;
+    p.observe=async()=>s;p.progress=()=>{};T.choose=()=>a;
+    h.executeInput=async()=>{};h.phase=()=>({phase:"board",turn:"user"});
+    h.observe=async()=>({...clone(s),dice:{Omni:5}});h.diceBudgetMatches=()=>true;
+    h.removalEvidenceBeforeReset=async()=>null;
+    await p.act();assert.equal(p.readyState,null);assert.equal(h.autoRisk,true);
+    h.handFanReady=h.handNeedsReset=false;
+    h.board=()=>({phase:"board",turn:"enemy"});
+    assert.equal((await h.settledBoard()).turn,"enemy");
+    h.board=()=>clone(s);const after=await h.settledBoard();
+    assert.equal(after.nativeStability.reads,2);assert.equal(h.autoRisk,false);
+  });
+  await test(id+": unresolved ordinary skill view resets once in its pending owner without replaying the skill",async()=>{
+    for(const outcome of ["paid","unchanged","still-unknown"]){
+      const f=fixture(),action={type:"skill",who:0,skill:"NA"},m=f.T.freshMemory();f.state.active=0;
+      f.h.phaseIn=()=>({phase:"unknown",turn:"none"});
+      await f.h.execute(action,f.state,m);
+      let phase={phase:"unknown",turn:"none"};f.h.phase=()=>clone(phase);
+      const click=f.h.clickAt.bind(f.h);
+      f.h.clickAt=(x,y)=>{const p=click(x,y);if(x===1190&&y===545&&outcome!=="still-unknown")phase={phase:"board",turn:"user"};return p;};
+      f.h.observe=async()=>({...clone(f.state),dice:{Omni:outcome==="paid"?2:5},handRead:"full"});
+      f.h.observedResourceProof=async()=>({revision:f.h.inputRevision});
+      if(outcome==="still-unknown"){
+        for(let i=0;i<2;i++)await assert.rejects(()=>f.h.confirm(action,f.state,m),e=>e.code==="TCG_CONFIRMATION_RETRY");
+        assert.ok(f.h.confirmationSession,"the same owner survives both observation windows");
+      }else{
+        const after=await f.h.confirm(action,f.state,m);
+        assert.equal(after.confirmed,outcome==="paid","clearing details is never effect proof");
+        assert.equal(f.h.confirmationSession,null);
+      }
+      assert.deepEqual(f.inputs,[[1608,957],[1608,957],[1190,545]],"only one blank-area reset, no third skill click");
+    }
+    const f=fixture(),action={type:"skill",who:0,skill:"NA"};f.state.active=0;
+    f.h.phaseIn=()=>({phase:"unknown",turn:"none"});
+    await f.h.execute(action,f.state,f.T.freshMemory());
+    f.h.phase=()=>({phase:"unknown",turn:"none",cardTarget:true});
+    f.h.matchDeadline=100000+f.time()+1500;
+    await assert.rejects(()=>f.h.confirm(action,f.state,f.T.freshMemory()),e=>e.code==="TCG_CONFIRMATION_RETRY");
+    assert.deepEqual(f.inputs,[[1608,957],[1608,957]],"an identified target page is not a stale ordinary skill detail");
+    // Native enemy/settlement exits can be followed by unknown animation frames.
+    // The submitted owner survives a timeout without reopening its old detail.
+    for(const [via,exit] of [
+      ["phase",{phase:"board",turn:"enemy"}],
+      ["observe",{phase:"board",turn:"enemy"}],
+      ["observe",{phase:"settlement",turn:"none"}],
+    ]){
+      const g=fixture(),a={type:"skill",who:0,skill:"NA"},memory=g.T.freshMemory();g.state.active=0;
+      await g.h.execute(a,g.state,memory);
+      let reads=0;
+      g.h.phase=()=>g.h.adoptPhase(reads++===0
+        ?via==="phase"?clone(exit):{phase:"board",turn:"user"}
+        :{phase:"unknown",turn:"none"});
+      g.h.observe=async()=>clone(exit);
+      g.h.matchDeadline=100000+g.time()+2400;
+      await assert.rejects(()=>g.h.confirm(a,g.state,memory),e=>e.code==="TCG_CONFIRMATION_RETRY");
+      const owner=g.h.confirmationSession;
+      assert.ok(owner);assert.equal(owner.transition,exit.turn==="enemy","settlement is not combat handoff proof");
+      g.h.matchDeadline+=1800;
+      await assert.rejects(()=>g.h.confirm(a,g.state,memory),e=>e.code==="TCG_CONFIRMATION_RETRY");
+      assert.equal(g.h.confirmationSession,owner);
+      assert.deepEqual(g.inputs,[[1608,957],[1608,957]],via+"/"+exit.phase+": no animation reset or skill replay");
+      g.h.phase=()=>({phase:"result",turn:"none",result:"win"});
+      g.h.matchDeadline+=100;
+      assert.equal((await g.h.confirm(a,g.state,memory)).result,"win");
+    }
   });
   await test(id+": vanished warning and unchanged resources are not a successful cast or permission to repeat",async()=>{
     const f=fixture(),action={type:"skill",who:0,skill:"NA"},m=f.T.freshMemory();f.state.active=0;

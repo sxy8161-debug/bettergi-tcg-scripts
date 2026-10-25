@@ -1,5 +1,13 @@
 // Observation owns native completeness/stability; reconciliation owns budgets.
 
+// @fragment bgi-host.boardsMatch
+boardsMatch(before, after, purpose = "observation", _action = null) {
+      const key=s=>JSON.stringify([s.phase,s.turn,s.active,TCG.diceOrder.map(e=>s.dice?.[e]||0),s.characters,s.enemies,
+        s.quicken||null,s.supportCounts||null,...(purpose==="observation"?[s.eye||null,s.dendroCore||null]:[]),s.summonLayout||null]);
+      return !!before && !!after && key(before)===key(after);
+    }
+// @endfragment bgi-host.boardsMatch
+
 // @fragment bgi-host.observationIssues
 observationIssues(state) {
       const issues = [];
@@ -31,14 +39,15 @@ async settledBoard(_pendingAction = false, firstBoard = null) {
         firstBoard = null;
       }
       this.prepareBoardObservation?.();
-      let previous = "", stableReads = 0, stableSince = 0, hpGapReads = 0, previousNormalHp = false;
-      let last = null;
+      const requiredReads = this.autoRisk ? 2 : 1;
+      let stableReads = 0, hpGapReads = 0;
+      let last = null, previousBoard = null;
       for (let attempt = 0; attempt < 12; attempt++) {
         const sampledAt = Date.now();
         try { last = attempt === 0 && firstBoard ? firstBoard : this.board(true); }
         catch (e) {
           if (e.code !== "TCG_DICE_RETRY") throw e;
-          previous = ""; stableReads = 0; hpGapReads = 0; previousNormalHp = false;
+          previousBoard = null; stableReads = 0; hpGapReads = 0;
           this.trace("board-settle-wait", { attempt, missing: ["dice"], reason: e.message });
           const remaining = 400 - (Date.now() - sampledAt);
           if (attempt < 11 && remaining > 0) await sleep(remaining);
@@ -53,28 +62,29 @@ async settledBoard(_pendingAction = false, firstBoard = null) {
           [...(last.characters || []), ...(last.enemies || [])].some(c => c?.dead !== true && !TCG.alive(c));
         hpGapReads = hpGap ? hpGapReads + 1 : 0;
         if (hpGapReads === 1 && await this.dismissCharacterOverview("board-hp-gap")) {
-          previous = ""; stableReads = 0; hpGapReads = 0; previousNormalHp = false;
+          previousBoard = null; stableReads = 0; hpGapReads = 0;
           continue;
         }
-        const key = JSON.stringify([last.phase, last.turn, last.active, last.characters, last.dice,
-          last.enemies, last.quicken || null, last.supportCounts || null,last.eye||null,last.dendroCore||null]);
         if (!issues.length) {
-          if (key === previous) stableReads++;
-          else { stableReads = 1; stableSince = Date.now(); }
-          if (stableReads >= (this.autoRisk ? 4 : 2) && (!this.autoRisk || Date.now() - stableSince >= 1200)) {
-            if (this.autoRisk) this.trace("automatic-settled", { active: last.active, proof: "quiet-native-board-not-status-ocr" });
+          if (this.boardsMatch(previousBoard,last)) stableReads++;
+          else stableReads = 1;
+          // Ordinary actions need a complete current board, not repeated
+          // equality. Combat/automatic effects retain one corroborating frame.
+          if (stableReads >= requiredReads) {
+            if (this.autoRisk) this.trace("automatic-settled", { active: last.active, proof: "two-complete-native-boards" });
             this.autoRisk = false;
-            if (previousNormalHp && last.normalHpReadable === true) this.releasePrecisionBoard("two-stable-normal-hp-profiles");
-            return { ...last, nativeStability: { reads: stableReads, key: TCG.boardKey({ ...last, hand: [] }), inputRevision: this.inputRevision } };
+            if (last.normalHpReadable === true) this.releasePrecisionBoard("complete-normal-hp-profile");
+            const observed=previousBoard ? this.stabilizeBoardExtras?.(previousBoard,last)||last : last;
+            return { ...observed, nativeStability: { reads: stableReads, key: TCG.boardKey({ ...observed, hand: [] }), inputRevision: this.inputRevision } };
           }
         } else stableReads = 0;
-        previous = issues.length ? "" : key;
-        previousNormalHp = !issues.length && last.normalHpReadable === true;
+        const changes=previousBoard?boardDifferences(previousBoard,last,true):{};
+        previousBoard = issues.length ? null : last;
         this.trace("board-settle-wait", { attempt, phase: last.phase, turn: last.turn,
-          valid: issues.length === 0, missing: issues, hpGapReads });
+          valid: issues.length === 0, missing: issues, hpGapReads, changed:Object.keys(changes),changes });
         if (hpGapReads === 3 && !this.precisionBoard) {
           this.usePrecisionBoard("three-consecutive-user-hp-gaps");
-          previous = ""; stableReads = 0; previousNormalHp = false;
+          previousBoard = null; stableReads = 0;
         }
         const remaining = 400 - (Date.now() - sampledAt);
         if (attempt < 11 && remaining > 0) await sleep(remaining);

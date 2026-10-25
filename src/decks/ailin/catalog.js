@@ -1,0 +1,37 @@
+/* GPL-3.0. Card names/costs are game rules; the guide supplies the 30-card list. */
+globalThis.TCGAilinCatalog = {
+  shareCode:"IaFRwxkPIBCy8RgPITCA85cPCUBx9DMTE7ExupMbGaIwA8YgDDJgBtEgDWER1EodFEAA",
+  guide:"https://www.miyoushe.com/ys/article/73568256",
+  team:[
+    {name:"爱可菲",element:"Cryo",maxHp:10,maxEnergy:2,weapon:"pole",skills:{NA:"后厨手艺",E:"低温烹饪",Q:"花刀技法"}},
+    {name:"林尼",element:"Pyro",maxHp:10,maxEnergy:2,weapon:"bow",skillOrder:["NA","CA","E","Q"],
+      skills:{NA:"迫牌易位式",CA:"隐具魔术箭",E:"眩惑光戏法",Q:"大魔术·灵迹巡游"}},
+    {name:"水形幻人",element:"Hydro",maxHp:10,maxEnergy:3,weapon:null,skills:{NA:"涌浪",E:"汛波",Q:"洪啸"}}
+  ],
+  cards:[
+    ["teaParty","虹彩缤纷的甜点茶话",{element:"Cryo",n:4},"talent",2],
+    ["gambler","赌徒的耳环",{aligned:1},"artifact",2],
+    ["heart","灵光明烁之心",{},"artifact",2],
+    ["gladiator","角斗士的凯旋",{},"artifact",2],
+    ["chef","卯师傅",{aligned:1},"support",2],
+    ["dunyarzad","迪娜泽黛",{aligned:1},"support",2],
+    ["silver","西尔弗和迈勒斯",{aligned:1},"support",2],
+    ["pilgrimage","归火圣夜巡礼",{},"legend",1],
+    ["companion","最好的伙伴！",{any:2},"dice",2],
+    ["toss","一掷乾坤",{},"reroll",2],
+    ["draw","运筹帷幄",{aligned:1},"draw",2],
+    ["boar","野猪公主",{},"event",1],
+    ["surf","强劲冲浪拍档！",{},"combat",2],
+    ["dragon","「邪龙」的苏醒",{aligned:2},"summon",2],
+    ["blessingM","「魔女M的祝福」",{},"summon-discard",2],
+    ["soup","奇瑰之汤",{aligned:1},"food",2],
+    ["gildedHall","鎏金殿堂",{},"food",0],
+    ["autumnFrost","雾凇秋分",{},"food",0],
+    ["wavekissedSands","白浪拂沙",{any:2},"team-food",0],
+    ["verdantGift","一捧绿野",{aligned:1},"team-food",0]
+  ].map(([id,name,cost,type,copies])=>({id,name,cost,type,copies,
+    ...(id==="teaParty"?{target:0,combatSkill:{who:0,skill:"E"}}:{}),
+    ...(["surf","wavekissedSands","verdantGift"].includes(id)?{combatAction:true}:{})})),
+  soupOptions:{"奇瑰之汤·疗愈":"healing","奇瑰之汤·助佑":"discount","奇瑰之汤·激愤":"fury",
+    "奇瑰之汤·宁静":"shield","奇瑰之汤·安神":"soothing","奇瑰之汤·鼓舞":"maxhp"}
+};

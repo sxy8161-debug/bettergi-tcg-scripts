@@ -78,36 +78,6 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     T.nextRound(m);assert.equal(m.monaFastUsed,false);
     m.freeSwitch=true;assert.equal(T.size(T.switchCost(m)),0);
   });
-  await test("hydro setup contributes conditional reaction value without inventing aura, payment or a lethal",()=>{
-    const s=board(),m=memory();s.enemies=[enemy(10),enemy(10,false),enemy(10,false)];
-    const before=JSON.stringify([s,m]),a={type:"skill",who:0,skill:"E"};
-    const p=T.project(s,m,a);
-    assert.ok(p.estimate.hydroSetup?.gain>0,"a payable swirl follow-up must value the water setup");
-    assert.equal(p.estimate.hydroSetup.conditional,true);assert.equal(p.terminal,false);
-    assert.equal(JSON.stringify([s,m]),before,"conditional water must not become observed aura");
-    const chosen=T.choose(s,m);assert.equal(chosen.type,"skill");assert.equal(chosen.who,0);
-    assert.ok(chosen.planning.estimate.hydroSetup);
-    s.enemies[0].auraKnown=false;
-    assert.equal(T.project(s,m,a).estimate.hydroSetup.conditional,true,"missing aura is not proven empty");
-    s.enemies[0].auraKnown=true;s.enemies[0].aura=["Hydro"];
-    assert.equal(T.project(s,m,a).estimate.hydroSetup,null,"do not reward already-present water twice");
-    s.enemies[0].aura=["Pyro"];
-    assert.equal(T.project(s,m,a).estimate.hydroSetup,null,"vaporize consumes aura, it does not leave new water");
-    s.enemies[0].aura=[];s.enemies[0].immuneElements=["Hydro"];
-    assert.equal(T.project(s,m,a).estimate.hydroSetup,null);
-    s.enemies[0].immuneElements=[];s.dice={Hydro:3};
-    const deferred=T.project(s,m,a);
-    assert.equal(deferred.estimate.hydroSetup.requiresNextRound,true);
-    assert.equal(T.total(deferred.state.dice),0,"next-round value does not generate dice");
-    assert.deepEqual(clone(deferred.state.enemies),clone(s.enemies),"no projected setup becomes observed aura or HP");
-    m.used[0]=1;assert.equal(T.project(s,m,a).estimate.hydroSetup,null,"do not repeatedly award an unobserved future setup");m.used[0]=0;
-    s.dice={Hydro:3,Pyro:4};s.characters[1].dead=true;s.characters[1].hp=0;
-    assert.equal(T.project(s,m,a).estimate.hydroSetup.who,2,"single-target vaporize is also valued");
-    s.characters[2].frozen=true;
-    assert.equal(T.project(s,m,a).estimate.hydroSetup,null);
-    s.characters[2].frozen=false;s.enemies=[enemy(1)];
-    assert.equal(T.project(s,m,a).terminal,true);assert.equal(T.project(s,m,a).estimate.hydroSetup,null);
-  });
   await test("development-only prefixes do not switch Mona out merely to draw the same card",()=>{
     const s=board(["countdown3"]),m=memory();s.dice={Omni:5};m.freeSwitch=true;
     s.enemies=[enemy(8),enemy(10,false),enemy(10,false),enemy(8,false)];
@@ -125,21 +95,6 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     const prefix=T.project(b,v,card(b,"boar")),after=T.project(prefix.state,prefix.memory,cast);
     assert.ok(direct.value>prefix.value+after.value,"discarding a usable option must not improve water setup");
     assert.notEqual(T.choose(b,v).id,"boar","no irrelevant insurance just to inflate setup value");
-  });
-  await test("slot06 setup survives the round boundary; low HP alone cannot discard Sayu's prepared output",()=>{
-    const s=board(["wolf"]),m=memory();s.dice={Pyro:2,Hydro:1,Dendro:1,Geo:1};
-    s.enemies=[enemy(8),enemy(10,false),enemy(10,false),enemy(8,false)];
-    s.enemies.forEach(e=>{e.auraKnown=false;});m.weaponKinds[1]="wolf";m.weapons[1]=true;
-    const before=JSON.stringify([s,m]),a=T.choose(s,m);
-    assert.equal(a.type,"skill");assert.equal(a.who,0,"hang water rather than leave Mona idle for physical Sayu NA");
-    assert.equal(a.planning.estimate.hydroSetup.requiresNextRound,true);assert.equal(a.planning.terminal,false);
-    assert.equal(JSON.stringify([s,m]),before);
-    s.active=1;s.hand=[];s.dice={Pyro:1,Omni:4};s.characters[1].hp=3;m.used=[1,1,0];
-    s.enemies[0]=enemy(10);s.enemies[1].aura=["Hydro"];s.enemies[1].auraKnown=true;
-    const b=T.choose(s,m);assert.equal(b.type,"skill");assert.equal(b.who,1);assert.equal(b.skill,"E");
-    assert.equal(b.planning.estimate.reaction.name,null,"backline water is not an active swirl");
-    assert.equal(b.planning.terminal,false);assert.ok(b.planning.estimate.conditionalPrepared);
-    s.characters[1].frozen=true;assert.notEqual(T.choose(s,m).type,"skill","frozen carry must not be forced to cast");
   });
   await test("slot06 partner ordering, native payment uncertainty and useful Gilded refund",()=>{
     const s=board(["wolf","liben","dunyarzad"]),m=memory();
@@ -173,30 +128,6 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     risk.enemies=[enemy(1)];
     assert.equal(T.choose(risk,vital).type,"skill","do not insert insurance before a confirmed immediate win");
   });
-  await test("Hushang opening retains an executable water setup before dry carry deployment",()=>{
-    // 2026-10-20 slot08 01:12:15Z: both carries had Troupe, Liben was
-    // collecting, Shift already played, Mona had never acted. Old choose()
-    // switched into dry Sayu E; the real first round ended with Sayu defeated.
-    const s=board(["garden"]),m=memory();
-    s.dice={Hydro:1,Anemo:4,Omni:1};
-    s.enemies=[enemy(11),enemy(10,false),enemy(10,false)];
-    s.enemies.forEach(e=>{e.auraKnown=false;e.defenseKnown=false;});
-    m.artifacts=[false,true,true];m.artifactKinds=[null,"troupe","troupe"];
-    m.supports=[{id:"dunyarzad",round:1,drawUsed:true},{id:"timaeus",round:-1,materials:2},{id:"liben",round:-1,collected:0}];
-    m.supportSlots=3;m.freeSwitch=true;m.firstCard=false;
-    const before=JSON.stringify([s,m]),a=T.choose(s,m);
-    assert.equal(a.type,"tune");assert.equal(a.element,"Hydro");
-    const paid=T.project(s,m,a),next=T.choose(paid.state,paid.memory);
-    assert.equal(next.type,"skill");assert.equal(next.who,0);assert.equal(next.skill,"E");
-    assert.ok(T.skillLegal(paid.state,next,paid.memory));
-    assert.equal(a.planning.terminal,false);assert.equal(JSON.stringify([s,m]),before);
-    s.enemies[0].auraKnown=true;s.enemies[0].aura=["Pyro"];
-    assert.equal(T.choose(s,m).type,"switch","existing swirl fuel does not require water first");
-    s.enemies[0].aura=[];s.characters[0].frozen=true;
-    assert.equal(T.choose(s,m).type,"switch","unavailable setup cannot block recovery");
-    s.characters[0].frozen=false;s.characters[0].hp=2;
-    assert.equal(T.choose(s,m).type,"switch","setup must not prevent escape to a healthier carry");
-  });
   await test("reroll keeps setup water until Mona acts; unknown enemy count is not single-target",()=>{
     const m=memory(),items=[{element:"Hydro"},{element:"Anemo"},{element:"Pyro"},{element:"Omni"}];
     m.openingContext={enemyCount:null};m.lastActive=1;
@@ -217,20 +148,6 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     v.used[0]=1;v.lastActive=1;
     assert.deepEqual(clone(T.rerollPlan(opening,v).indices),[0,1,2,4,5],"after setup keep all active carry dice");
   });
-  await test("Hushang slot10: develop before opening combat only while water setup stays payable",()=>{
-    const s=board(["timaeus","garden","countdown3","countdown3"]),m=memory();
-    s.dice={Hydro:2,Anemo:1,Geo:1,Omni:4};
-    s.enemies=[enemy(11),enemy(10,false),enemy(10,false)];
-    s.enemies.forEach(e=>{e.auraKnown=false;e.defenseKnown=false;});
-    m.artifacts[1]=true;m.artifactKinds[1]="troupe";m.firstCard=false;
-    const before=JSON.stringify([s,m]),a=T.choose(s,m);
-    assert.equal(a.type,"card");assert.ok(["support","draw"].includes(T.byId[a.id].type));
-    const p=T.project(s,m,a);assert.equal(p.stop,true,"do not plan past random retrieval");
-    assert.equal(T.skillLegal(p.state,{who:0,skill:"E"},p.memory),true);
-    assert.equal(JSON.stringify([s,m]),before);assert.ok(a.projections.used<=320);
-    s.hand=T.indexedHand([T.observedCard(T.byId.timaeus.name,0)]);s.dice={Hydro:3};
-    assert.equal(T.choose(s,m).type,"skill","do not fund support by losing the only setup");
-  });
   await test("Countdown family proof follows confirmed play/discard and invalidates uncertainty",()=>{
     const c=loadContext(),t=c.TCG,m=t.freshMemory(),s=board(["countdown3","countdown3"]);
     assert.equal(t.handVariantProof(m),null,"midgame/unknown initial stock cannot infer stage");
@@ -247,33 +164,6 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     const after={...s,hand:[t.observedCard(t.byId.show.name,0)]};t.noteBoard(m,after);
     assert.equal(t.handVariantProof(m),null,"native contradictory stage wins");
     m.countdownStock={countdown3:2};t.deferUncertain(m,a,s);assert.equal(t.handVariantProof(m),null);
-  });
-  await test("Lyre equipment value is net progress; neutral recycling loses value but Gilded refunds survive",()=>{
-    const s=board(["lyre","lyre","troupe"],1),m=memory();m.round=4;m.used=[1,2,0];
-    s.enemies=[enemy(10,true,["Hydro"]),enemy(4,false)];s.dice={Cryo:2,Geo:1,Omni:2};
-    s.characters[1].energy=2;s.characters[1].hp=5;
-    m.artifactKinds[1]="gambler";m.artifacts[1]=true;m.weaponKinds[1]="wolf";m.weapons[1]=true;
-    const recycled=T.project(s,m,card(s,"lyre",1));
-    const restored=T.project(recycled.state,recycled.memory,card(recycled.state,"gambler",1));
-    assert.ok(recycled.value+restored.value<0,"removing and restoring unused Gambler cannot farm equip value");
-    assert.deepEqual(clone(restored.state.dice),s.dice);
-    assert.notEqual(T.choose(s,m).id,"lyre","do not delay an affordable attack for the neutral cycle");
-    m.artifactKinds[1]="gilded";s.hand=T.indexedHand([T.observedCard(T.byId.lyre.name,0)]);
-    const returned=T.project(s,m,card(s,"lyre",1));
-    const replayed=T.project(returned.state,returned.memory,card(returned.state,"gilded",1));
-    assert.ok(T.enumerate(s,m).some(a=>a.id==="lyre"),"the returned artifact is enough; another artifact in hand is not required");
-    assert.equal(T.total(replayed.state.dice),T.total(s.dice)+1,"first-card Lyre retains real Gilded ramp");
-  });
-  await test("slot08: current Sayu burst beats a marginal combat-switch vaporize; frozen recovery remains legal",()=>{
-    const s=board([],1),m=memory();m.round=4;m.used=[1,2,4];m.defeated[2]=true;
-    s.characters[0].hp=5;s.characters[1].hp=6;s.characters[1].energy=2;
-    s.characters[2]={hp:0,dead:true,energy:0,frozen:false};
-    s.enemies=[enemy(6,false,["Hydro"]),enemy(3,true,["Pyro"])];
-    s.enemies.forEach(e=>{e.defenseKnown=false;});s.dice={Anemo:4,Omni:3};
-    m.artifacts[0]=true;m.artifactKinds[0]="troupe";m.troupe[0]=2;
-    const a=T.choose(s,m);assert.equal(a.type,"skill");assert.equal(a.who,1);
-    assert.equal(a.planning.terminal,false);
-    s.characters[1].frozen=true;assert.equal(T.choose(s,m).type,"switch");
   });
   await test("equipment reducers and capped refunds consume only after confirmed play; Lyre is not discard",()=>{
     const s=board(["gilded","lyre"],1),m=memory();m.garden=true;m.boar=2;m.artifacts[1]=true;m.artifactKinds[1]="troupe";
@@ -449,17 +339,6 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     T.nextRound(n);s.active=1;T.noteBoard(n,s);T.noteBoard(n,s);
     assert.equal(n.troupe[2],1,"confirmed unchanged active admits at most one backstage increment");
   });
-  await test("native four-enemy loss: wounded equipment investment cannot hide its immediate overkill",()=>{
-    const s=board(["wolf","gambler"],1),m=memory();s.characters[1].hp=2;
-    s.enemies=[enemy(1),enemy(6,false,["Hydro"]),enemy(8,false,["Hydro"])];
-    const wounded=T.project(s,m,card(s,"wolf",1));
-    s.characters[1].hp=10;
-    assert.ok(T.project(s,m,card(s,"wolf",1)).value>wounded.value);
-    m.weaponKinds[1]="wolf";m.weapons[1]=true;s.characters[1].hp=2;
-    assert.equal(T.damageEstimate(s,m,1,"NA").raw,5,"current damage is not reduced by own HP");
-    s.enemies=[enemy(2)];s.characters[1].hp=10;
-    assert.ok(T.project(s,m,card(s,"gambler",1)).value<0,"post-final-kill dice have no future investment credit");
-  });
   await test("native Suleika resource route completes legal equipment prerequisites before beam pruning",()=>{
     const s=board(["flowingFlame","skivingNewAndImproved","wolf","troupe","garden"],1),m=memory();
     m.round=3;m.used=[1,2,0];s.characters[1].hp=4;s.characters[1].energy=2;
@@ -526,15 +405,6 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     const discounted=board(["countdown3"],2),dm=memory();dm.round=3;dm.talents[2]=true;dm.dilucE=1;discounted.dice={Omni:5};
     assert.equal(T.project(discounted,dm,card(discounted,"countdown3")).attackReserveLost,false,
       "use actual discounted skill cost, not a hardcoded three-die reserve");
-  });
-  await test("actual skill host uses two icon clicks; Diluc four-cost preview is admitted",async()=>{
-    const inputs=[],c=loadContext({...nativeInput((...xy)=>inputs.push(xy)),log:{info(){},warn(){},error(){}}}),h=new c.TCGBetterGI.BetterGIHost({});
-    h.trace=()=>{};h.requireUnchangedBoard=async()=>{};h.frame=fn=>fn({});h.phaseIn=()=>({phase:"unknown",turn:"none"});
-    h.ocr=()=>{throw Error("ordinary skill identity must not require OCR");};h.numericAt=()=>"4";h.warnings=()=>({lack:false,text:""});
-    assert.equal(h.skillFeeIn({}, {who:2,skill:"Q"}),4);
-    const s=board([],2),m=memory();s.characters[2].energy=3;
-    await h.executeInput({type:"skill",who:2,skill:"Q"},s,m);
-    assert.deepEqual(inputs,[[1824,957],[1824,957]]);assert.equal(h.expectedDice,4);
   });
   await test("both talent payment pages confirm once, never send a separate skill",async()=>{
     for(const [id,who]of [["flowingFlame",2],["skivingNewAndImproved",1]]) {

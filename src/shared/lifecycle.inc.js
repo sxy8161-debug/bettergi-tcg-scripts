@@ -132,6 +132,7 @@ async enter() {
 finishOpening() {
       const accepted = this.openingFlow.enterBoard(this.memory);
       if (!accepted) return;
+      T.initializeOpening?.(this.memory);
       if (accepted.roundSeeded)
         this.host.trace("round", {
           round: this.memory.round,
@@ -196,7 +197,7 @@ function playerOptions(settings = {}) {
   const options={enemyCount:3,maxMinutes:Number(supplied.maxMinutes||defaultMinutes),
     mulligan:TCG.openingSetting(supplied.mulligan),
     actionEntry:supplied.actionEntry||"禁止从行动页启动"};
-  if(![10,15,20,defaultMinutes].includes(options.maxMinutes)||
+  if(![10,15,20,30,defaultMinutes].includes(options.maxMinutes)||
     !["全部保留","优先装备与启动牌"].includes(options.mulligan)||
     !["禁止从行动页启动","确认新开局未行动"].includes(options.actionEntry))throw new Error("设置值无效");
   return options;
@@ -253,7 +254,7 @@ async recoverBeforeConfirmation(error, action, state, previousBudget) {
         this.notice("resync", "[调整] 牌面发生变化，重新同步后继续。");
           let refreshed;
           try { refreshed = await host.observe(true, error.code === "TCG_HAND_REFRESH"
-            ? { mode: "full" } : { mode: "unchanged", hand: state.hand });
+            ? { mode: "full", ...host.handContinuation } : { mode: "unchanged", hand: state.hand });
           } catch (e) {
             await this.defer(e, [...BOARD_RETRIES, "TCG_HAND_RETRY"], "execution-resync-deferred", "牌桌重新同步超时（60秒）");
             return;
@@ -274,10 +275,13 @@ async recoverRejectedInput(error, action, state, previousBudget) {
       this.readyState = null;
       Object.assign(host, previousBudget);
       if (error.code === "TCG_INPUT_REJECTED") T.rejectAction(this.memory, action, state);
-      const after = await this.awaitObservation({ mode: "full",
+      let after = await this.awaitObservation({ mode: "full",
         ...(error.code === "TCG_INPUT_REJECTED" ? { rejectedHand: state.hand } : {}) });
       if (tune && error.code === "TCG_TUNE_UNCONFIRMED") {
         if (T.verifyResynchronized(action, state, after, false)) {
+          // The same native effect predicate has confirmed recovery. Carry
+          // that fact to commit, without changing the raw observed frame.
+          after = { ...after, confirmed: true };
           T.commit(this.memory, action, state, after);
           host.trace("confirmed", { action, after, memory: this.memory, source: "tuning-recovery" });
           log.info("[调和] 已核实手牌消耗与元素骰变化，继续后续行动。");
@@ -508,13 +512,13 @@ async act() {
           log.warn("动作效果未确认，已重新同步，不重复输入。");
         }
         T.noteBoard(memory, after);
+        host.handContinuation = after.handContinuation || null;
         const refreshHand = after.confirmed && after.handRefreshRequired === true;
         if (refreshHand) {
           // Consumption can precede card insertion (native draw 3 -> 2). Do not
           // plan from that partial hand. This also covers non-draw categories
-          // declared full by handPlan. No predicted count or replayed input.
-          host.invalidateHand("consumed-hand-changing-card-needs-fresh-hand");
-          host.emptyHandProven = false;
+          // explicitly declaring delayed insertion. No predicted count or replayed input.
+          host.invalidateHand("consumed-hand-changing-card-needs-fresh-hand", host.handContinuation);
           host.trace("draw-hand-refresh-required", { id: action.id, beforeCount: state.hand.length,
             observedCount: after.hand.length, handPlanMode: "full", consumptionConfirmed: true, effectsComplete: false });
         }
@@ -524,10 +528,10 @@ async act() {
           this.readyState = null;
           host.boardReady = false; host.lastObservedAt = 0; host.lastObservedRevision = -1;
           host.preparedHandInput = null;
-          if (after.quietObservationRequired) host.autoRisk = true;
+          if (after.freshObservationRequired) host.autoRisk = true;
           host.trace("post-confirmation-refresh-required", { action, handRefresh: refreshHand,
             combatWithoutObservedTransition: after.freshObservationRequired === true,
-            quietObservationRequired: after.quietObservationRequired === true,
+            quietObservationRequired: after.freshObservationRequired === true,
             consumptionConfirmed: after.confirmed, effectsComplete: false });
         } else if (after.phase === "board" && after.turn === "user" && T.legalState(after)) this.readyState = after;
         this.actions++; this.progress();

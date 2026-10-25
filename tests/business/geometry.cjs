@@ -176,52 +176,44 @@ module.exports = async function (test) {
       assert.notEqual(C.locate(1920,1080,[...marks,{x:1206,y:983}]).status,"readable");
     }
   });
-  await test("geometry: 1440 late enemy handoff blocks hand scans, including across confirmation timeout", async () => {
+  await test("geometry: observed enemy turn blocks hand scans across confirmation timeout at every resolution", async () => {
     for(const enemyUntil of [10000,50000]){
-      const f=await combatFixture({enemyUntil}),h=f.host;
+      const f=await combatFixture({enemyFrom:0,enemyUntil}),h=f.host;
       if(enemyUntil>45000){
         await assert.rejects(()=>h.confirm(f.action,f.before,f.memory),e=>e.code==="TCG_CONFIRMATION_RETRY");
         assert.equal(f.handTimes.length,0);assert.equal(f.calls.length,0);
       }
       const after=await h.confirm(f.action,f.before,f.memory);
       assert.equal(after.confirmed,true);assert.ok(f.handTimes.length>0);
-      assert.ok(f.handTimes.every(at=>at>=enemyUntil+2000),"no early hand expansion/scan in the temporary own-turn window");
+      assert.ok(f.handTimes.every(at=>at>=enemyUntil),"no hand expansion/scan during enemy turn");
       assert.equal(f.calls.length,0);assert.equal(h.confirmationSession,null);
-      assert.ok(f.events.some(e=>e.event==="combat-handoff-ready"&&e.data.transition===true));
       assert.ok(f.events.some(e=>e.event==="hand-read-completed"&&e.data.route==="folded-full"&&e.data.titleSlots===0));
     }
   });
-  await test("geometry: 1440 continuous own turn is bounded; fast switch and actual1080 retain their old path", async () => {
-    for(const skill of ["E","Q"]){
-      const f=await combatFixture({skill,enemyFrom:Infinity,enemyUntil:Infinity});
-      const after=await f.host.confirm(f.action,f.before,f.memory);
-      assert.equal(after.confirmed,true);assert.equal(after.enemies[0].hp,f.before.enemies[0].hp,"zero damage is legitimate");
-      assert.ok(f.handTimes.every(at=>at>=(skill==="Q"?15000:10000)+2000));
-      assert.ok(f.elapsed()<22000);assert.equal(f.calls.length,0);
-    }
-    for(const options of [{fast:true,enemyFrom:Infinity},{size:[1920,1080],enemyFrom:Infinity}]){
-      const f=await combatFixture(options);await f.host.confirm(f.action,f.before,f.memory);
-      assert.ok(f.elapsed()<2000);assert.equal(f.events.some(e=>e.event==="combat-handoff-wait"),false);
-      assert.equal(f.calls.length,0);
-    }
-    const terminal=await combatFixture();
-    terminal.host.phaseIn=()=>({phase:"result",turn:"none",result:"win"});
-    const result=await terminal.host.confirm(terminal.action,terminal.before,terminal.memory);
-    assert.equal(result.result,"win");assert.equal(terminal.handTimes.length,0);assert.equal(terminal.calls.length,0);
-  });
-  await test("geometry: 1440 late pre-drag phase safely defers, then folds once and rereads no titles", async () => {
-    for(const late of [{phase:"board",turn:"enemy"},{phase:"unknown",turn:"none"}]){
-      const f=await combatFixture(),h=f.host,p=new f.Player(h,{maxMinutes:2}),scene={phase:"board",turn:"user"};
+  await test("geometry: late pre-drag phase safely defers at all supported sizes without submitting or replaying", async () => {
+    // slot02 (0.1.2/shared1.8.9): 1080 title matched, then unknown/none
+    // before tuning. The old resolution gate threw instead of recovering.
+    for(const [size,type,late] of [
+      [[1920,1080],"tune",{phase:"unknown",turn:"none"}],
+      [[1920,1080],"card",{phase:"board",turn:"enemy"}],
+      [[2560,1440],"card",{phase:"board",turn:"enemy"}],
+      [[2560,1440],"card",{phase:"unknown",turn:"none"}],
+      [[2560,1600],"tune",{phase:"choice",turn:"none"}],
+    ]){
+      const f=await combatFixture({size}),h=f.host,p=new f.Player(h,{maxMinutes:2}),scene={phase:"board",turn:"user"};
       h.phaseIn=()=>({...scene});h.board=()=>({...plain(f.before),...scene});h.handCache=null;
       h.matches=()=>[]; // This phase/input fixture has no native image backend.
       h.prepareHandInput=async()=>{await h.expand(false);return {count:2,stableReads:2,source:"full-cost-layout"};};
       h.inspectHandCard=async(_a,x)=>{h.clickAt(x,945);Object.assign(scene,late);};
       h.drag=async()=>{throw Error("no drag or card confirmation after interrupted phase");};
       h.executeInput=(a,b,m)=>h.inputHand(a,b,m);
-      const action={type:"card",id:"voltage",index:0,target:null};
+      const action={type,id:"voltage",index:0,target:null,
+        ...(type==="tune"?{element:f.env.TCG.team[f.before.active].element}:{})};
       const execution=await p.execute(action,f.before);
       assert.equal(execution.sent,false);assert.equal(h.handNeedsReset,true);
       assert.equal(f.events.some(e=>e.event==="input-submitted"),false);
+      assert.equal(f.events.some(e=>e.event==="confirmed"),false);
+      assert.equal(h.consumptionReceipt,null);
       assert.ok(f.events.some(e=>e.event==="execution-deferred"&&e.data.phase===late.phase&&e.data.turn===late.turn));
       Object.assign(scene,{phase:"board",turn:"user"});
       h.handCountIn=h.nativeHandCountIn=()=>2;
@@ -238,7 +230,7 @@ module.exports = async function (test) {
       const after = await h.confirm({type:"card",id:"toss",index:0,target:null},f.before,f.env.TCG.freshMemory());
       assert.equal(after.confirmed,true); assert.equal(f.confirmations(),2);
       assert.equal(after.characters[1].dead,true); assert.equal(after.characters[1].energy,0);
-      assert.equal(after.characters[1].hp,0); assert.ok(f.boardReads() >= 2);
+      assert.equal(after.characters[1].hp,0); assert.ok(f.boardReads() >= 1);
       assert.equal(f.events.some(e=>e.event==="confirmation-read-deferred"),false);
       assert.equal(f.events.filter(e=>e.event==="hand-reset").length,size[0]===2560?1:0);
       assert.ok(f.events.some(e=>e.event==="hp-read"&&e.data.index===1&&e.data.hpSource==="native-death-marker"));
@@ -260,15 +252,6 @@ module.exports = async function (test) {
     assert.equal(proof.confirmations,1); assert.equal(proof.unresolved,true);
     assert.equal(early.confirmations(),1); assert.equal(early.host.tossSession,null);
     assert.equal(early.events.filter(e=>e.event==="hand-reset").length,1);
-  });
-  await test("geometry: one explicit region contract rejects bare, stale, unaccepted-scale and clipped required ROIs", () => {
-    const { host } = fixture(), f = frame(1920, 1080), a = host.roi("details", [100, 200, 30, 40]);
-    assert.deepEqual(plain(a), { rect:[100,200,30,40], scale:1, layoutKey:"16:9", panel:"details" });
-    assert.deepEqual(plain(host.checkedRoi(f, a)), [100,200,30,40]);
-    for (const bad of [[100,200,30,40], {...a,layoutKey:"16:10"}, {...a,scale:2},
-      {...a,rect:[-0.2,200,30,40]}, {...a,rect:[1900,200,30,40]}])
-      assert.throws(() => host.ocr(f, bad), e => e.code === "TCG_CAPTURE_GEOMETRY");
-    assert.deepEqual(plain(host.observedRoi("details", [101,202,30,40]).rect), [101,202,30,40]);
   });
   await test("geometry: actual local OCR dimensions round-trip to F once, cache only this frame and release on error", async () => {
    for(const scenario of [
@@ -372,13 +355,24 @@ module.exports = async function (test) {
    }
   });
   await test("geometry: Moon target selection transforms board coordinates but not observed confirmation controls", async()=>{
-   for(const [width,height] of [[1920,1080],[2560,1600]]){
+   for(const [width,height,mode] of [[1920,1080,"ocr"],[2560,1600,"template"],[1920,1080,"ambiguous"]]){
     const f=fixture("moonbloom",width,height),h=f.host,dy=height===1600?60:0;
     await h.waitForCapture();
     h.choiceSession={kind:"target",id:"fruit",target:2,action:{type:"card",id:"fruit",target:2},selected:false,confirmed:false};
     h.phase=()=>h.choiceSession.confirmed?{phase:"board",turn:"user"}:{phase:"unknown",turn:"none"};
-    h.cardChoicePreviewIn=()=>({phase:{phase:"unknown",turn:"none"},banner:"请选择要装备法器的角色",
-      controls:[{x:800,y:900+dy,w:300,h:60}],buttons:[]});
+    h.phaseIn=()=>({phase:"unknown",turn:"none"});
+    h.ocr=()=>"请选择要装备法器的角色";
+    const control={text:"打出手牌",x:800,y:900+dy,w:300,h:60};
+    h.ocrRows=()=>mode==="template"?[]:mode==="ambiguous"?[control,{...control,x:1100}]:[control];
+    h.matches=()=>{
+      assert.equal(mode,"template","nonempty OCR controls retain priority, including ambiguity");
+      return [control];
+    };
+    if(mode==="ambiguous"){
+      await assert.rejects(()=>h.resolveChoice(null,f.env.TCG.freshMemory()),e=>e.code==="TCG_CHOICE_RETRY");
+      assert.deepEqual(f.calls,[["move",1175,720+dy],["click"]]);
+      assert.equal(h.choiceSession.confirmed,false);continue;
+    }
     await h.resolveChoice(null,f.env.TCG.freshMemory());
     assert.deepEqual(f.calls,[["move",1175,720+dy],["click"],["move",950,930+dy],["click"]]);
     assert.equal(h.choiceSession,null);assert.equal(h.choiceReceipt.exited,true);

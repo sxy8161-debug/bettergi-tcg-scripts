@@ -288,7 +288,7 @@ board(actionOnly = false, pickTransition = false) {
         const enemies=this.enemiesIn(f);
         const normalHpReadable=this.precisionBoard ? this.normalHpProfileIn(f,characters,enemies) : true;
         return { ...phase, normalHpReadable, pickSelection:phase.phase==="pick"?this.pickSelectionIn(f):null, characters, active: actives.length === 1 ? actives[0] : null,
-          enemies, ...this.boardExtrasIn(f,phase),
+          enemies, ...this.boardExtrasIn(f,phase,actives.length === 1 ? actives[0] : null),
           // Observation truth is independent of the predicted action budget.
           dice: dice.dice, diceKnown: phase.phase === "board" && (TCG.total(dice.dice) > 0 || badgeCount === 0),
           diceObservation: { badge: badgeCount, templates: TCG.total(dice.dice) }, hand: null };
@@ -297,11 +297,12 @@ board(actionOnly = false, pickTransition = false) {
 // @endfragment tcg-ui.board
 
 // @fragment tcg-ui.boardDifferences
-function boardDifferences(before, after) {
+function boardDifferences(before, after, details = false) {
     const fields={active:s=>s.active,dice:s=>TCG.diceOrder.map(e=>s.dice?.[e]||0),
       own:s=>s.characters,enemy:s=>s.enemies,quicken:s=>s.quicken||null,support:s=>s.supportCounts||null,
-      eye:s=>s.eye||null,dendroCore:s=>s.dendroCore||null};
-    return Object.entries(fields).filter(([,read])=>JSON.stringify(read(before))!==JSON.stringify(read(after))).map(([name])=>name);
+      eye:s=>s.eye||null,dendroCore:s=>s.dendroCore||null,summons:s=>s.summonLayout||null};
+    const changed=Object.entries(fields).filter(([,read])=>JSON.stringify(read(before))!==JSON.stringify(read(after)));
+    return details ? Object.fromEntries(changed.map(([name,read])=>[name,{before:read(before),after:read(after)}])) : changed.map(([name])=>name);
   }
 // @endfragment tcg-ui.boardDifferences
 
@@ -328,6 +329,7 @@ characterIn(f, who, enemy = false, enemyLayoutCount = 3, readStatus = false) {
         ? 99
         : TCG.team[who].maxHp +
           (this.memory?.extraMaxHp?.[who] || 0) +
+          (this.pendingMaxHpAllowance?.(who) || 0) +
           (this.soupReceipt?.effect === "maxhp" && this.soupReceipt.exited === true &&
             this.soupReceipt.origin === this.confirmationSession?.key &&
             this.confirmationSession?.plan?.action?.target === who &&

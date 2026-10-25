@@ -72,7 +72,8 @@ class OpeningFlow {
 
 // @fragment tcg-rules.actionKey
 function actionKey(action) {
-    return action.type + ":" + (action.id || (["skill","probe"].includes(action.type) ? action.who + ":" + action.skill : action.target));
+    return action.type + ":" + (action.id || (["skill","probe"].includes(action.type) ? action.who + ":" + action.skill : action.target)) +
+      (action.summonIndex != null ? ":summon:" + action.summonIndex + ":" + action.summonName : "");
   }
 // @endfragment tcg-rules.actionKey
 
@@ -138,7 +139,9 @@ function cardCountDecreased(before, after, id) {
 // @fragment tcg-rules.boardKey
 function boardKey(s) {
     return JSON.stringify([s.active,diceOrder.map(e=>s.dice?.[e]||0),s.characters,
-      (s.hand||[]).map(h=>h.id),s.enemies,s.quicken||null,s.supportCounts||null,s.eye||null,s.dendroCore||null]);
+      (s.hand||[]).map(h=>h.id),s.enemies,s.quicken||null,s.supportCounts||null,s.eye||null,s.dendroCore||null,
+      ...(s.summonLayout ? [s.summonLayout] : []),
+      ...(s.skillFees ? [s.skillFees] : [])]);
   }
 // @endfragment tcg-rules.boardKey
 
@@ -260,7 +263,8 @@ function refusalScope(s, action, m) {
       conditions: s ? JSON.stringify([cost ? Object.keys(cost).sort().map(k => [k,cost[k]]) : null,
         diceOrder.map(e => s.dice?.[e] || 0), actor?.frozen, actor?.dead,
         a.skill === "Q" ? actor?.energy : null, target && [target.hp,target.dead,target.frozen],
-        card ? handInstanceFacts(card) : null]) : null };
+        card ? handInstanceFacts(card) : null,
+        ...(a.summonIndex != null ? [s.summons?.find(x => x.index === a.summonIndex) || null] : [])]) : null };
   }
 function blockAction(m, action, before, uncertain = false) {
     const key = actionKey(action), scope = refusalScope(before, action, m);

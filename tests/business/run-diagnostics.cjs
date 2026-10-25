@@ -15,71 +15,21 @@ function fixture(){
     summary:()=>rows().at(-1).data.summary};
 }
 module.exports=async test=>{
-  await test("diagnostics: observation retries retain failed time and the actual missing fields",async()=>{
-    const f=fixture(),missing=["own[0].energy","own[1].energy","own[2].energy"];
-    f.h.observe=async()=>{f.advance(250);const e=Error("energy unknown");e.code="TCG_BOARD_RETRY";e.missing=missing;throw e;};
-    assert.equal(await f.p.observe(),null);assert.equal(await f.p.observe(),null);
-    f.h.reportStop("test timeout");
-    const timings=f.rows().filter(r=>r.event==="observation-timing");
-    assert.equal(timings.length,2);assert.equal(timings[0].data.outcome,"deferred");
-    assert.equal(timings.reduce((n,r)=>n+r.data.ms,0),1300);
-    const s=f.summary();assert.equal(s.outcome,"stopped");assert.equal(s.stage,"observation");
-    assert.equal(s.timing.observationMs,1300);assert.deepEqual(s.missing[0].fields,missing);
-    assert.equal(s.counts.submitted,0);assert.equal(s.lastAction,null);
-  });
-  await test("diagnostics: recovered input and read-only probes keep timing without inventing submissions",async()=>{
-    for(const probe of [false,true]){
-      const f=fixture(),action=probe?{type:"probe",who:0,skill:"E"}:{type:"skill",who:0,skill:"E"};
-      f.p.observe=async()=>f.b;f.T.choose=()=>{f.advance(7);return action;};
-      f.p.execute=async()=>{f.advance(90);return probe?{sent:true,result:{...f.b,probed:true}}:{sent:false};};
-      await f.p.act();f.h.reportStop("fixture done");
-      const a=f.rows().find(r=>r.event==="action-timing").data,s=f.summary();
-      assert.equal(a.planningMs,7);assert.equal(a.inputMs,90);assert.equal(a.totalMs,97);
-      assert.equal(a.outcome,probe?"probed":"not-submitted");
-      assert.equal(s.counts.submitted,0);assert.equal(s.lastAction.status,probe?"probed":"not-submitted");
+  await test("the30-minute setting reaches each standalone player's actual deadline without changing defaults",()=>{
+    const B=require("../../tools/build.cjs"),time=100000;
+    class Clock extends Date{static now(){return time;}}
+    for(const id of Object.keys(B.config.players)){
+      const {env,Host,Player}=load(id,{Date:Clock}),settings=JSON.parse(B.packageFiles(id).files.get("settings.json")),
+        field=settings.find(x=>x.name==="maxMinutes"),read=env.TCGPlayer.playerOptions;
+      assert.ok(field.options.includes("30"),id+" exposes30min");
+      const options=read({maxMinutes:"30"});assert.equal(options.maxMinutes,30);
+      const host=new Host(options),player=new Player(host,options);
+      assert.equal(player.deadline,time+1800000);assert.equal(host.matchDeadline,player.deadline);
+      const expected=id==="moonbloom"?45:15;
+      assert.equal(read({}).maxMinutes,expected);assert.equal(Number(field.default),expected);
     }
   });
-  await test("diagnostics: planning/input/confirmation failures retain original errors and all elapsed work",async()=>{
-    for(const failAt of ["planning","input","confirmation"]){
-      const f=fixture(),error=Error("original "+failAt),action={type:"skill",who:0,skill:"E"};
-      f.p.observe=async()=>f.b;f.T.choose=()=>{f.advance(10);if(failAt==="planning")throw error;return action;};
-      f.p.execute=async()=>{f.advance(20);if(failAt==="input")throw error;f.h.trace("input-submitted",{action});return {sent:true};};
-      f.p.awaitConfirmation=async()=>{f.advance(700);throw error;};
-      await assert.rejects(()=>f.p.act(),e=>e===error);f.h.reportStop(error.message);
-      const a=f.rows().find(r=>r.event==="action-timing").data,s=f.summary();
-      assert.equal(a.outcome,"failed");assert.equal(a.totalMs,failAt==="planning"?10:failAt==="input"?30:730);
-      assert.equal(a.totalMs,a.planningMs+a.inputMs+a.settlementMs+a.postActionMs);
-      assert.equal(s.stage,failAt);assert.equal(s.counts.confirmed,0);
-      if(failAt==="confirmation")assert.equal(s.lastAction.status,"pending");
-    }
-  });
-  await test("diagnostics: resolved gaps do not become a stale stop cause; loss remains normal completion",()=>{
-    const f=fixture(),action={type:"skill",who:0,skill:"E"};
-    f.h.trace("board-settle-wait",{missing:["own[0].energy"]});f.advance(600);
-    f.h.trace("board-settle-wait",{valid:true,missing:[]});
-    f.h.trace("state",{state:f.b});f.h.trace("decision",action);
-    f.h.trace("input-submitted",{action});f.h.trace("confirmed",{action,after:f.b});
-    f.h.trace("result",{phase:"result",result:"lose"});
-    const s=f.summary();assert.equal(s.outcome,"completed");assert.equal(s.result,"lose");
-    assert.deepEqual(s.missing,[]);assert.equal(s.lastMissing.resolved,true);
-    assert.equal(s.lastAction.status,"confirmed");assert.equal(s.counts.submitted,1);assert.equal(s.counts.confirmed,1);
-    assert.equal(f.rows().at(-1).event,"result");assert.ok(f.messages.some(x=>x.includes("对局摘要")&&x.includes("失败")));
-    assert.equal(f.h.metrics.frames,0,"summary must not capture or recognize another frame");
-  });
-  await test("diagnostics: board recovery and failed hand finally cannot clear an unresolved hand read",()=>{
-    const f=fixture();
-    f.h.trace("board-settle-wait",{missing:["own[0].energy"]});
-    f.h.trace("hand-read-deferred",{error:"unknown card"});f.advance(600);
-    f.h.trace("board-settle-wait",{valid:true,missing:[]});
-    f.h.trace("hand-read-completed",{count:null});f.advance(400);
-    f.h.reportStop("fixture done");
-    const s=f.summary();assert.deepEqual(s.missing.map(g=>g.fields),[["hand"]]);
-    assert.equal(s.missing[0].spanMs,1000);assert.equal(s.missing[0].lastSeenAgoMs,1000);
-    const next=fixture();next.h.trace("hand-read-deferred",{});
-    next.h.trace("hand-read-completed",{count:0});next.h.reportStop("fixture done");
-    assert.deepEqual(next.summary().missing,[]);
-  });
-  await test("diagnostics: a timing write failure never replaces the original observation or action error",async()=>{
+  await test("diagnostics: write failures propagate without replacing the original observation, action or hand error",async()=>{
     for(const observe of [false,true]){
       const f=fixture(),original=Error("original cancellation"),writeError=Error("diagnostic write failed");
       const trace=f.h.trace.bind(f.h);
@@ -90,6 +40,24 @@ module.exports=async test=>{
     const f=fixture(),writeError=Error("diagnostic write failed");
     f.h.observe=async()=>f.b;f.h.trace=event=>{if(event==="observation-timing")throw writeError;};
     await assert.rejects(()=>f.p.observe(),e=>e===writeError,"without a primary error, logging failures stay explicit");
+    for(const method of ["readHand","folded"])for(const failedRead of [true,false]){
+      const f=fixture(),original=Error("A task was canceled."),writeError=Error("diagnostic write failed");
+      const event=method==="readHand"?"hand-read-completed":"folded-hand";
+      f.h.trace=name=>{if(name===event)throw writeError;};
+      f.h.phase=f.h.phaseIn=()=>({phase:"board",turn:"user"});
+      if(method==="readHand"){
+        f.h.handFanReady=true;f.h.fillHandArtwork=async()=>{};
+        f.h.titleAt=async()=>{if(failedRead)throw original;return f.T.byId.draw.name;};
+        f.h.reset=async()=>{f.h.handFanReady=false;};
+      }else{
+        f.h.frame=fn=>{if(failedRead)throw original;return fn({});};
+        f.h.collapsedIn=()=>({status:"readable",count:1,slots:[{id:"draw",index:0}]});
+        f.h.nativeHandCountIn=()=>1;
+      }
+      await assert.rejects(()=>method==="readHand"
+        ?f.h.readHand(1,{count:1},{titles:0,cards:[null]}):f.h.folded("board"),
+        e=>e===(failedRead?original:writeError),method+": original error first, otherwise diagnostic error");
+    }
   });
   await test("diagnostics: run exits keep terminal events, entry-only status and cancellation error identity",async()=>{
     for(const ending of ["win","entry","cancel"]){

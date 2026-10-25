@@ -1,0 +1,176 @@
+/* @include src/shared/host.inc.js */
+(function(root) {
+  "use strict";
+  const T=root.TCG,{charX,number}=root.TCGBetterGI;
+  function discardFacts(rows,statusRows,card) {
+    const text=rows.map(r=>T.norm(r.text)),status=statusRows.map(r=>T.norm(r.text)),
+      heading=status.findIndex(t=>t==="附着效果状态"||t==="附着状态"),
+      modifiers=status.filter(t=>/^(费用降低|费用增加|赋能|不可调和|无效化)/.test(t)),
+      unknown={source:"unknown",reduction:null,increase:null};
+    // The detail's card type and attachment region establish modifiers.
+    // Lair changes a talent's PAYMENT digit, not its printed discard cost.
+    const type=["talent","artifact","weapon"].includes(card.type)?"装备牌":
+      card.type==="support"?"支援牌":"事件牌";
+    if (heading<0 && (modifiers.length || !text.includes(type))) return unknown;
+    if (heading>=0 && !modifiers.length) return unknown;
+    const facts={source:"native",reduction:0,increase:0};
+    for (const t of heading<0?[]:status.slice(heading+1)) {
+      const match=/^(费用降低|费用增加)(?:层数)?(\d+)?$/.exec(t);
+      if (match) facts[match[1]==="费用降低"?"reduction":"increase"]=match[2]?Number(match[2]):null;
+      else if (/^费用降低/.test(t)) facts.reduction=null;
+      else if (/^费用增加/.test(t)) facts.increase=null;
+      if (t==="不可调和") facts.noTuning=true;
+      if (t==="无效化") facts.effectless=true;
+    }
+    return facts;
+  }
+  class ConsecratedHost extends root.TCGBetterGI.BetterGIHost {
+    constructor(options) {
+      super(options);
+      this.choiceReceipt=null;this.choiceDetails=[];this.discardDetail=null;this.feeSample=null;
+      this.choiceTargetBanners={
+        artifact:["请选择要装备圣遗物的角色","请选择一个角色装备圣遗物"],
+        food:["请选择一个角色食用料理"]};
+    }
+    /* @include src/shared/named-choice.inc.js */
+    pendingMaxHpAllowance() {
+      const s=this.confirmationSession,a=s?.plan?.action,b=s?.plan?.before;
+      // Reuse the shared HP bound hook. Targets may change during Q/passive
+      // healing, so every slot may receive up to the total growth. This is
+      // never written to extraMaxHp or used as actual HP by the strategy.
+      const pending=s?.submittedAt!=null && b && s.key===T.actionKey(a)+"/"+T.boardKey(b) ?
+        T.hpGrowthAllowance(a,b) : 0;
+      return (this.memory?.hpGrowthUpperBound||0)+pending;
+    }
+    choiceIn(f) {
+      const options=this.namedChoiceOptionsIn(f);if (!options) return null;
+      const ids=options.map(o=>o.id),recognized=ids.length===2 &&
+        ids.includes("sanctify") && ids.includes("disperse");
+      return {phase:"choice",turn:"none",choiceKind:recognized?"sand":"unknown",options,recognized,inspectable:false};
+    }
+    onChoiceExit() {} // The receipt is consumed by verify/commit, not by clicking.
+    async prepareHandObservation(count) {
+      this.discardDetail=null;this.feeSample=null;
+      if (!count) return;
+      // Reuse the shared row readers, not a title click per card. This sample
+      // belongs to this readHand transaction only; no cross-round fee cache.
+      this.feeSample=this.frame(f=>{
+        this.requireHandObservation(this.phaseIn(f),"discard-cost-row");
+        if (!this.handFanReady) {
+          const layout=this.collapsedLayoutIn(f);
+          return layout.status==="readable" && layout.count===count ? this.foldedHandCostsIn(f,layout) : null;
+        }
+        const sample=this.costHandIn(f,count);
+        return sample?{...sample,source:"native-expanded-cost-markers"}:null;
+      });
+    }
+    finishHandObservation(hand,scan={}) {
+      const observed=hand.map(h=>{
+        const current=this.cardWithFacts(h,null),prior=(scan.retainedHand||[]).filter(c=>c.id===h.id);
+        // A declared retained card keeps its proven facts through this action,
+        // not through a new round. New native prices win. Different duplicate
+        // facts cannot be assigned to a new slot just from the card name.
+        if (!prior.length || prior.length!==hand.filter(c=>c.id===h.id).length ||
+            prior.some(c=>JSON.stringify([c.currentCost,c.attachments])!==
+              JSON.stringify([prior[0].currentCost,prior[0].attachments])) ||
+            T.known(current.currentCost)&&T.known(prior[0].currentCost)&&current.currentCost!==prior[0].currentCost)
+          return current;
+        const old=prior[0];
+        return {...current,...(!T.known(current.currentCost)&&T.known(old.currentCost)?
+          {currentCost:old.currentCost,costSource:old.costSource}:{}),
+          ...(old.attachments?.source==="native"?{attachments:{...old.attachments}}:{})};
+      });
+      this.feeSample=null;
+      return observed;
+    }
+    readSelectedCardFacts(f,card,x) {
+      // No extra OCR during ordinary identity discovery or card input. Only a
+      // dependency probe requests these facts from its accepted title frame.
+      if (this.currentAction?.type!=="probe" || this.currentAction.scope!=="card") return;
+      const cost=this.selectedCardCostIn(f,x),attachments=card.type!=="talent" && cost!==null ?
+        {source:"unknown",reduction:null,increase:null} : discardFacts(
+        this.ocrRows(f,this.roi("details",[270,165,510,700])),
+        this.ocrRows(f,this.roi("details",[680,100,355,620])),card);
+      this.discardDetail={x,id:card.id,cost,attachments,revision:this.inputRevision};
+    }
+    cardWithFacts(h,x) {
+      const detail=this.discardDetail,valid=detail?.x===x&&detail.id===h.id&&detail.revision===this.inputRevision,
+        cost=valid?detail.cost:this.feeSample?.costs?.[h.index]??null;
+      return {...h,currentCost:cost,costSource:cost===null?"unknown":valid?"native-selected-card-cost":this.feeSample.source,
+        attachments:valid?detail.attachments:{source:"unknown",reduction:null,increase:null}};
+    }
+    async probeCard(a,before,m) {
+      if (a.requirement!=="discard-cost" || before.hand[a.dependency]?.id!=="block")
+        throw Error("手牌费用检视缺少能量块依赖来源");
+      const after={...before,hand:before.hand.slice(),probed:true,confirmed:false};
+      let request=T.nextDiscardProbe(after,m,a.dependency),last=null,reads=0;
+      while (request) {
+        const sourceCount=await this.prepareHandInput(after.hand.length,request.index,true),
+          x=this.handPoints(after.hand.length)[request.index],prior=after.hand[request.index];
+        this.discardDetail=null;
+        await this.inspectHandCard(request,x);
+        const observed=this.cardWithFacts(prior,x);after.hand[request.index]=observed;reads++;
+        if (T.discardCost(observed)===null) for (const key of [request.key,T.cardProbeKey(after,observed)])
+          if (!m.probeKeys.includes(key)) m.probeKeys.push(key);
+        // Partial success survives later missing details and ordinary recovery.
+        before.hand=after.hand;this.acceptHand(after.hand,"card-facts-probed");
+        this.trace("card-facts-probed",{id:request.id,index:request.index,currentCost:observed.currentCost,
+          attachments:observed.attachments,dependency:a.dependency,batchRead:reads});
+        last={id:observed.id,index:observed.index,x,sourceCount};
+        request=T.nextDiscardProbe(after,m,a.dependency);
+      }
+      if (last?.sourceCount) this.preparedHandInput={...last,beforeKey:T.boardKey(after),revision:this.inputRevision,at:Date.now()};
+      else {await this.reset();await this.requireUnchangedBoard(before);}
+      this.trace("card-probe-completed",{reads,fanRetained:!!this.preparedHandInput});
+      return after;
+    }
+    /* @include src/shared/support.inc.js#bgi-host.supportSlotsIn */
+    boardsMatch(before,after,purpose="observation",action=null) {
+      if (!before || !after) return false;
+      if (purpose==="execution" && (!action || action.type==="card" &&
+          ["support","talent"].includes(T.byId[action.id]?.type)))
+        return super.boardsMatch(before,after,purpose,action);
+      if (!super.boardsMatch({...before,supportCounts:null},{...after,supportCounts:null},purpose,action)) return false;
+      const a=before.supportCounts?.slots,b=after.supportCounts?.slots;
+      return !a || !b || a.length===b.length && a.every((slot,i)=>["index","present","counter"].every(k=>
+        slot[k]==null || b[i][k]==null || slot[k]===b[i][k]));
+    }
+    stabilizeBoardExtras(previous,current) {
+      if (!previous || JSON.stringify(previous.supportCounts)===JSON.stringify(current.supportCounts)) return current;
+      return {...current,supportCounts:{...current.supportCounts,known:false}};
+    }
+    boardExtrasIn(f,phase) {
+      // Reuse the existing native support reader; missing optional facts do
+      // not become a whole-board observation issue or a remembered vacancy.
+      return {choiceReceipt:this.choiceReceipt,cardReceipt:this.consumptionReceipt,
+        ...(phase.phase==="board"?{supportCounts:this.supportSlotsIn(f)}:{})};
+    }
+    async observe(...args) {
+      const s=await super.observe(...args);
+      return {...s,choiceReceipt:this.choiceReceipt,cardReceipt:this.consumptionReceipt};
+    }
+    skillFeeIn(f,a) {
+      const roi=a.skill==="Q"?[1780,1010,36,35]:a.skill==="E"?[1698,1010,36,35]:null;
+      return roi?number(this.numericAt(f,this.roi("bottom",roi),4)):null;
+    }
+    async executeInput(a,b,m) {
+      // Shared hand input already drags every rapid talent to its wearer;
+      // the common payment/result path needs no switch or extra skill click.
+      if (a.type!=="probe" && !T.actionLegal(b,a,m)) throw Error("动作资源、目标或前置条件不合法");
+      let prepared=this.takePreparedHandInput(a,b);
+      if (!prepared || prepared.viewOnly&&!this.handFanReady) {
+        prepared=null;await this.requireUnchangedBoard(b,a);
+      }
+      if (a.type==="probe") return a.scope==="card"?this.probeCard(a,b,m):this.probeSkill(a,b,m);
+      if (a.type==="card" && a.id==="block")
+        a.blockBasis={actionKey:T.actionKey(a),beforeKey:T.boardKey(b),effect:T.blockEffects("play",b,m)};
+      this.expectedDice=null;this.gamblerBudget=null;this.boardReady=false;this.choiceReceipt=null;this.choiceDetails=[];
+      if (a.type==="card" || a.type==="tune") await this.inputHand(a,b,m,prepared);
+      else if (a.type==="skill") await this.inputSkill(a,b);
+      else if (a.type==="switch") await this.inputSwitch(a,b,m);
+      else if (a.type==="end") await this.inputEnd();
+      else throw Error("未支持的圣骸兽动作："+a.type);
+    }
+  }
+  root.TCGBetterGI={...root.TCGBetterGI,BetterGIHost:ConsecratedHost};
+})(globalThis);

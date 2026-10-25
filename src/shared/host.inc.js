@@ -39,6 +39,7 @@
       this.handNeedsReset = false;
       this.handCountHint = null;
       this.handCache = null;
+      this.handContinuation = null;
       this.handScanSerial = 0;
       this.precisionBoard = false;
       this.forcedPickSession = null;
@@ -123,8 +124,13 @@
       if (this.has(f, "core/回合结算阶段", this.roi("viewport", [0, 0, 384, 1080]))) return { phase: "settlement", turn: "none" };
       // Native action banners can coexist with the user-turn icon, while HP,
       // generated cards and the hand-count badge are still animating.
-      const banner = TCG.norm(this.ocr(f, this.roi("phase", [700, 508, 580, 65])));
+      const banner = TCG.norm(this.ocr(f, this.roi("phase", [560, 508, 790, 70])));
+      if (banner === "支援区已满需先选择一张支援牌弃置")
+        return { phase:"choice", turn:"none", choiceKind:"support-discard", recognized:true };
       if (this.automaticBanners?.includes(banner)) return { phase: "automatic", turn: "none", automatic: banner };
+      // Target previews can show future summons and HP deltas. A declared
+      // target banner outranks a still-visible turn icon; it is not a board.
+      if (this.targetBanners?.includes(banner)) return { phase: "unknown", turn: "none", cardTarget: true };
       if (["我方行动", "对方行动", "行动阶段", "回合开始"].includes(banner)) return { phase: "transition", turn: "none" };
       const user = this.has(f, "user_turn", this.roi("phase", [64, 518, 33, 42]), 0.9);
       const enemy = this.has(f, "enemy_turn", this.roi("phase", [64, 518, 33, 42]), 0.9);
@@ -152,9 +158,18 @@
     /* @include src/shared/opening.inc.js#bgi-host.readRollDice */
     /* @include src/shared/opening.inc.js#bgi-host.actionReroll */
     
+    skillX(action) {
+      const actor=TCG.team[action.who],order=actor?.skillOrder||["NA","E","Q"],index=order.indexOf(action.skill);
+      if(!actor||![3,4].includes(order.length)||new Set(order).size!==order.length||
+        order.some(skill=>!actor.skills[skill])||index<0)
+        throw new Error("技能槽位或当前出战角色不符");
+      // Skills stay right-aligned. Lyney's second normal attack adds one slot
+      // on the left; E/Q retain the existing calibrated positions.
+      return 1824-108*(order.length-1-index);
+    }
     async probeSkill(action,before,memory) {
-      const x={NA:1608,E:1716,Q:1824}[action.skill];
-      if(action.who!==before.active || !x)throw new Error("费用检视只能用于当前角色的固定技能槽");
+      const x=this.skillX(action);
+      if(action.who!==before.active)throw new Error("费用检视只能用于当前角色的固定技能槽");
       this.clickAt(...this.point("bottom",x,957));await sleep(1200);
       let fee=null,last=null,stable=0;
       for(let i=0;i<4;i++){
@@ -263,10 +278,14 @@
       this.inputRevision++;
       this.handPositionProof = null;
       try {
+        // Let the game acquire the selected card before the first long move.
+        // Match official tuning's down/arrival holds; do not retry the drag.
+        await sleep(100);
         for (let i = 1; i <= 10; i++) {
           this.moveTo(start[0] + (end[0] - start[0]) * i / 10, start[1] + (end[1] - start[1]) * i / 10);
           await sleep(15);
         }
+        await sleep(100);
       } finally { leftButtonUp(); }
       await sleep(350);
     }
@@ -279,8 +298,8 @@
     /* @include src/shared/input.inc.js#tcg-ui.requireNoWarning */
     /* @include src/shared/input.inc.js#bgi-host.requireSwitchPreview */
     
+    /* @include src/shared/observation.inc.js#bgi-host.boardsMatch */
     /* @include src/shared/input.inc.js#tcg-ui.requireUnchangedBoard */
-    preInputBoardClean() { return this.boardReady; }
     /* @include src/shared/input.inc.js#tcg-ui.execute */
     
     /* @include src/shared/hand.inc.js#bgi-host.inputHand */

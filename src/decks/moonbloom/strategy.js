@@ -320,7 +320,7 @@
         const hits=a.target===s.active?attackCandidates(left,m):[];
         const lethal=hits.some(a=>{const h=T.damageEstimate(left,m,left.active,a.skill);return h.target&&h.direct>=h.target.hp;})||
           a.target===s.active&&s.active===nefer&&payableSeed(left,m)&&(()=>{const h=T.damageEstimate(left,m,nefer,"NA",true);return h.target&&h.direct>=h.target.hp;})();
-        value=!m.artifacts[a.target]&&T.enemyCount(s)>1&&lethal?70:0;break;
+        value=!m.artifactKinds[a.target]&&T.enemyCount(s)>1&&lethal?70:0;break;
       }
       case "calx": {
         const donors=s.characters.filter((ch,i)=>i!==s.active&&T.alive(ch)&&ch.energy>0).length;

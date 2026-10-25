@@ -1,0 +1,49 @@
+(function(root) {
+  "use strict";
+  const T=root.TCG;
+  /* @include src/shared/lifecycle.inc.js#lifecycle.BOARD_RETRIES */
+  /* @include src/shared/lifecycle.inc.js#lifecycle.INPUT_REFRESHES */
+  /* @include src/shared/lifecycle.inc.js#lifecycle.BUDGET_FIELDS */
+  /* @include src/shared/lifecycle.inc.js#lifecycle.playerOptions */
+  function actionCommentary(a,s) {
+    if (a.type==="skill") return T.team[a.who].name+"使用「"+T.team[a.who].skills[a.skill]+"」，结算后按真实血量和手牌重新决定。";
+    if (a.type==="switch") return "切换"+T.team[a.target].name+"；不预支切换后的返骰。";
+    if (a.type==="card") return "使用「"+T.byId[a.id].name+"」"+(a.target!=null?"，目标"+T.team[a.target].name:"")+"；随机结果以实际牌面为准。";
+    if (a.type==="tune") return "调和「"+(T.byId[a.id]?.name||s.hand[a.index].name)+"」，确认实际转换后重新决策。";
+    if (a.type==="probe") return a.scope==="card"?"核实当前手牌费用与附着，不出牌。":"核实当前技能费用，不施放技能。";
+    return "当前没有可支付且值得执行的动作，结束回合。";
+  }
+  // Reuse the shared lifecycle owner for observation, input and confirmation.
+  class Player {
+    /* @include src/shared/lifecycle.inc.js#lifecycle.constructor */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.progress */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.notice */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.checkStalled */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.defer */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.finishOpening */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.admitActionHand */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.enter */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.opening */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.choice */
+    planOpening(stage) {
+      const target=T.openingActive;
+      this.memory.openingTarget=target;
+      this.host.trace("opening-character-plan",{target,stage:stage||"initial-pick",source:"configured-team-order"});
+      return {target};
+    }
+    /* @include src/shared/lifecycle.inc.js#lifecycle.replacement */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.pick */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.roll */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.observe */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.execute */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.rejectUnchangedTune */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.recoverRejectedInput */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.awaitConfirmation */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.awaitObservation */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.recoverBeforeConfirmation */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.act */
+    /* @include src/shared/lifecycle.inc.js#lifecycle.run */
+    reportResult(p) {log.info(p.result==="win"?"对局胜利":"对局失败");}
+  }
+  root.TCGPlayer={Player,playerOptions,actionCommentary};
+})(globalThis);

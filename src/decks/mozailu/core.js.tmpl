@@ -250,10 +250,10 @@
     // A recycle replaces one observed card with one observed equipment card.
     // verify() requires that complete replacement; it is not a pending draw.
     if(a.type==="card"&&c?.type==="recycle")return {mode:"full",refreshAfterConsumption:false};
-    if(a.type==="card"&&(["draw","talent"].includes(c?.type)))return {mode:"full"};
+    if(a.type==="card"&&(["draw","talent"].includes(c?.type)))return {mode:"full",refreshAfterConsumption:true};
     if(a.type==="card"&&c?.type==="support"&&(!m||a.id==="timaeus"||
       ["liben","dunyarzad"].includes(a.id)&&m.supports.some(x=>x.id==="dunyarzad"&&!x.drawUsed)))
-      return {mode:"full",retainedHand:indexedHand(h.filter((_,i)=>i!==a.index)),
+      return {mode:"full",refreshAfterConsumption:true,retainedHand:indexedHand(h.filter((_,i)=>i!==a.index)),
         retainedVariantFamilies:[["countdown3","countdown2","countdown1","show"]]};
     if(a.type==="card"||a.type==="tune") {
       if(h[a.index]?.id!==a.id)throw new Error("手牌索引与身份不一致");

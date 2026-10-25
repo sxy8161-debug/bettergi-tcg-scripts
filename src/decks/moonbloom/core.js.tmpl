@@ -168,7 +168,7 @@
   }
   function freshMemory() {
     return {round:0,openingTarget:null,used:[0,0,0],defeated:[false,false,false],food:[false,false,false],
-      weapons:[null,null,null],artifacts:[false,false,false],artifactKinds:[null,null,null],gamblerUsed:[0,0,0],
+      weapons:[null,null,null],artifactKinds:[null,null,null],gamblerUsed:[0,0,0],
       techniques:[null,null,null],techniqueDiscount:0,
       freeSwitch:false,fastSwitch:false,legendUsed:false,bloomResolved:false,uncertainActions:[],refusedActions:[],skillCosts:null,probeKeys:[],
       sleepy:0,weaponDiscount:0,supports:[],canopyPoints:[],researchRemaining:0,played:[],
@@ -381,7 +381,7 @@
           name==="奈芙尔"&&skill==="E"&&h.id==="seed";
         return modified?changedReduction(h):h;
       });
-      if(generates||topdecks||draws)return {mode:"full",expectedCount:null,
+      if(generates||topdecks||draws)return {mode:"full",expectedCount:null,refreshAfterConsumption:generates||draws,
         ...(!topdecks?{retainedHand:indexedHand(hand.filter((_,i)=>i!==kernelIndex)),
           ...(!draws?{retainedVariantFamilies:[countdownFamily]}:{})}:{})};
       return {mode:"unchanged",hand};
@@ -428,7 +428,7 @@
     }
     // Reactions, top-deck and generated cards can change identities without changing count.
     const c=a.type==="card"?byId[a.id]:null;
-    return {mode:"full",expectedCount:null,
+    return {mode:"full",expectedCount:null,refreshAfterConsumption:a.type==="card",
       ...(c&&!["legend","branch","adventure","choice-option","unimplemented"].includes(c.type)?
         {retainedHand:indexedHand(s.hand.filter((_,i)=>i!==a.index)).map(h=>a.id==="upgrade"&&h.attachments?.empowered!==true?
             {...h,attachments:{...h.attachments,empowered:null},canTune:false}:h),
@@ -565,7 +565,7 @@
     if(nonInitial(c))m.sleepy=0;
     if(c.type==="weapon") {m.weapons[a.target]=a.id;m.weaponDiscount=0;}
     if(c.type==="technique") {m.techniques[a.target]={id:c.id,uses:2};m.techniqueDiscount=0;}
-    if(c.type==="artifact") {m.artifacts[a.target]=true;m.artifactKinds[a.target]=a.id;}
+    if(c.type==="artifact") m.artifactKinds[a.target]=a.id;
     if(c.type==="food") {m.food[a.target]=true;if(a.id==="sashimi")m.sashimi[a.target]=true;}
     if(c.type==="support")m.supports.push(c.id);
     if(c.id==="canopy")m.canopyPoints.push(1);

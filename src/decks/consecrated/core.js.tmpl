@@ -1,0 +1,659 @@
+/* GPL-3.0. Pure Consecrated Beast rules.
+ * No function here applies a projected hand, dice, HP or energy to an observation. */
+(function(root) {
+  "use strict";
+  const catalog = root.TCGConsecratedCatalog;
+  const {team,cards,talents,shareCode,guide,openingActive,sandOptions} = catalog;
+  const byId = Object.fromEntries(cards.map(c => [c.id,c]));
+  const cardTitleAliases = {}, characterAliases = {};
+  const countdownFamily = ["countdown3","countdown2","countdown1","show"];
+  /* @include src/shared/rules.inc.js#tcg-rules.norm */
+  /* @include src/shared/rules.inc.js#tcg-rules.identify */
+  /* @include src/shared/rules.inc.js#tcg-rules.observedCard */
+  /* @include src/shared/rules.inc.js#tcg-rules.handCardKnown */
+  /* @include src/shared/rules.inc.js#tcg-rules.characterName */
+  /* @include src/shared/rules.inc.js#tcg-rules.known */
+  /* @include src/shared/rules.inc.js#tcg-rules.alive */
+  /* @include src/shared/rules.inc.js#tcg-rules.diceOrder */
+  /* @include src/shared/rules.inc.js#tcg-rules.total */
+  /* @include src/shared/rules.inc.js#tcg-rules.size */
+  /* @include src/shared/rules.inc.js#tcg-rules.bag */
+  /* @include src/shared/rules.inc.js#tcg-rules.cardCountDecreased */
+  /* @include src/shared/rules.inc.js#tcg-rules.removedOne */
+  /* @include src/shared/rules.inc.js#tcg-rules.boardKey */
+  /* @include src/shared/rules.inc.js#tcg-rules.actionKey */
+  /* @include src/shared/rules.inc.js#tcg-rules.indexedHand */
+  /* @include src/shared/rules.inc.js#tcg-rules.enemyCount */
+  /* @include src/shared/rules.inc.js#tcg-rules.OpeningFlow */
+  /* @include src/shared/rules.inc.js#tcg-rules.freshActionBoard */
+  /* @include src/shared/rules.inc.js#tcg-rules.rerollCounter */
+  /* @include src/shared/rules.inc.js#tcg-rules.projectionBudget */
+  /* @include src/shared/combat.inc.js#tcg-rules.elementReaction */
+  /* @include src/shared/combat.inc.js#tcg-rules.damageAgainst */
+  /* @include src/shared/combat.inc.js#tcg-rules.enemyDamageEvidence */
+  function payment(dice,cost,preserve="Anemo") {
+    if (!cost) return null;
+    const secondaryPaymentWeights = {}, emptyPaymentWeight = {weight:0};
+    /* @include src/shared/rules.inc.js#tcg-rules.countedPaymentBody */
+  }
+
+  function keepOpening(id) { return catalog.openingKeep.includes(id); }
+  function openingPlan(hand,original) {
+    if (hand?.length!==5 || !hand.every(handCardKnown) || original?.length!==5)
+      throw Error("起手五张手牌未核实");
+    // Duplicates deliberately remain: this is the guide's baseline, not a new policy.
+    const replace = hand.map((h,i) => h.supported===false ? original[i] : !keepOpening(h.id));
+    return {replace,keep:hand.filter((_,i) => !replace[i]),duplicateWeapons:[]};
+  }
+
+  function freshMemory({newGame=false}={}) {
+    const value = newGame ? false : null;
+    return {round:0,talents:[value,value,value],emblem:[value,value,value],
+      emblemUsed:[value,value,value],adeptus:[value,value,value],food:[value,value,value],
+      cleanup:newGame?0:null,blockPlayed:value,windRefund:value,freeSwitch:value,legendUsed:value,
+      foodRemaining:newGame?byId.adeptus.copies:null,foodInDeck:null,foodHandCount:null,hpGrowthUpperBound:0,
+      supports:[],supportStateKnown:newGame,used:[0,0,0],bursts:[0,0,0],defeated:[false,false,false],lastActive:openingActive,openingTarget:null,
+      skillCosts:null,probeKeys:[],refusedActions:[],uncertainActions:[],endRelayUsed:false};
+  }
+  function initializeOpening(m) {
+    // Called once by OpeningFlow after the initial board is admitted, not by
+    // construction, a rejected board entry or an already-finished match.
+    // Keep phase/character plans and observed mulligan identities intact.
+    const {round,lastActive,openingTarget,...initial}=freshMemory({newGame:true});
+    Object.assign(m,initial);
+  }
+  function nextRound(m) {
+    m.round++;
+    m.blockPlayed=false; m.windRefund=false; m.endRelayUsed=false;
+    m.emblemUsed=[false,false,false]; m.adeptus=[false,false,false]; m.food=[false,false,false];
+    for (const x of m.supports) {
+      if (x.id==="lair") x.discountUsed=false;
+      if (x.id==="nre") x.foodDrawUsed=false;
+    }
+    m.skillCosts=null; m.probeKeys=[]; m.refusedActions=[]; m.uncertainActions=[];
+    // Cleanup and Changing Shifts have no round-duration rule. Support uses,
+    // and randomly drawn/generated cards require actual observations.
+  }
+
+  function legalState(s) {
+    return !!s && s.phase==="board" && s.turn==="user" && known(s.active) && s.active<3 &&
+      s.characters?.length===3 && alive(s.characters[s.active]) && s.characters.every((c,i)=>
+        c.dead===true || alive(c) && typeof c.frozen==="boolean" && known(c.energy) && c.energy<=team[i].maxEnergy) &&
+      s.diceKnown===true && !!s.dice && Object.entries(s.dice).every(([e,n])=>diceOrder.includes(e)&&known(n)) &&
+      total(s.dice)<=16 && Array.isArray(s.hand) && s.hand.length<=10 && s.hand.every(handCardKnown);
+  }
+  function resizedCost(base,n) {
+    if (!known(n) || n>16) return null;
+    if (base.element) {
+      const any=Math.min(base.any||0,Math.max(0,n-(base.n||0)));
+      return {element:base.element,n:n-any,...(base.any?{any}: {})};
+    }
+    return base.aligned!==undefined?{aligned:n}:{any:n};
+  }
+  function skillCost(who,skill,m=null,s=null) {
+    if (!team[who]?.skills[skill]) return null;
+    const base=skill==="NA" ? {element:team[who].element,n:1,any:2} : {element:team[who].element,n:3};
+    const quote=s && m && skillQuote(s,m,{who,skill});
+    return quote?.source==="native-skill-preview" && known(quote.n)?resizedCost(base,quote.n):base;
+  }
+  function skillLegal(s,a,m=null) {
+    const c=s.characters?.[a.who];
+    return a.who===s.active && alive(c) && c.frozen===false &&
+      (a.skill!=="Q" || c.energy>=team[a.who].maxEnergy) &&
+      !!payment(s.dice,skillCost(a.who,a.skill,m,s));
+  }
+  function talentTargetLegal(s,a) {
+    const rule=talents[a.id];
+    return !!rule && a.target===rule.target && alive(s.characters?.[rule.target]) &&
+      (!rule.requiresActive || s.active===rule.target);
+  }
+  function supportRoom(s) {
+    const p=s.supportCounts;
+    return !!p?.known && Array.isArray(p.slots) && p.slots.length===4 &&
+      p.slots.every(x => typeof x.present==="boolean") && p.slots.some(x => !x.present);
+  }
+  function stormterrorEligible(action) {
+    if (action.type==="card") return byId[action.id]?.type==="talent";
+    const cost=action.type==="skill" && skillCost(action.who,action.skill);
+    // All nine printed skills cost three. Do not invent a two-die serpent E/Q.
+    return !!cost && size(cost)>=4;
+  }
+  function cardCost(s,a,m) {
+    const c=byId[a.id],h=s.hand?.[a.index];
+    if (!c || h?.id!==a.id) return null;
+    // Native payable digits already include automatic discounts. Never apply
+    // a second Lair discount to them. Talent payment is not discard cost.
+    if (known(h.currentCost)) return resizedCost(c.cost,h.currentCost);
+    const current=discardCost(h),base=current===null?size(c.cost):current;
+    const reducers=c.type==="talent" && m.supportStateKnown ? m.supports.filter(x=>
+      x.id==="lair" && known(x.slot) && x.discountUsed===false && x.remaining>0).length:0;
+    return resizedCost(c.cost,Math.max(0,base-reducers));
+  }
+  function cardLegal(s,a,m) {
+    const c=byId[a.id],h=s.hand?.[a.index];
+    if (!c || c.type==="branch" || h?.id!==a.id || h.supported===false || h.attachments?.effectless===true) return false;
+    const targeted=["talent","artifact","food"].includes(c.type);
+    if (targeted && (!known(a.target) || a.target>2 || !alive(s.characters?.[a.target]))) return false;
+    if (!targeted && a.target!=null) return false;
+    if (c.type==="talent" && !talentTargetLegal(s,a)) return false;
+    if (c.type==="food" && m.food[a.target]!==false) return false;
+    if (c.type==="support" && !supportRoom(s)) return false;
+    if (c.type==="legend" && m.legendUsed!==false) return false;
+    if (a.id==="stars" && !(s.characters?.[s.active]?.energy<team[s.active].maxEnergy)) return false;
+    if (a.id==="block" && (m.blockPlayed!==false || !blockDiscards(s.hand,a.index).known)) return false;
+    return !!payment(s.dice,cardCost(s,a,m),team[s.active].element);
+  }
+  function switchCost(m) { return {any:m.freeSwitch===true?0:1}; }
+  function tuneLegal(s,a) {
+    return s.hand?.[a.index]?.id===a.id && handCardKnown(s.hand[a.index]) &&
+      s.hand[a.index].attachments?.noTuning!==true && a.element===team[s.active]?.element &&
+      diceOrder.some(e=>e!=="Omni"&&e!==a.element&&s.dice?.[e]>0);
+  }
+  function actionLegal(s,a,m) {
+    if (!legalState(s) || actionRefused(s,m,a)) return false;
+    if (a.type==="skill") return skillLegal(s,a,m);
+    if (a.type==="card") return cardLegal(s,a,m);
+    if (a.type==="switch") return !!switchBudget(s,a.target,m);
+    if (a.type==="tune") return tuneLegal(s,a);
+    return a.type==="end";
+  }
+
+  // Lair is this fixed deck's only payment-only reducer and affects talents.
+  // Other cards' current native price already includes attached modifications;
+  // it proves their ranking without proving any other attachment property.
+  function discardCost(h) {
+    const c=byId[h?.id], a=h?.attachments;
+    if (!c) return null;
+    if (["native","private-rules"].includes(a?.source) && known(a.reduction) && known(a.increase))
+      return Math.max(0,size(c.cost)-a.reduction+a.increase);
+    if (c.type!=="talent" && known(h.currentCost) &&
+      ["native-folded-cost-markers","native-expanded-cost-markers","native-selected-card-cost"].includes(h.costSource)
+      ) return h.currentCost;
+    // Every generated block is the same zero-cost card. This fixed deck has
+    // no effect that changes its cost; a positive native modifier above still
+    // wins. A missing price digit is not a reason to inspect each copy.
+    return h.id==="block" ? size(c.cost) : null;
+  }
+  function highestCostCards(hand,excludedIndex=null) {
+    const others=hand.flatMap((h,index) => index===excludedIndex ? [] : [{index,cost:discardCost(h)}]);
+    const unknown=others.filter(x => x.cost===null).map(x => x.index);
+    if (unknown.length) return {known:false,unknown,indices:[]};
+    if (!others.length) return {known:true,unknown:[],indices:[]};
+    const highest=Math.max(...others.map(x => x.cost));
+    return {known:true,unknown:[],indices:others.filter(x => x.cost===highest).map(x => x.index)};
+  }
+  function blockDiscards(hand,sourceIndex) {
+    if (hand?.[sourceIndex]?.id!=="block") throw Error("能量块源槽不匹配");
+    return highestCostCards(hand,sourceIndex);
+  }
+  function cardProbeKey(s,h) {
+    // Failure belongs to this actual hand/slot, not unrelated HP or dice.
+    return JSON.stringify([s.hand.map(x=>x.id),h.index,h.id,h.currentCost??null,h.attachments??null]);
+  }
+  function nextDiscardProbe(s,m,sourceIndex) {
+    if (s.hand?.[sourceIndex]?.id!=="block" || m.blockPlayed!==false) return null;
+    if (actionRefused(s,m,{type:"card",id:"block",index:sourceIndex,target:null})) return null;
+    const risk=blockDiscards(s.hand,sourceIndex);
+    if (risk.known || risk.unknown.some(i=>!byId[s.hand[i].id]||m.probeKeys.includes(cardProbeKey(s,s.hand[i])))) return null;
+    // A higher printed cost is inspected first, but no unknown lower card is
+    // presumed harmless: attached increases could change the highest set.
+    const index=risk.unknown.slice().sort((a,b)=>size(byId[s.hand[b].id].cost)-size(byId[s.hand[a].id].cost))[0],h=s.hand[index];
+    return h?{type:"probe",scope:"card",id:h.id,index,requirement:"discard-cost",dependency:sourceIndex,
+      key:cardProbeKey(s,h),reason:"能量块弃牌排序依赖当前费用，先只读缺失的手牌事实"}:null;
+  }
+  function countdownDiscard(id,mode) {
+    if (!["discard","tune"].includes(mode)) return null; // Playing and bottoming are not discards.
+    const i=countdownFamily.indexOf(id);
+    return i>=0 && i<3 ? {id:countdownFamily[i+1],destination:"deck-top"} : null;
+  }
+  function blockRisk(hand,sourceIndex,essentialIds=[]) {
+    const candidates=blockDiscards(hand,sourceIndex);
+    if (!candidates.known) return {...candidates,outcomes:[],minimumBlocks:null,essentialAtRisk:null};
+    const blocks=hand.filter(h => h.id==="block").length;
+    const outcomes=(candidates.indices.length ? candidates.indices : [null]).map(index => ({
+      discardIndex:index,discardId:index===null?null:hand[index].id,
+      blocksRemaining:blocks-1-(index!==null && hand[index].id==="block"?1:0),
+      deckTop:index===null?null:countdownDiscard(hand[index].id,"discard"),
+      essentialLost:index!==null && essentialIds.includes(hand[index].id) &&
+        hand.filter((h,i) => i!==sourceIndex && h.id===hand[index].id).length===1
+    }));
+    return {...candidates,outcomes,minimumBlocks:Math.min(...outcomes.map(x=>x.blocksRemaining)),
+      essentialAtRisk:outcomes.some(x=>x.essentialLost)};
+  }
+  function blockHealing(mode,s,m,count=1) {
+    if (!known(count)) return null;
+    if (!["play","tune","discard","burst-discard"].includes(mode) || s.characters?.[2]?.dead===true)
+      return {triggers:0,amount:0,target:"most-injured"};
+    if (!alive(s.characters?.[2])) return null;
+    // Each discarded block triggers the passive separately. The talent adds
+    // one trigger only for playing a block, not tuning, discarding or bottoming.
+    const extra=mode==="play"?m.talents[2]:false;
+    return {triggers:extra===null?null:count*(extra?2:1),amount:1,target:"most-injured"};
+  }
+  function blockEffects(mode,s,m) {
+    const healing=blockHealing(mode,s,m);
+    if (mode!=="play") return {energyGain:0,generatedDice:0,draw:0,pileBlocks:0,armWind:false,usesPlayLimit:false,healing};
+    const active=s.characters?.[s.active];
+    if (!alive(active) || m.blockPlayed!==false) return null;
+    const equipped=who => s.characters?.[who]?.dead===true ? false :
+      alive(s.characters?.[who]) ? m.talents[who] : null;
+    const thunder=equipped(0), wind=equipped(1);
+    return {energyGain:0,generatedDice:1,element:team[s.active].element,
+      draw:thunder===null?null:thunder?1:0,pileBlocks:thunder===null?null:thunder?1:0,
+      armWind:wind,usesPlayLimit:true,healing};
+  }
+
+  // Full post-action observations only. This is not a substitute for the host's
+  // submitted-action owner, phase checks, native count or fresh resource proof.
+  function blockResult(a,b,c,m) {
+    if (a.type!=="card" || a.id!=="block" || b.hand?.[a.index]?.id!==a.id ||
+        c.phase!=="board" || c.turn!=="user" || c.active!==b.active ||
+        c.handRead!=="full" || !Array.isArray(c.hand) || !c.hand.every(handCardKnown) ||
+        !b.diceKnown || !c.diceKnown) return false;
+    const basis=a.blockBasis;
+    const effect=m?blockEffects("play",b,m):
+      basis?.beforeKey===boardKey(b)&&basis.actionKey===actionKey(a)?basis.effect:null,
+      risk=blockDiscards(b.hand,a.index);
+    if (!effect || effect.draw===null || !risk.known || total(b.dice)>=16 ||
+        !diceOrder.every(e=>(c.dice?.[e]||0)===(b.dice?.[e]||0)+(e===effect.element?1:0))) return false;
+    const actual=bag(c.hand);
+    return (risk.indices.length?risk.indices:[null]).some(index=>{
+      const remaining=bag(b.hand.filter((_,i)=>i!==a.index && i!==index));
+      if (Object.keys(remaining).some(id=>(actual[id]||0)<remaining[id])) return false;
+      const inserted=Object.keys(actual).reduce((n,id)=>n+actual[id]-(remaining[id]||0),0);
+      // The deck may be exhausted. No particular drawn identity is predicted.
+      return inserted>=0 && inserted<=effect.draw && c.hand.length<=10;
+    });
+  }
+
+  function serpentBurstDamage(blocks,{emblem,adeptus,cleanup}) {
+    if (!known(blocks) || blocks>10 || typeof emblem!=="boolean" || typeof adeptus!=="boolean" ||
+        !known(cleanup) || cleanup>2) return null;
+    return (2+(emblem?2:0)+(adeptus?3:0)+cleanup)*2**Math.floor(blocks/2);
+  }
+  function burstBuffs(m,who=1) {
+    return {emblem:m.emblem[who]===false || m.emblemUsed[who]===true ? false :
+      m.emblem[who]===true && m.emblemUsed[who]===false ? true : null,
+      adeptus:m.adeptus[who],cleanup:m.cleanup};
+  }
+  function burstDiscardCount(who,blocks) { return who===1?blocks:Math.min(3,blocks); }
+  function skillEffects(who,skill,hand,m) {
+    if (!team[who]?.skills[skill] || !Array.isArray(hand) || !hand.every(handCardKnown)) return null;
+    const blocks=hand.filter(h=>h.id==="block").length, buffs=burstBuffs(m,who);
+    const base=skill==="NA"?2:skill==="E"?3:who===0?3:who===1?2:4;
+    const additive=known(m.cleanup) && (skill!=="Q" ||
+      typeof buffs.emblem==="boolean" && typeof buffs.adeptus==="boolean") ?
+      m.cleanup+(skill==="Q" ? (buffs.emblem?2:0)+(buffs.adeptus?3:0) : 0) : null;
+    return {baseDamage:base,damageType:skill==="NA"?"Physical":team[who].element,
+      rawDamage:who===1 && skill==="Q" ? serpentBurstDamage(blocks,buffs) : additive===null?null:base+additive,
+      energyGain:skill==="Q"?0:1,energyCost:skill==="Q"?2:0,
+      draw:who===1 && skill==="E"?1:0,
+      pileBlocks:who===0 && skill==="E"?{count:1,placement:"top-2"}:null,
+      discardedBlocks:skill==="Q"?burstDiscardCount(who,blocks):0,
+      trap:who===0 && skill==="Q"?{uses:Math.min(3,blocks),damage:2,trigger:"enemy-skill-after"}:null,
+      bottomHighest:who===2 && skill==="E"?highestCostCards(hand):null,
+      generatedBlocks:who===2 && skill==="E"?1:0,
+      healAndMaxHp:who===2 && skill==="Q"?{amount:Math.min(3,blocks),target:"most-injured"}:null};
+  }
+  function passiveEffects(s,event) {
+    if (event==="battle-start") return {
+      pileBlocks:{count:6,placement:"distributed"},handBlocks:0};
+    if (event!=="round-end") return null;
+    if (s.characters?.[0]?.dead===true) return {pileBlocks:null,handBlocks:0};
+    return alive(s.characters?.[0]) ? {pileBlocks:{count:2,placement:"top-10"},handBlocks:0} : null;
+  }
+  function switchBudget(s,target,m) {
+    if (target===s.active || !alive(s.characters?.[target])) return null;
+    const paid=payment(s.dice,switchCost(m),team[target].element);
+    if (!paid) return null; // A post-switch refund cannot fund this switch.
+    return {cost:m.freeSwitch===true?0:1,remaining:paid.remaining,fast:false,
+      refund:m.windRefund===true?{element:team[target].element,n:1}:null};
+  }
+
+  function revelRefund(afterDrawHand) {
+    if (!Array.isArray(afterDrawHand)) return null;
+    const types=afterDrawHand.map(h=>byId[h.id]?.type);
+    if (types.some(x=>!x)) return null;
+    return (types.filter(t=>t==="weapon").length>1?1:0)+(types.filter(t=>t==="artifact").length>1?1:0);
+  }
+  function sandExchangeCount(beforeCount) {
+    if (!known(beforeCount) || beforeCount<1 || beforeCount>10) return null;
+    return {bottom:beforeCount-1,requestedDraw:beforeCount,discarded:0};
+  }
+  function libenCollection(dice,collected) {
+    if (!known(collected) || collected>3 || !dice ||
+        Object.entries(dice).some(([e,n])=>!diceOrder.includes(e)||!known(n))) return null;
+    return Math.min(3-collected,Object.values(dice).filter(n=>n>0).length);
+  }
+  function supportEvent(instance,event) {
+    // One known support instance, not a name-set. Events are at different times.
+    if (instance.id==="liben") return event==="action-start" && instance.collected===3 ?
+      {draw:2,omni:2,dispose:true}:null;
+    if (!known(instance.remaining) || instance.remaining<1 || event!=="end-phase") return null;
+    if (instance.id==="harbor") return {draw:2,remaining:instance.remaining-1};
+    if (instance.id==="whiteGlove") return {draw:instance.remaining===1?1:0,remaining:instance.remaining-1,
+      pileCard:{id:"cleanup",count:1,placement:"top-5"}};
+    return null;
+  }
+
+  function observedFoodCount(s) {
+    return s.phase==="board" && s.turn==="user" && Array.isArray(s.hand) && s.hand.every(handCardKnown) ?
+      s.hand.filter(h=>h.id==="adeptus").length:null;
+  }
+  function noteFoodInventory(m,s) {
+    const held=observedFoodCount(s);
+    if (held===null) {m.foodInDeck=null;return;}
+    // Stock is deck + hand, never a predicted draw. An unowned disappearance
+    // or possible overflow invalidates it; a later empty hand cannot restore it.
+    if (known(m.foodRemaining) && (held>m.foodRemaining ||
+        known(m.foodHandCount)&&held<m.foodHandCount || s.hand.length===10&&held<m.foodRemaining))
+      m.foodRemaining=null;
+    m.foodHandCount=held;
+    m.foodInDeck=known(m.foodRemaining)?m.foodRemaining-held:null;
+  }
+  function commitFoodInventory(m,a,b,after) {
+    const held=observedFoodCount(after),before=observedFoodCount(b);
+    if (held===null || before===null) {m.foodRemaining=null;m.foodInDeck=null;return;}
+    let removed=0;
+    if (["card","tune"].includes(a.type) && a.id==="adeptus") removed=1;
+    if (a.type==="card" && a.id==="block") {
+      const risk=blockDiscards(b.hand,a.index),foods=risk.indices.filter(i=>b.hand[i].id==="adeptus").length;
+      if (!risk.known || foods>0&&foods<risk.indices.length) m.foodRemaining=null;
+      else if (foods>0) removed=1;
+    }
+    const bottomed=a.type==="card"&&a.id==="sand"&&a.choice==="sanctify" ||
+      a.type==="skill"&&a.who===2&&a.skill==="E";
+    if (held<before-removed&&!bottomed) m.foodRemaining=null;
+    if (known(m.foodRemaining)) m.foodRemaining=m.foodRemaining>=removed?m.foodRemaining-removed:null;
+    // The confirmed action owns this observed decrease. noteBoard can then
+    // detect any subsequent, unattributed loss without charging it twice.
+    m.foodHandCount=held;
+  }
+  function noteBoard(m,s) {
+    noteFoodInventory(m,s);
+    for (let i=0;i<3;i++) if (s.characters?.[i]?.dead===true) {
+      m.defeated[i]=true;m.talents[i]=false;m.emblem[i]=false;m.emblemUsed[i]=false;m.adeptus[i]=false;
+    }
+    if (known(s.active) && s.active<3) m.lastActive=s.active;
+    // Occupancy is not identity. A newly placed instance is associated only if
+    // exactly one of its formerly empty native slots is now occupied.
+    const native=s.supportCounts;
+    if (!native?.known || native.slots?.length!==4 || !native.slots.every(x=>typeof x.present==="boolean")) {
+      m.supportStateKnown=false;return;
+    }
+    const count=native.slots.filter(x=>x.present).length;
+    if (native.slots.every((x,i)=>x.present===(i<count)) &&
+        m.supports.some(x=>known(x.slot)&&!native.slots[x.slot].present)) {
+      // A shorter packed row can have shifted survivors into departed slots.
+      // Keep native occupancy, but never assign their counters to old names.
+      m.supports=m.supports.filter(x=>!known(x.slot));
+    }
+    m.supports=m.supports.filter(x=>!known(x.slot)||native.slots[x.slot].present);
+    const claimed=new Set(m.supports.filter(x=>known(x.slot)).map(x=>x.slot));
+    for (const x of m.supports.filter(x=>!known(x.slot))) {
+      const candidates=(x.emptyBefore||[]).filter(i=>native.slots[i].present&&!claimed.has(i));
+      if (candidates.length===1) {x.slot=candidates[0];claimed.add(x.slot);delete x.emptyBefore;}
+    }
+    for (const x of m.supports) {
+      const counter=native.slots[x.slot]?.counter;
+      if (x.id==="liben" && known(counter) && counter<=3) x.collected=counter;
+      if (["harbor","whiteGlove"].includes(x.id) && known(counter) && counter<=2) x.remaining=counter;
+      if (x.id==="lair" && known(counter) && counter<=3) x.remaining=counter;
+    }
+    m.supportStateKnown=m.supports.every(x=>known(x.slot)) && native.slots.every((x,i)=>!x.present||claimed.has(i));
+  }
+  function hpGrowthAllowance(a,b) {
+    // Maximum possible growth from this Q, not a healing amount, recipient
+    // or observed max HP. The pending and completed paths share this bound.
+    return a?.type==="skill" && a.who===2 && a.skill==="Q" && b?.active===2 &&
+      Array.isArray(b.hand) && b.hand.every(handCardKnown) ? Math.min(3,b.hand.filter(h=>h.id==="block").length) : 0;
+  }
+  function commit(m,a,b,after) {
+    if (after.confirmed!==true) throw Error("未确认动作不能记账");
+    m.hpGrowthUpperBound+=hpGrowthAllowance(a,b);
+    commitFoodInventory(m,a,b,after);
+    if (a.type==="card") {
+      const c=byId[a.id];
+      if (!c || b.hand?.[a.index]?.id!==a.id) throw Error("已确认动作的手牌来源不一致");
+      if (c.type==="talent") {
+        m.talents[talents[a.id].target]=true;
+        // Attribute each discount to its bound native slot, including free
+        // talents. Net dice cannot distinguish multiple Lairs or refunds.
+        for (const x of m.supports) if (x.id==="lair") {
+          const old=b.supportCounts?.known&&known(x.slot)?b.supportCounts.slots[x.slot]:null,
+            now=after.supportCounts?.known&&known(x.slot)?after.supportCounts.slots[x.slot]:null;
+          if (old?.present===true && known(old.counter) && old.counter>0 && old.counter<=3 &&
+              now?.present===true && known(now.counter) &&
+              (now.counter===old.counter || now.counter===old.counter-1)) {
+            if (now.counter===old.counter-1) x.discountUsed=true;
+            x.remaining=now.counter;
+          } else {x.discountUsed=null;x.remaining=null;}
+          // An explicitly empty slot is removed by noteBoard below.
+        }
+      }
+      if (a.id==="emblem") m.emblem[a.target]=true;
+      if (a.id==="adeptus") {m.adeptus[a.target]=true;m.food[a.target]=true;}
+      if (a.id==="cleanup") m.cleanup=known(m.cleanup)?Math.min(2,m.cleanup+1):null;
+      if (a.id==="shift") m.freeSwitch=true;
+      if (a.id==="sand") m.legendUsed=true;
+      if (a.id==="block") {
+        const effects=blockEffects("play",b,m);
+        m.blockPlayed=true;
+        if (effects?.armWind===true) m.windRefund=true;
+        else if (effects?.armWind===null) m.windRefund=null;
+      }
+      if (c.type==="support") {
+        const emptyBefore=b.supportCounts?.known?b.supportCounts.slots.flatMap((x,i)=>x.present===false?[i]:[]):[];
+        m.supports.push({id:c.id,emptyBefore,...(c.id==="liben"?{collected:0}:
+          c.id==="lair"?{remaining:3,discountUsed:false}:
+          c.id==="nre"?{foodDrawUsed:false}:{remaining:2})});
+      }
+      // Entry buffs are rules; the produced cards/dice are never put in b/after.
+      if (c.type==="food") for (const x of m.supports) if (x.id==="nre") x.foodDrawUsed=true;
+    }
+    if (a.type==="skill") {
+      m.used[a.who]++;m.cleanup=0;
+      if (a.skill==="Q") {
+        m.bursts[a.who]++;
+        m.adeptus[a.who]=false;
+        if (m.emblem[a.who]!==false) m.emblemUsed[a.who]=m.emblem[a.who]===true?true:null;
+      }
+    }
+    if (a.type==="switch") {
+      m.freeSwitch=false;m.windRefund=false;
+      if (a.endTurnRelay===true) m.endRelayUsed=true;
+    }
+    if (["skill","switch","end"].includes(a.type)) {
+      // A handoff can include enemy damage, block healing and support
+      // triggers. Actual HP and maximum HP are never reconstructed here.
+      for (const x of m.supports) if (a.type==="end") {
+        if (x.id==="liben") x.collected=null;
+        else if (x.id!=="nre") x.remaining=null;
+      }
+    }
+    clearSkillCosts(m);noteBoard(m,after);
+  }
+  function rejectAction(m,a,b) { clearSkillCosts(m);blockAction(m,a,b); }
+  function deferUncertain(m,a,b) {
+    clearSkillCosts(m);blockAction(m,a,b,true);
+    // A submitted but unresolved Q may have grown HP. Keep only its possible
+    // reading allowance; do not count a successful burst or assign targets.
+    m.hpGrowthUpperBound+=hpGrowthAllowance(a,b);
+    if (a.id==="adeptus" || handPlan(a,b,m).mode==="full") {m.foodRemaining=null;m.foodInDeck=null;}
+    if (a.type==="switch") {m.freeSwitch=null;m.windRefund=null;}
+    if (["skill","switch","end"].includes(a.type)) {
+      if (a.type==="end") for (const x of m.supports) {
+        if (x.id==="liben") x.collected=null;else if (x.id!=="nre") x.remaining=null;
+      }
+    }
+    if (a.type==="skill") {
+      m.cleanup=null;
+      if (a.skill==="Q") {m.adeptus[a.who]=null;m.emblemUsed[a.who]=null;}
+    }
+    if (a.type!=="card") return;
+    const c=byId[a.id];
+    if (c?.type==="talent") {
+      m.talents[talents[a.id].target]=null;
+      for (const x of m.supports) if (x.id==="lair") {x.discountUsed=null;x.remaining=null;}
+    }
+    if (a.id==="emblem") m.emblem[a.target]=null;
+    if (a.id==="adeptus") {m.adeptus[a.target]=null;m.food[a.target]=null;}
+    if (a.id==="cleanup") m.cleanup=null;
+    if (a.id==="shift") m.freeSwitch=null;
+    if (a.id==="sand") m.legendUsed=null;
+    if (a.id==="block") {m.blockPlayed=null;if (m.talents[1]!==false) m.windRefund=null;}
+    if (c?.type==="support") m.supportStateKnown=false;
+    if (c?.type==="food") for (const x of m.supports) if (x.id==="nre") x.foodDrawUsed=null;
+  }
+  function handPlan(action,before,m) {
+    if (action.type==="probe") return {mode:"unchanged",hand:before.hand};
+    // These actions cannot introduce a new countdown stage into the hand.
+    // Still read current costs and the whole row; only a matching native
+    // family count can reuse its already-read stage, via the shared reader.
+    const retained={mode:"full",retainedHand:before.hand,retainedVariantFamilies:[countdownFamily]};
+    if (action.type==="switch" || action.type==="skill" && !(action.who===1&&action.skill==="E"))
+      return action.type==="skill"&&action.skill==="Q"?
+        {...retained,retainedHand:before.hand.filter(h=>h.id!=="block")}:retained;
+    if (action.type==="skill") return {mode:"full",retainedHand:before.hand};
+    if (action.type==="end") return {mode:"full"};
+    if (!["card","tune"].includes(action.type) || before.hand?.[action.index]?.id!==action.id)
+      return {mode:"full"};
+    const removed={mode:"remove",hand:indexedHand(before.hand.filter((_,i)=>i!==action.index))};
+    if (action.type==="tune") return removed;
+    if (!byId[action.id]) return {mode:"full"};
+    const c=byId[action.id];
+    // Talent verify proves the exact old-card bag plus its generated block.
+    // That complete result has no delayed draw left to scan a second time.
+    if (c.id==="block"&&blockEffects("play",before,m)?.draw===0) {
+      const discarded=blockDiscards(before.hand,action.index);
+      // Random highest-cost discard may remove any tied candidate. Only the
+      // other cards have a retention guarantee; do not carry discarded facts.
+      return discarded.known?{...retained,
+        retainedHand:before.hand.filter((_,i)=>i!==action.index&&!discarded.indices.includes(i)),
+        retainedVariantFamilies:discarded.indices.some(i=>countdownFamily.includes(before.hand[i].id))?[]:[countdownFamily]}:
+        {mode:"full"};
+    }
+    if (c.type==="talent" || ["lair","nre"].includes(c.id))
+      return {...retained,refreshAfterConsumption:c.id==="lair"||c.id==="nre",retainedHand:removed.hand.map(h=>
+        (c.type==="talent"||c.id==="lair")&&byId[h.id]?.type==="talent"?
+          {...h,currentCost:null,costSource:"unknown"}:h)};
+    if (["draw","legend"].includes(c.type) || c.id==="block")
+      return {mode:"full",refreshAfterConsumption:true};
+    if (c.type==="food" && (!m.supportStateKnown || m.supports.some(x=>x.id==="nre" && x.foodDrawUsed!==true)))
+      return {mode:"full",refreshAfterConsumption:true};
+    return removed;
+  }
+  function rerollPlan(items,m) {
+    const who=!m.defeated[1]?1:!m.defeated[m.lastActive]?m.lastActive:m.defeated.findIndex(x=>!x);
+    const primary=team[who]?.element||"Electro";
+    // Only opening observations can justify reserving the off-element talent
+    // die here. Later random draws are not inferred from the original deck.
+    const reserve={};
+    if (m.round===0) for (const id of m.openingIds||[]) {
+      const rule=talents[id],element=rule&&team[rule.target].element;
+      if (element && element!==primary) reserve[element]=1;
+    }
+    const secondary=Object.keys(reserve);
+    return {primary,secondary,elements:[...new Set([primary,...secondary,"Omni"])],indices:items.flatMap((x,i)=>
+      x.element==="Omni" || x.element===primary || reserve[x.element]>0 && reserve[x.element]-->0?[i]:[])};
+  }
+  function generatedChoices(options,b,m,origin) {
+    // The policy names a branch, not a side. Only this submitted Sand may own
+    // the native two-option page; there is no default click for an unknown page.
+    return origin?.type==="card" && origin.id==="sand" && b?.hand?.[origin.index]?.id==="sand" &&
+      ["sanctify","disperse"].includes(origin.choice) ? options.filter(o=>o.id===origin.choice) : [];
+  }
+  function nativeCardScope(a,banner,before) {
+    if (a.type!=="card") return false;
+    if (byId[a.id]?.type==="talent") return !!before && talentTargetLegal(before,a) &&
+      norm(banner)==="装备给我方的"+team[a.target].name;
+    if (a.target!=null) return false;
+    const text=norm(banner),name=text.startsWith("打出手牌")?text.slice(4):text.endsWith("打出手牌")?text.slice(0,-4):"";
+    return identify(name)?.id===a.id || a.id==="stars" && text==="对我方出战角色生效";
+  }
+  function submittedCard(a,b,s) {
+    const r=s.cardReceipt;
+    return r?.inputSent===true && r.beforeKey===boardKey(b) && r.id===a.id && r.index===a.index &&
+      r.target===(a.target??null) && b.hand?.[a.index]?.id===a.id;
+  }
+  function verify(a,b,s,transition=false) {
+    if (s.result) return true;
+    if (a.type==="end") return s.turn==="enemy" || ["roll","settlement"].includes(s.phase);
+    if (a.type==="switch") return s.active===a.target && s.active!==b.active;
+    if (a.type==="skill") {
+      // All nine skills cost dice and this deck has no on-attack dice refund.
+      // Native0113: the preceding E's late energy gain falsely confirmed an
+      // unpaid NA. Delayed HP/energy alone cannot belong to this new input.
+      return b.diceKnown===true && s.diceKnown===true && total(s.dice)<total(b.dice);
+    }
+    if (s.phase!=="board" || s.turn!=="user" || !Array.isArray(s.hand) || !s.hand.every(handCardKnown)) return false;
+    if (a.type==="tune") {
+      if (!b.diceKnown || !s.diceKnown || !removedOne(b.hand,s.hand,a.id)) return false;
+      const changes=diceOrder.map(e=>(s.dice[e]||0)-(b.dice[e]||0));
+      return (s.dice[a.element]||0)===(b.dice[a.element]||0)+1 &&
+        changes.filter(n=>n===-1).length===1 && changes.filter(n=>n===1).length===1 && changes.every(n=>Math.abs(n)<=1) &&
+        (s.dice.Omni||0)===(b.dice.Omni||0);
+    }
+    if (a.type!=="card" || !byId[a.id] || b.hand?.[a.index]?.id!==a.id) return false;
+    if (byId[a.id].type==="talent") {
+      const r=s.choiceReceipt;
+      if (!submittedCard(a,b,s) || !talentTargetLegal(b,a) || s.active!==b.active || s.handRead!=="full" ||
+          r && (r.origin!==actionKey(a)+"/"+boardKey(b) || r.kind!=="payment" ||
+            r.id!==a.id || r.exited!==true || r.unresolved)) return false;
+      // A zero-cost talent can resolve directly without any payment page.
+      // Prove its complete generated hand, not just removal of the source.
+      const expected=bag(b.hand.filter((_,i)=>i!==a.index)),actual=bag(s.hand);
+      expected.block=(expected.block||0)+talents[a.id].entryBlock;
+      return Object.keys({...expected,...actual}).every(id=>(expected[id]||0)===(actual[id]||0));
+    }
+    if (a.id==="block") return submittedCard(a,b,s) && blockResult(a,b,s);
+    if (a.id==="sand") {
+      const r=s.choiceReceipt;
+      return submittedCard(a,b,s) && s.handRead==="full" && r?.origin===actionKey(a)+"/"+boardKey(b) && r.exited===true &&
+        !r.unresolved && r.kind==="sand" && r.id===a.choice && ["sanctify","disperse"].includes(r.id);
+    }
+    if (drawConsumptionProven(a,b,s)) return true;
+    if (["draw","support"].includes(byId[a.id].type)) return cardCountDecreased(b.hand,s.hand,a.id);
+    return removedOne(b.hand,s.hand,a.id);
+  }
+  function confirmationReady(a,b,s) {
+    // Q payment/energy can appear before its block-discard animation. The
+    // original hand is not a ready next action: finish this submitted Q first.
+    if (a.type==="skill"&&a.skill==="Q"&&s.handRead==="full"&&Array.isArray(s.hand)) {
+      const before=b.hand.filter(h=>h.id==="block").length,
+        remaining=before-burstDiscardCount(a.who,before);
+      if(s.hand.filter(h=>h.id==="block").length>remaining)return false;
+    }
+    // Native slot10: the source and highest-cost card disappear before the
+    // generated die/healing arrives. Keep the same submitted owner, not an
+    // uncertain outcome followed by planning on the incomplete resources.
+    return !(a.type==="card"&&a.id==="block"&&submittedCard(a,b,s)&&
+      s.handRead==="full"&&Array.isArray(s.hand)&&s.hand.length<b.hand.length&&
+      b.diceKnown===true&&s.diceKnown===true&&diceOrder.every(e=>(s.dice[e]||0)===(b.dice[e]||0)));
+  }
+  function emptyHandEffect(a,b,s) {
+    if (b.hand?.length!==1 || s.phase!=="board" || s.turn!=="user" || s.active!==b.active ||
+        Array.isArray(s.hand)&&s.hand.length!==0 || b.hand[a.index]?.id!==a.id ||
+        !["card","tune"].includes(a.type)) return false;
+    // Full-result actions never use a simple removal shortcut.
+    if (a.type==="card" && !["emblem","harbor","liben","whiteGlove","shift","stars","cleanup"].includes(a.id)) return false;
+    const p=s.handEvidence;
+    return p?.kind==="native-empty-fan" && p.stableReads>=2 && p.inputSent===true && p.sourceCount===1 &&
+      p.id===a.id && p.index===a.index && p.target===(a.target??null) && p.beforeKey===boardKey(b);
+  }
+  root.TCG={team,cards,byId,talents,shareCode,guide,openingActive,sandOptions,countdownFamily,
+    norm,identify,observedCard,handCardKnown,characterName,known,alive,diceOrder,total,size,bag,payment,
+    keepOpening,openingPlan,openingSetting:()=>"优先装备与启动牌",openingContext:()=>({}),rerollPlan,rerollCounter,
+    freshMemory,initializeOpening,nextRound,OpeningFlow,freshActionBoard,legalState,enemyCount,
+    projectionBudget,elementReaction,damageAgainst,enemyDamageEvidence,
+    skillCost,skillLegal,talentTargetLegal,supportRoom,cardCost,cardLegal,tuneLegal,actionLegal,switchCost,
+    stormterrorEligible,discardCost,highestCostCards,blockDiscards,cardProbeKey,nextDiscardProbe,blockRisk,countdownDiscard,blockEffects,blockHealing,blockResult,
+    serpentBurstDamage,burstBuffs,skillEffects,passiveEffects,switchBudget,
+    revelRefund,sandExchangeCount,libenCollection,supportEvent,handPlan,hpGrowthAllowance,noteBoard,commit,rejectAction,deferUncertain,confirmationReady,
+    generatedChoices,nativeCardScope,verify,verifyResynchronized:(a,b,s,t)=>legalState(s)&&verify(a,b,s,t),
+    emptyHandEffect,removalEffect:()=>false,
+    drawPayment:(s,a,m)=>byId[a.id]?.type==="draw"||["lair","nre"].includes(a.id)?cardCost(s,a,m):null,
+    indexedHand,reconcileHand,boardKey,actionKey,actionRefused,blockAction,skillQuote,skillProbeAttempted,
+    recordSkillCost,clearSkillCosts,refreshSkillCosts,drawConsumptionProven,
+    refusalCost:(s,m,a)=>a.type==="skill"?skillCost(a.who,a.skill,m,s):a.type==="card"?cardCost(s,a,m):a.type==="switch"?switchCost(m):{}};
+})(globalThis);

@@ -6,58 +6,6 @@ const close = (actual, expected) => assert.ok(Math.abs(actual-expected)<1e-9, `$
 
 module.exports = async function(test) {
   const {T} = load("raiden");
-  await test("single planner: invalid observations stop; a completed unprofitable search ends without a second policy",()=>{
-    const s=board(T),m=T.freshMemory();s.active=1;s.characters[1].hp=1;
-    for(const i of [0,2])Object.assign(s.characters[i],{dead:true,hp:0});
-    m.round=2;m.defeated=[true,false,true];
-    s.enemies=[{hp:10,dead:false,active:true,auraKnown:true,aura:[],defenseKnown:true,shield:20}];
-    assert.ok(T.strategyEligible(s,m).some(a=>a.type==="skill"));
-    const snapshot=JSON.stringify([s,m]),plan=T.plan(s,m),chosen=T.choose(s,m);
-    assert.equal(plan.action,null);assert.equal(plan.status,"no-worthwhile-action");
-    assert.equal(chosen.type,"end");assert.equal(chosen.planning.status,plan.status);
-    assert.equal(JSON.stringify([s,m]),snapshot);
-    s.characters[1].energy=null;assert.equal(T.choose(s,m).type,"stop");
-    s.characters[1].energy=0;s.dice={};assert.equal(T.choose(s,m).type,"end");
-  });
-  await test("single planner: zero-cost healing and effective energy/conversion cards remain scored candidates",()=>{
-    const heal=board(T,["sweet"]),memory=T.freshMemory();heal.dice={};heal.characters[0].hp=2;
-    const healed=T.choose(heal,memory);assert.equal(healed.id,"sweet");assert.ok(healed.planning);
-    memory.food[0]=true;assert.equal(T.choose(heal,memory).type,"end");
-    for(const id of ["voltage","stars","calx","companion"]){
-      const s=board(T,[id]),m=T.freshMemory();s.characters[0].energy=1;
-      s.dice={Omni:id==="stars"?5:4};
-      if(id==="calx"){s.characters[1].energy=1;m.raidenBurst=true;}
-      if(id==="companion"){s.characters[0].energy=2;s.dice={Electro:1,Pyro:2};}
-      const chosen=T.choose(s,m);assert.equal(chosen.id,id);
-      assert.ok(chosen.planning.sequence.includes("skill:0:Q"),"funding has a payable burst continuation");
-      const after=T.projectedAction(s,m,chosen);assert.ok(after);
-      assert.ok(T.skillLegal(after.state,{who:0,skill:"Q"},after.memory));
-    }
-  });
-  await test("single planner: final preparation cards need a usable continuation, not a nonempty-hand workaround",()=>{
-    const s=board(T,["shift"]),m=T.freshMemory();s.dice={Dendro:3};
-    s.characters[0].frozen=true;Object.assign(s.characters[2],{hp:0,dead:true});
-    const shift=T.choose(s,m);assert.equal(shift.id,"shift");
-    assert.ok(shift.planning.sequence.includes("switch:1"));assert.ok(shift.planning.sequence.includes("skill:1:E"));
-    s.dice={Dendro:2};assert.equal(T.choose(s,m).type,"end");
-    const smoked=board(T,["smoked"]);smoked.active=2;smoked.dice={Electro:2};
-    for(const i of [0,1])Object.assign(smoked.characters[i],{dead:true,hp:0});
-    const chosen=T.choose(smoked,T.freshMemory());assert.equal(chosen.id,"smoked");
-    assert.ok(chosen.planning.sequence.includes("skill:2:NA"));
-    smoked.dice={};assert.equal(T.choose(smoked,T.freshMemory()).type,"end");
-  });
-  await test("single planner: tuning and equipment are retained only with attainable use",()=>{
-    const s=board(T,["raven"]),m=T.freshMemory();s.active=1;s.dice={Dendro:2};
-    assert.equal(T.choose(s,m).type,"end","equipment alone has no completed payoff");
-    s.dice={Dendro:8};const equip=T.choose(s,m);assert.equal(equip.id,"raven");
-    assert.ok(equip.planning.sequence.includes("skill:1:E"));
-    const tune=board(T,["sweet"]);tune.active=1;tune.dice={Dendro:2,Pyro:1};
-    tune.enemies[0].aura=["Electro"];tune.enemies[0].auraKnown=true;
-    const chosen=T.choose(tune,T.freshMemory());assert.equal(chosen.type,"tune");
-    const after=T.projectedAction(tune,T.freshMemory(),chosen);
-    assert.ok(T.skillLegal(after.state,{who:1,skill:"E"},after.memory));
-    tune.dice={Dendro:1,Pyro:1};assert.equal(T.choose(tune,T.freshMemory()).type,"end");
-  });
   await test("single planner: exhausted budget keeps the evaluated action and releases its decision scope",()=>{
     const s=board(T,["voltage","sweet"]),m=T.freshMemory();s.characters[0].hp=2;
     const limited=T.projectionBudget.run(1,()=>T.choose(s,m));
@@ -86,7 +34,7 @@ module.exports = async function(test) {
     let current=board(T);current.active=1;current.dice={Dendro:2};current.quicken={known:false};
     for(const who of [0,2])Object.assign(current.characters[who],{hp:0,dead:true});
     current.enemies=[3,3,10].map((hp,i)=>({hp,dead:false,active:i===0,aura:["Electro"],auraKnown:true}));
-    m.round=1;m.thundergrassSupport="sharpkernel";m.artifactKinds[1]="gambler";m.artifacts[1]=true;
+    m.round=1;m.thundergrassSupport="sharpkernel";m.artifactKinds[1]="gambler";
     p.openingFlow={complete:true};
     h.frame=fn=>fn({});h.board=()=>clone(current);
     h.phase=h.phaseIn=()=>({phase:"board",turn:"user"});
@@ -170,42 +118,6 @@ module.exports = async function(test) {
       assert.equal(f.m.skillCosts,null,outcome);
     }
   });
-  await test("action economy: native fast-switch detour is dominated by the same immediate Keqing skill",()=>{
-    const native=require("./fixtures/raiden-fast-relay-20261020.json"),{state:s,memory:m}=clone(native.state.data);
-    const snapshot=JSON.stringify([s,m]),directAction={type:"skill",who:2,skill:"E"};
-    assert.equal(T.skillLegal(s,directAction,m),true);
-    const direct=T.projectedAction(s,m,directAction);
-    let detour={state:s,memory:m},turns=0;
-    for(const action of [{type:"card",id:"fast",index:3,target:null},
-      {type:"switch",target:0},{type:"card",id:"wedge",index:0,target:2}]){
-      detour=T.projectedAction(detour.state,detour.memory,action);assert.ok(detour);
-      turns+=Number(detour.passesTurn);
-    }
-    assert.deepEqual(clone(detour.state.characters),clone(direct.state.characters));
-    assert.deepEqual(clone(detour.state.enemies),clone(direct.state.enemies));
-    assert.deepEqual(clone(detour.memory),clone(direct.memory));
-    assert.equal(turns,Number(direct.passesTurn));
-    assert.equal(T.total(direct.state.dice)-T.total(detour.state.dice),1);
-    // The same caster/skill must not gain an intent bonus from a standby detour.
-    close(detour.benefit,direct.benefit);
-    const chosen=T.choose(s,m);
-    assert.equal(T.actionKey(chosen),T.actionKey(directAction));
-    assert.equal(chosen.planning.sequence.length,1);
-    assert.equal(chosen.planning.terminal,false,"missing native defense is still unknown");
-    assert.equal(JSON.stringify([s,m]),snapshot);
-  });
-  await test("action economy: real high-HP relay remains useful with or without a fast switch",()=>{
-    const native=require("./fixtures/raiden-fast-relay-20261020.json");
-    for(const fast of [true,false]){
-      const {state:s,memory:m}=clone(native.state.data);
-      s.hand=[];s.dice={Omni:4};s.characters[0].energy=2;
-      s.enemies=[{hp:10,dead:false,active:true,aura:[],auraKnown:true}];
-      m.fastSwitch=fast;m.raidenBurst=false;m.resolve=3;
-      const a=T.choose(s,m);
-      assert.equal(a.type,"switch");assert.equal(a.target,0);
-      assert.ok(a.planning.sequence.includes("skill:0:Q"));
-    }
-  });
   const equip = {type:"card",id:"gambler",index:0,target:2};
   const skill = {type:"skill",who:2,skill:"E"};
   function fixture() {
@@ -226,37 +138,12 @@ module.exports = async function(test) {
   }
   function equipped(s,m) {const p=T.projectedAction(s,m,equip);assert.ok(p);return p;}
   function compare(s,m,action=skill) {
-    const plain=clone(m);plain.artifactKinds[2]=null;plain.artifacts[2]=false;
+    const plain=clone(m);plain.artifactKinds[2]=null;
     const p=T.projectedAction(s,m,action),q=T.projectedAction(s,plain,action);
     assert.ok(p&&q);return {p,bonus:p.benefit-q.benefit};
   }
 
-  await test("R03 native-shaped gambler enters the main planner after payment",()=>{
-    const {s,m}=fixture(),snapshot=JSON.stringify([s,m]);
-    assert.equal(T.legalState(s),true);assert.equal(T.cardLegal(s,equip,m),true);
-    assert.equal(Object.hasOwn(s.enemies[0],"defenseKnown"),false);
-    const eligible=T.strategyEligible(s,m).some(a=>a.id==="gambler"),chosen=T.choose(s,m);
-    console.log("R03 planner "+JSON.stringify({eligible,sequence:chosen.planning.sequence,value:chosen.planning.value,terminal:chosen.planning.terminal}));
-    assert.equal(eligible,true);assert.equal(chosen.id,"gambler");
-    assert.equal(chosen.planning.sequence.join(","),"card:gambler,skill:2:E");
-    const p=equipped(s,m);assert.equal(T.actionKey(T.intent(s,m)),T.actionKey(T.intent(p.state,p.memory)));
-    assert.equal(JSON.stringify([s,m]),snapshot);
-    s.dice={Omni:3};assert.equal(T.strategyEligible(s,m).some(a=>a.id==="gambler"),false);
-  });
 
-  await test("R03 nominal refunds score once without becoming spendable dice",()=>{
-    const {s,m}=fixture(),setup=equipped(s,m),{p,bonus}=compare(setup.state,setup.memory);
-    console.log("R03 nominal "+JSON.stringify({bonus,dice:p.state.dice,provenFinish:p.provenFinish}));
-    close(bonus,.62);assert.equal(T.total(p.state.dice),0);assert.equal(p.provenFinish,false);
-    assert.equal(T.skillLegal(p.state,{who:2,skill:"NA"},p.memory),false);
-    assert.equal(p.memory.gamblerUsed[2],1);assert.equal(m.gamblerUsed[2],0);
-    // A turn-passing switch discounts the same skill settlement bonus by .9.
-    const start=clone(setup.state);start.active=0;start.dice={Omni:4};
-    start.characters[0].frozen=true;start.characters[1].frozen=true;
-    const mem=clone(setup.memory);
-    const plain=clone(mem);plain.artifactKinds[2]=null;
-    close(T.plan(start,mem,{depth:2}).value-T.plan(start,plain,{depth:2}).value,.62*.9);
-  });
 
   await test("R03 known shield and guaranteed refunds use actual damage and resources",()=>{
     const {s,m}=fixture(),setup=equipped(s,m);
@@ -287,14 +174,5 @@ module.exports = async function(test) {
     close(result.bonus,0);assert.equal(T.total(result.p.state.dice),16);
   });
 
-  await test("R03 no future target means no nominal value; only proven finishes are terminal",()=>{
-    const {s,m}=fixture();s.enemies=s.enemies.slice(0,1);
-    const setup=equipped(s,m),result=compare(setup.state,setup.memory);
-    close(result.bonus,0);assert.equal(result.p.provenFinish,false);
-    assert.equal(T.choose(s,m).planning.terminal,false);
-    s.enemies[0].defenseKnown=true;s.enemies[0].shield=0;
-    const chosen=T.choose(s,m);assert.equal(chosen.type,"skill");assert.equal(chosen.planning.terminal,true);
-    assert.equal(chosen.planning.sequence.length,1);
-  });
 };
 

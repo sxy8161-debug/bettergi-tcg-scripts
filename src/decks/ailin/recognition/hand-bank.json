@@ -1,0 +1,687 @@
+{
+  "schemaVersion": 1,
+  "patches": [
+    [
+      34,
+      48,
+      46,
+      22
+    ],
+    [
+      34,
+      74,
+      46,
+      22
+    ]
+  ],
+  "scoreFloor": 0.93,
+  "runnerUpGap": 0.2,
+  "entries": [
+    {
+      "id": "gambler",
+      "name": "赌徒的耳环",
+      "views": [
+        {
+          "name": "original",
+          "patches": [
+            "assets/hand/赌徒的耳环-v01-p01.png",
+            "assets/hand/赌徒的耳环-v01-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "heart",
+      "name": "灵光明烁之心",
+      "views": [
+        {
+          "name": "original",
+          "patches": [
+            "assets/hand/灵光明烁之心-v01-p01.png",
+            "assets/hand/灵光明烁之心-v01-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "dunyarzad",
+      "name": "迪娜泽黛",
+      "views": [
+        {
+          "name": "runtime-5ad0c00475",
+          "patches": [
+            "assets/hand/迪娜泽黛-v01-p01.png",
+            "assets/hand/迪娜泽黛-v01-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "companion",
+      "name": "最好的伙伴！",
+      "views": [
+        {
+          "name": "sampler-20261013",
+          "patches": [
+            "assets/hand/最好的伙伴-v01-p01.png",
+            "assets/hand/最好的伙伴-v01-p02.png"
+          ]
+        },
+        {
+          "name": "runtime-00742781d9",
+          "patches": [
+            "assets/hand/最好的伙伴-v02-p01.png",
+            "assets/hand/最好的伙伴-v02-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.9
+    },
+    {
+      "id": "toss",
+      "name": "一掷乾坤",
+      "views": [
+        {
+          "name": "native",
+          "patches": [
+            "assets/hand/一掷乾坤-v01-p01.png",
+            "assets/hand/一掷乾坤-v01-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.9
+    },
+    {
+      "id": "draw",
+      "name": "运筹帷幄",
+      "views": [
+        {
+          "name": "original",
+          "patches": [
+            "assets/hand/运筹帷幄-v01-p01.png",
+            "assets/hand/运筹帷幄-v01-p02.png"
+          ]
+        },
+        {
+          "name": "half-left",
+          "patches": [
+            "assets/hand/运筹帷幄-v02-p01.png",
+            "assets/hand/运筹帷幄-v02-p02.png"
+          ]
+        },
+        {
+          "name": "half-right",
+          "patches": [
+            "assets/hand/运筹帷幄-v03-p01.png",
+            "assets/hand/运筹帷幄-v03-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "boar",
+      "name": "野猪公主",
+      "views": [
+        {
+          "name": "original",
+          "patches": [
+            "assets/hand/野猪公主-v01-p01.png",
+            "assets/hand/野猪公主-v01-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "soup",
+      "name": "奇瑰之汤",
+      "views": [
+        {
+          "name": "native-4ff49e53fc-f0",
+          "patches": [
+            "assets/hand/奇瑰之汤-v01-p01.png",
+            "assets/hand/奇瑰之汤-v01-p02.png"
+          ]
+        },
+        {
+          "name": "native-4ff49e53fc-f1",
+          "patches": [
+            "assets/hand/奇瑰之汤-v02-p01.png",
+            "assets/hand/奇瑰之汤-v02-p02.png"
+          ]
+        },
+        {
+          "name": "runtime-7817cff292",
+          "patches": [
+            "assets/hand/奇瑰之汤-v03-p01.png",
+            "assets/hand/奇瑰之汤-v03-p02.png"
+          ]
+        },
+        {
+          "name": "runtime-b7e0557c91",
+          "patches": [
+            "assets/hand/奇瑰之汤-v04-p01.png",
+            "assets/hand/奇瑰之汤-v04-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "teaParty",
+      "name": "虹彩缤纷的甜点茶话",
+      "views": [
+        {
+          "name": "runtime-6e337b40d7",
+          "patches": [
+            "assets/hand/虹彩缤纷的甜点茶话-v01-p01.png",
+            "assets/hand/虹彩缤纷的甜点茶话-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gladiator",
+      "name": "角斗士的凯旋",
+      "views": [
+        {
+          "name": "runtime-6e337b40d7",
+          "patches": [
+            "assets/hand/角斗士的凯旋-v01-p01.png",
+            "assets/hand/角斗士的凯旋-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "silver",
+      "name": "西尔弗和迈勒斯",
+      "views": [
+        {
+          "name": "runtime-6e337b40d7",
+          "patches": [
+            "assets/hand/西尔弗和迈勒斯-v01-p01.png",
+            "assets/hand/西尔弗和迈勒斯-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pilgrimage",
+      "name": "归火圣夜巡礼",
+      "views": [
+        {
+          "name": "runtime-6e337b40d7",
+          "patches": [
+            "assets/hand/归火圣夜巡礼-v01-p01.png",
+            "assets/hand/归火圣夜巡礼-v01-p02.png"
+          ]
+        },
+        {
+          "name": "runtime-b7e0557c91",
+          "patches": [
+            "assets/hand/归火圣夜巡礼-v02-p01.png",
+            "assets/hand/归火圣夜巡礼-v02-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dragon",
+      "name": "「邪龙」的苏醒",
+      "views": [
+        {
+          "name": "runtime-6e337b40d7",
+          "patches": [
+            "assets/hand/邪龙-的苏醒-v01-p01.png",
+            "assets/hand/邪龙-的苏醒-v01-p02.png"
+          ]
+        },
+        {
+          "name": "runtime-b7e0557c91",
+          "patches": [
+            "assets/hand/邪龙-的苏醒-v02-p01.png",
+            "assets/hand/邪龙-的苏醒-v02-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wavekissedSands",
+      "name": "白浪拂沙",
+      "titleCandidates": [
+        "wavekissedSands",
+        "verdantGift",
+        "gildedHall",
+        "autumnFrost"
+      ],
+      "views": [
+        {
+          "name": "runtime-29a4388bd6",
+          "patches": [
+            "assets/hand/白浪拂沙-v01-p01.png",
+            "assets/hand/白浪拂沙-v01-p02.png"
+          ]
+        },
+        {
+          "name": "runtime-c814f44e07",
+          "patches": [
+            "assets/hand/白浪拂沙-v02-p01.png",
+            "assets/hand/白浪拂沙-v02-p02.png"
+          ]
+        },
+        {
+          "name": "runtime-9c5c88b5b3",
+          "patches": [
+            "assets/hand/白浪拂沙-v03-p01.png",
+            "assets/hand/白浪拂沙-v03-p02.png"
+          ]
+        },
+        {
+          "name": "runtime-b7e0557c91",
+          "patches": [
+            "assets/hand/白浪拂沙-v04-p01.png",
+            "assets/hand/白浪拂沙-v04-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chef",
+      "name": "卯师傅",
+      "views": [
+        {
+          "name": "runtime-754c7ced9b",
+          "patches": [
+            "assets/hand/卯师傅-v01-p01.png",
+            "assets/hand/卯师傅-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gildedHall",
+      "name": "鎏金殿堂",
+      "views": [
+        {
+          "name": "runtime-60039c00a4",
+          "patches": [
+            "assets/hand/鎏金殿堂-v01-p01.png",
+            "assets/hand/鎏金殿堂-v01-p02.png"
+          ]
+        }
+      ],
+      "titleCandidates": [
+        "wavekissedSands",
+        "verdantGift",
+        "gildedHall",
+        "autumnFrost"
+      ]
+    },
+    {
+      "id": "surf",
+      "name": "强劲冲浪拍档！",
+      "views": [
+        {
+          "name": "runtime-e52539a2c8",
+          "patches": [
+            "assets/hand/强劲冲浪拍档-v01-p01.png",
+            "assets/hand/强劲冲浪拍档-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "blessingM",
+      "name": "「魔女M的祝福」",
+      "views": [
+        {
+          "name": "runtime-009f053dcf",
+          "patches": [
+            "assets/hand/魔女M的祝福-v01-p01.png",
+            "assets/hand/魔女M的祝福-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "verdantGift",
+      "name": "一捧绿野",
+      "views": [
+        {
+          "name": "runtime-de8f108fd2",
+          "patches": [
+            "assets/hand/一捧绿野-v01-p01.png",
+            "assets/hand/一捧绿野-v01-p02.png"
+          ]
+        }
+      ],
+      "titleCandidates": [
+        "wavekissedSands",
+        "verdantGift",
+        "gildedHall",
+        "autumnFrost"
+      ]
+    }
+  ],
+  "expanded": {
+    "scoreFloor": 0.95,
+    "runnerUpGap": 0.2,
+    "patches": [
+      [
+        34,
+        65,
+        32,
+        26
+      ],
+      [
+        34,
+        103,
+        32,
+        26
+      ]
+    ],
+    "entries": [
+      {
+        "id": "gambler",
+        "name": "赌徒的耳环",
+        "views": [
+          {
+            "name": "runtime-576200ab98",
+            "patches": [
+              "assets/expanded/赌徒的耳环-v01-p01.png",
+              "assets/expanded/赌徒的耳环-v01-p02.png"
+            ]
+          }
+        ],
+        "scoreFloor": 0.95
+      },
+      {
+        "id": "dunyarzad",
+        "name": "迪娜泽黛",
+        "views": [
+          {
+            "name": "runtime-ce9e4f8a7c",
+            "patches": [
+              "assets/expanded/迪娜泽黛-v01-p01.png",
+              "assets/expanded/迪娜泽黛-v01-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-4e1a316fbb",
+            "patches": [
+              "assets/expanded/迪娜泽黛-v02-p01.png",
+              "assets/expanded/迪娜泽黛-v02-p02.png"
+            ]
+          }
+        ],
+        "scoreFloor": 0.95
+      },
+      {
+        "id": "companion",
+        "name": "最好的伙伴！",
+        "views": [
+          {
+            "name": "runtime-d704f96ed1",
+            "patches": [
+              "assets/expanded/最好的伙伴-v01-p01.png",
+              "assets/expanded/最好的伙伴-v01-p02.png"
+            ]
+          }
+        ],
+        "scoreFloor": 0.95
+      },
+      {
+        "id": "toss",
+        "name": "一掷乾坤",
+        "views": [
+          {
+            "name": "8aa81e794f45",
+            "patches": [
+              "assets/expanded/一掷乾坤-v01-p01.png",
+              "assets/expanded/一掷乾坤-v01-p02.png"
+            ]
+          },
+          {
+            "name": "7cdc46a8a81b",
+            "patches": [
+              "assets/expanded/一掷乾坤-v02-p01.png",
+              "assets/expanded/一掷乾坤-v02-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-26039ab165",
+            "patches": [
+              "assets/expanded/一掷乾坤-v03-p01.png",
+              "assets/expanded/一掷乾坤-v03-p02.png"
+            ]
+          }
+        ],
+        "scoreFloor": 0.95
+      },
+      {
+        "id": "draw",
+        "name": "运筹帷幄",
+        "views": [
+          {
+            "name": "runtime-099a91db70",
+            "patches": [
+              "assets/expanded/运筹帷幄-v01-p01.png",
+              "assets/expanded/运筹帷幄-v01-p02.png"
+            ]
+          }
+        ],
+        "scoreFloor": 0.95
+      },
+      {
+        "id": "soup",
+        "name": "奇瑰之汤",
+        "views": [
+          {
+            "name": "d6077c4a2204",
+            "patches": [
+              "assets/expanded/奇瑰之汤-v01-p01.png",
+              "assets/expanded/奇瑰之汤-v01-p02.png"
+            ]
+          },
+          {
+            "name": "08f8c8830ff0",
+            "patches": [
+              "assets/expanded/奇瑰之汤-v02-p01.png",
+              "assets/expanded/奇瑰之汤-v02-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-a83db07942",
+            "patches": [
+              "assets/expanded/奇瑰之汤-v03-p01.png",
+              "assets/expanded/奇瑰之汤-v03-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-8435d11eb8",
+            "patches": [
+              "assets/expanded/奇瑰之汤-v04-p01.png",
+              "assets/expanded/奇瑰之汤-v04-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-c12ea1d7ad",
+            "patches": [
+              "assets/expanded/奇瑰之汤-v05-p01.png",
+              "assets/expanded/奇瑰之汤-v05-p02.png"
+            ]
+          }
+        ],
+        "scoreFloor": 0.95
+      },
+      {
+        "id": "teaParty",
+        "name": "虹彩缤纷的甜点茶话",
+        "views": [
+          {
+            "name": "runtime-6f90a5b591",
+            "patches": [
+              "assets/expanded/虹彩缤纷的甜点茶话-v01-p01.png",
+              "assets/expanded/虹彩缤纷的甜点茶话-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "gladiator",
+        "name": "角斗士的凯旋",
+        "views": [
+          {
+            "name": "runtime-986cd2d815",
+            "patches": [
+              "assets/expanded/角斗士的凯旋-v01-p01.png",
+              "assets/expanded/角斗士的凯旋-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "silver",
+        "name": "西尔弗和迈勒斯",
+        "views": [
+          {
+            "name": "runtime-197ac76d2d",
+            "patches": [
+              "assets/expanded/西尔弗和迈勒斯-v01-p01.png",
+              "assets/expanded/西尔弗和迈勒斯-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "pilgrimage",
+        "name": "归火圣夜巡礼",
+        "views": [
+          {
+            "name": "runtime-197ac76d2d",
+            "patches": [
+              "assets/expanded/归火圣夜巡礼-v01-p01.png",
+              "assets/expanded/归火圣夜巡礼-v01-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-c45d254851",
+            "patches": [
+              "assets/expanded/归火圣夜巡礼-v02-p01.png",
+              "assets/expanded/归火圣夜巡礼-v02-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "dragon",
+        "name": "「邪龙」的苏醒",
+        "views": [
+          {
+            "name": "runtime-197ac76d2d",
+            "patches": [
+              "assets/expanded/邪龙-的苏醒-v01-p01.png",
+              "assets/expanded/邪龙-的苏醒-v01-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-c12ea1d7ad",
+            "patches": [
+              "assets/expanded/邪龙-的苏醒-v02-p01.png",
+              "assets/expanded/邪龙-的苏醒-v02-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "wavekissedSands",
+        "name": "白浪拂沙",
+        "titleCandidates": [
+          "wavekissedSands",
+          "verdantGift",
+          "gildedHall",
+          "autumnFrost"
+        ],
+        "views": [
+          {
+            "name": "runtime-50e55fc9d0",
+            "patches": [
+              "assets/expanded/白浪拂沙-v01-p01.png",
+              "assets/expanded/白浪拂沙-v01-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-97769e88e1",
+            "patches": [
+              "assets/expanded/白浪拂沙-v02-p01.png",
+              "assets/expanded/白浪拂沙-v02-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "chef",
+        "name": "卯师傅",
+        "views": [
+          {
+            "name": "runtime-8162718474",
+            "patches": [
+              "assets/expanded/卯师傅-v01-p01.png",
+              "assets/expanded/卯师傅-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "gildedHall",
+        "name": "鎏金殿堂",
+        "views": [
+          {
+            "name": "runtime-37baec4caa",
+            "patches": [
+              "assets/expanded/鎏金殿堂-v01-p01.png",
+              "assets/expanded/鎏金殿堂-v01-p02.png"
+            ]
+          }
+        ],
+        "titleCandidates": [
+          "wavekissedSands",
+          "verdantGift",
+          "gildedHall",
+          "autumnFrost"
+        ]
+      },
+      {
+        "id": "surf",
+        "name": "强劲冲浪拍档！",
+        "views": [
+          {
+            "name": "runtime-37baec4caa",
+            "patches": [
+              "assets/expanded/强劲冲浪拍档-v01-p01.png",
+              "assets/expanded/强劲冲浪拍档-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "blessingM",
+        "name": "「魔女M的祝福」",
+        "views": [
+          {
+            "name": "runtime-bc4c25c717",
+            "patches": [
+              "assets/expanded/魔女M的祝福-v01-p01.png",
+              "assets/expanded/魔女M的祝福-v01-p02.png"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

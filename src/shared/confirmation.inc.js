@@ -38,18 +38,10 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
         if (remaining > 0) await sleep(remaining);
       };
       const combat = ["skill", "switch", "end"].includes(action.type) ||
-        action.type === "card" && (TCG.byId[action.id]?.combatSkill || ["floralSidewinder", "skivingNewAndImproved", "wedge", "penance"].includes(action.id));
+        action.type === "card" && (TCG.byId[action.id]?.combatSkill || TCG.byId[action.id]?.combatAction || ["floralSidewinder", "skivingNewAndImproved", "wedge", "penance"].includes(action.id));
       // The existing combat flag also owns switch/end recovery. This new
       // refresh policy is only for casts, not ordinary fast/manual switches.
       const effectAction = combat && !["switch", "end"].includes(action.type);
-      const actual = this.captureGeometry?.actualSize;
-      const handoff = actual?.width === 2560 && [1440,1600].includes(actual.height) &&
-        (effectAction || action.type === "switch" && !memory.fastSwitch)
-        ? (session.handoff ||= { startedAt: session.submittedAt ?? Date.now(), ownSince: null, ownReads: 0, ready: false }) : null;
-      // Edict consumption can precede its healing animation. Keep consumption
-      // confirmed, but use the existing quiet-board observer before planning.
-      // Do not require HP gain: full HP or healing suppression may prevent it.
-      const quietObservationRequired = action.type === "card" && action.id === "edict";
       // The pending action owns both identity synchronization and whether
       // consumption might still precede insertion. The lifecycle must not
       // reconstruct that plan after commit has changed the deck memory.
@@ -58,21 +50,34 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
         // A card may enter combat confirmation as a skill (e.g. a kernel).
         // That adapter preserves cardAction; its hand effects remain a card's.
         handRefreshRequired: confirmed && (action.cardAction || action).type === "card" &&
-          session.plan?.mode === "full" && session.plan.refreshAfterConsumption !== false &&
+          session.plan?.refreshAfterConsumption === true &&
           Array.isArray(after.hand) && after.hand.length <= before.hand.length,
-        freshObservationRequired: confirmed && (effectAction && !session.transition || quietObservationRequired),
-        quietObservationRequired: confirmed && quietObservationRequired,
+        // The observation owner, not the finished confirmation session, owns
+        // retained identities through a later insertion from this action.
+        handContinuation: confirmed && session.plan?.retainedHand ? {
+          retainedHand: session.plan.retainedHand,
+          retainedVariantFamilies: session.plan.retainedVariantFamilies || [],
+          retainedHandOrder: session.plan.retainedHandOrder === true,
+        } : null,
+        // Edict consumption can precede healing. Both it and a cast without
+        // observed handoff need the existing corroborated board, not predicted HP.
+        freshObservationRequired: confirmed && (effectAction && !session.transition ||
+          action.type === "card" && action.id === "edict"),
       });
       while (Date.now() < deadline) {
         sampledAt = Date.now();
         const p = this.phase();
         lastPhase = p;
-        if (handoff && (p.phase !== "board" || p.turn !== "user")) {
-          handoff.ownSince = null; handoff.ownReads = 0; handoff.ready = false;
-        }
         if (p.result) return { ...p, confirmed: true };
-        if (p.turn === "enemy" || ["choice", "roll", "pick", "settlement"].includes(p.phase))
+        if (p.choiceKind === "support-discard") {
+          const error = new Error("支援区已满，卡牌尚未完成出牌；停止本局，不自动弃置已有支援或重复出牌");
+          error.code = "TCG_SUPPORT_FULL";
+          throw error;
+        }
+        if (p.turn === "enemy" || ["choice", "roll", "pick", "settlement"].includes(p.phase)) {
           session.handObservation = null;
+          session.skillViewClosed = true;
+        }
         if (this.choiceSession || p.phase === "choice") {
           session.handObservation = null;
           try { await this.resolveChoice(before, memory); }
@@ -83,8 +88,7 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           const receipt = this.soupReceipt || this.choiceReceipt;
           if (!(session.plan?.mode === "remove" && receipt?.origin === session.key &&
               receipt.exited === true && (this.soupReceipt === receipt || ["payment", "target"].includes(receipt.kind))))
-            session.plan = { mode: "full", action, before, expectedCount: this.handCountHint,
-              retainedHand: session.plan?.retainedHand,retainedVariantFamilies:session.plan?.retainedVariantFamilies };
+            session.plan = { ...session.plan, mode: "full", action, before, expectedCount: this.handCountHint };
           continue;
         }
         if (action.type === "card" && action.id === "toss" && (this.tossSession || p.phase === "roll")) {
@@ -109,39 +113,12 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           let after;
           try {
             this.requireHandObservation(p, "before-confirm-reset");
-            // Finish the submitted card's view as soon as its own board returns,
-            // not after the entire combat handoff wait. Never fold enemy/choice
-            // pages, and keep pre-reset consumption evidence bound to this action.
+            // Finish the submitted view on our board and preserve its native
+            // consumption evidence. Never fold enemy/choice pages.
             const receipt = await this.removalEvidenceBeforeReset(session.plan);
             if (p.phase === "board" && (this.handNeedsReset || this.handFanReady)) await this.reset();
             if (receipt && this.inputRevision >= receipt.revision && this.inputRevision <= receipt.revision + 1)
               session.plan = { ...session.plan, preResetEvidence: { ...receipt, revision: this.inputRevision } };
-            if (handoff && !handoff.ready) {
-              const now = Date.now(), minimumMs = action.skill === "Q" ? 15000 : 10000;
-              // Reuse the official 10s/15s no-handoff grace, but keep observing:
-              // a real opponent return can release it early; terminal/pick/choice
-              // still dispatch above. Never require a nonexistent enemy turn.
-              const eligible = p.phase === "board" &&
-                (session.transition || now - handoff.startedAt >= minimumMs);
-              if (eligible) { handoff.ownSince ??= now; handoff.ownReads++; }
-              else { handoff.ownSince = null; handoff.ownReads = 0; }
-              if (!eligible || handoff.ownReads < 3 || now - handoff.ownSince < 2000) {
-                const reason = eligible ? "own-turn-still-settling" : "handoff-not-observed";
-                if (handoff.reason !== reason) {
-                  handoff.reason = reason;
-                  this.trace("combat-handoff-wait", { action, reason, phase: p.phase, turn: p.turn,
-                    transition: session.transition, elapsedMs: now - handoff.startedAt, minimumMs });
-                }
-                await waitForSample(450); continue;
-              }
-              handoff.ready = true;
-              // Phase persistence is not full effect proof. Keep the existing
-              // quiet COMPLETE-board observer before any hand scan or input.
-              this.autoRisk = true;
-              this.trace("combat-handoff-ready", { action, transition: session.transition,
-                elapsedMs: now - handoff.startedAt, ownStableMs: now - handoff.ownSince,
-                ownReads: handoff.ownReads, proof: session.transition ? "observed-opponent-return" : "conservative-no-handoff-window" });
-            }
             after = await this.observe(true, session.plan ? { ...session.plan, transitionPassed: session.transition } : null);
           } catch (e) {
             if (["TCG_BOARD_RETRY", "TCG_DICE_RETRY", "TCG_HAND_RETRY"].includes(e.code)) {
@@ -153,9 +130,10 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           }
           if (after.result) return { ...after, confirmed: true };
           if (after.phase !== "board" || after.turn !== "user") {
-            if (handoff) { handoff.ownSince = null; handoff.ownReads = 0; handoff.ready = false; }
-            if (after.turn === "enemy" || ["choice", "roll", "pick", "settlement"].includes(after.phase))
+            if (after.turn === "enemy" || ["choice", "roll", "pick", "settlement"].includes(after.phase)) {
               session.handObservation = null;
+              session.skillViewClosed = true;
+            }
             if (after.turn === "enemy") session.transition = true;
             this.trace("confirmation-deferred", { action, phase: after.phase, turn: after.turn });
             await waitForSample(450); continue;
@@ -163,6 +141,7 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           // Consumed source can precede a late soup page. Keep its owner even
           // after a complete resync; neither success nor uncertain exit closes it.
           if (TCG.confirmationReady && !TCG.confirmationReady(action, before, after)) {
+            session.handObservation = null;
             await waitForSample(250); continue;
           }
           await this.provePaidDraw(action,before,after,memory);
@@ -191,21 +170,26 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
             await waitForSample(400); continue;
           }
           this.trace("state-resync", { action, verified, budgetMatches, expectedDice: this.expectedDice,
-            observedDice: TCG.total(after.dice), reuseFullRead: after.handRead === "full" });
-          if (!verified && session.plan?.mode !== "unchanged" && after.handRead !== "full") {
-            this.invalidateHand("post-action-state-mismatch"); this.emptyHandProven = false;
+            observedDice: TCG.total(after.dice), reuseFullRead: verified && after.handRead === "full" });
+          // A completed read is not proof that its identities are correct.
+          // If the action contradicts it, invalidate the pending snapshot too
+          // and use the existing single resync read before an uncertain exit.
+          if (!verified && session.plan?.mode !== "unchanged") {
+            this.invalidateHand("post-action-state-mismatch");
             after = await this.observe(true, { mode: "full", expectedCount: null });
           }
           if (after.result) return { ...after, confirmed: true };
           if (after.phase !== "board" || after.turn !== "user") {
+            if (after.turn === "enemy" || ["choice", "roll", "pick", "settlement"].includes(after.phase))
+              session.skillViewClosed = true;
             if (after.turn === "enemy") session.transition = true;
-            if (handoff) { handoff.ownSince = null; handoff.ownReads = 0; handoff.ready = false; }
             await waitForSample(450); continue;
           }
           if (!TCG.legalState(after)) {
             await waitForSample(400); continue;
           }
           if (TCG.confirmationReady && !TCG.confirmationReady(action, before, after)) {
+            session.handObservation = null;
             await waitForSample(250); continue;
           }
           await this.provePaidDraw(action,before,after,memory);
@@ -215,6 +199,20 @@ async confirmPending(action, before, memory = TCG.freshMemory()) {
           return { ...completed(after, confirmed), resynchronized: true };
         }
         if (p.phase === "roll" && combat) return { ...p, confirmed: session.transition };
+        // A skill detail can cover the turn marker if a submitted click did
+        // not finish the cast. Reuse the existing blank-area reset once after
+        // the same effect-start window, only until a native scene exit closes
+        // that opportunity. Later unknown frames cannot reopen an old detail.
+        // A new native observation, not dismissing the view, decides the outcome.
+        if (action.type === "skill" && !action.cardAction && !action.technique &&
+            p.phase === "unknown" && p.turn === "none" && !p.cardTarget &&
+            !session.skillViewClosed && session.submittedAt !== null &&
+            Date.now() - session.submittedAt >= 1200) {
+          session.skillViewClosed = true;
+          await this.reset();
+          this.trace("skill-view-reset", { action, reason: "unresolved-phase-after-skill-input" });
+          continue;
+        }
         await waitForSample(450);
       }
       const error = new Error("动作仍待核实，保留本次输入并继续观察");

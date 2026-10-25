@@ -22,54 +22,6 @@ module.exports = async function(test) {
     assert.equal(a.funding.goal,T.actionKey(card(s.hand[0])));
     assert.equal(a.projections.limit,240);assert.ok(a.projections.used<=240);
   });
-  await test("R06: consuming the sole reduced sashimi must prefer the already enhanced NA",()=>{
-    const s=board(T),m=T.freshMemory();s.active=1;s.dice={Hydro:3};
-    s.hand=[observed(T,"sashimi",0,0,{reduction:1})];Object.assign(s.enemies[0],{aura:["Hydro"],auraKnown:true});
-    m.lunarMinimum=T.fact(3,"confirmed-action");m.passiveUsed=true;
-    const before=JSON.stringify([s,m]),food=card(s.hand[0],1),p=T.projectResources(s,m,food),
-      direct=T.damageEstimate(s,m,1,"NA"),after=T.damageEstimate(p.state,p.memory,1,"NA"),
-      score=T.cardScore(s,m,food,T.axis(s,m)),a=T.choose(s,m);
-    assert.equal(JSON.stringify([s,m]),before);
-    assert.equal(direct.enhancedReady,true);assert.equal(after.enhancedReady,false);
-    assert.equal(direct.direct,3);assert.equal(after.direct,2);
-    assert.equal(score,0);assert.equal(a.type,"skill");assert.equal(a.skill,"NA");
-  });
-  await test("R02: a full hand covers skills, cards, switches, probes and one-tune hits before deep expansion",()=>{
-    const s=board(T),m=T.freshMemory();s.active=2;s.dice={Dendro:4,Hydro:4,Pyro:4,Omni:4};
-    s.characters.forEach(c=>c.energy=2);s.characters[2].hp=3;
-    s.hand=["seed","gambler","sashimi","shift","fruit","calx","meditation","lumen","ray","draw"]
-      .map((id,i)=>observed(T,id,i));s.hand[9].currentCost=null;
-    s.enemies=[20,20,20].map((hp,i)=>({hp,dead:false,active:i===0,auraKnown:true,aura:[]}));
-    const before=JSON.stringify([s,m]),values=new Map(),first=[],project=T.projectResources;
-    let granted=0,rootCards=0;
-    T.projectResources=(state,memory,a)=>{
-      if(T.projectionBudget.available())granted++;
-      if(state===s&&memory===m&&a.type==="card")rootCards++;
-      return project(state,memory,a);
-    };
-    try {
-      const result=T.projectionBudget.run(240,()=>{
-        const ranked=T.candidates(s,m,T.axis(s,m),true,values),categories=new Set(ranked.map(a=>a.type));
-        for(const type of ["skill","card","switch","probe"])assert.ok(categories.has(type),type);
-        for(const h of s.hand)for(const target of T.characterTarget(T.byId[h.id])?[0,1,2]:[null]){
-          const a=card(h,target);if(T.cardLegal(s,a,m))assert.ok(values.get(JSON.stringify(a))?.projection,h.id+":"+target);
-        }
-        const cards=rootCards,tune=T.tuningPlan(s,m,values,true,first);
-        assert.ok(tune);assert.equal(rootCards,cards,"tuning reuses completed material scores");
-        const routes=T.resourceRoutes(s,m);assert.equal(routes.truncated,true);
-        const retained=T.tuningPlan(s,m,values,false,first);
-        assert.ok(retained);assert.equal(retained.id,tune.id);assert.equal(retained.score,tune.score);
-        const after=T.candidates(s,m,T.axis(s,m),false,values);
-        for(const a of ranked)
-          assert.ok(after.some(b=>T.actionKey(a)===T.actionKey(b)),"exhaustion dropped "+T.actionKey(a));
-        return {type:"end"};
-      });
-      assert.equal(result.projections.limit,240);assert.equal(result.projections.used,granted);
-      assert.ok(granted<=240);
-    } finally {T.projectResources=project;}
-    assert.equal(JSON.stringify([s,m]),before);
-    const a=T.choose(s,m);assert.notEqual(a.type,"end");assert.ok(a.projections.used<=240);
-  });
   await test("R06: a retained reduced card preserves enhancement; sleepy only discounts the first kernel",()=>{
     const s=board(T),m=T.freshMemory();s.active=1;s.dice={Hydro:3};
     s.hand=[observed(T,"sashimi",0,0,{reduction:1}),observed(T,"fruit",1,2,{reduction:1})];

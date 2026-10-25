@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "patches": [
+    [
+      -45,
+      445,
+      90,
+      85
+    ],
+    [
+      -45,
+      575,
+      90,
+      85
+    ]
+  ],
+  "scoreFloor": 0.93,
+  "runnerUpGap": 0.2,
+  "stableScore": 0.9999,
+  "entries": [
+    {
+      "id": "gambler",
+      "name": "赌徒的耳环",
+      "patches": [
+        "assets/opening/赌徒的耳环-v01-p01.png",
+        "assets/opening/赌徒的耳环-v01-p02.png"
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "heart",
+      "name": "灵光明烁之心",
+      "patches": [
+        "assets/opening/灵光明烁之心-v01-p01.png",
+        "assets/opening/灵光明烁之心-v01-p02.png"
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "dunyarzad",
+      "name": "迪娜泽黛",
+      "patches": [
+        "assets/opening/迪娜泽黛-v01-p01.png",
+        "assets/opening/迪娜泽黛-v01-p02.png"
+      ],
+      "views": [
+        {
+          "name": "user-opening1600-0f9ad7a09f",
+          "patches": [
+            "assets/opening/迪娜泽黛-v01-p01.png",
+            "assets/opening/迪娜泽黛-v01-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "companion",
+      "name": "最好的伙伴！",
+      "patches": [
+        "assets/opening/最好的伙伴-v01-p01.png",
+        "assets/opening/最好的伙伴-v01-p02.png"
+      ],
+      "scoreFloor": 0.95
+    },
+    {
+      "id": "toss",
+      "name": "一掷乾坤",
+      "patches": [
+        "assets/opening/一掷乾坤-v01-p01.png",
+        "assets/opening/一掷乾坤-v01-p02.png"
+      ],
+      "scoreFloor": 0.95
+    },
+    {
+      "id": "draw",
+      "name": "运筹帷幄",
+      "patches": [
+        "assets/opening/运筹帷幄-v01-p01.png",
+        "assets/opening/运筹帷幄-v01-p02.png"
+      ],
+      "scoreFloor": 0.93,
+      "views": [
+        {
+          "name": "original",
+          "patches": [
+            "assets/opening/运筹帷幄-v01-p01.png",
+            "assets/opening/运筹帷幄-v01-p02.png"
+          ]
+        },
+        {
+          "name": "user-3490b82a6e",
+          "patches": [
+            "assets/opening/运筹帷幄-v02-p01.png",
+            "assets/opening/运筹帷幄-v02-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "boar",
+      "name": "野猪公主",
+      "patches": [
+        "assets/opening/野猪公主-v01-p01.png",
+        "assets/opening/野猪公主-v01-p02.png"
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "soup",
+      "name": "奇瑰之汤",
+      "patches": [
+        "assets/opening/奇瑰之汤-v01-p01.png",
+        "assets/opening/奇瑰之汤-v01-p02.png"
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "chef",
+      "name": "卯师傅",
+      "patches": [
+        "assets/opening/卯师傅-v01-p01.png",
+        "assets/opening/卯师傅-v01-p02.png"
+      ]
+    },
+    {
+      "id": "pilgrimage",
+      "name": "归火圣夜巡礼",
+      "patches": [
+        "assets/opening/归火圣夜巡礼-v01-p01.png",
+        "assets/opening/归火圣夜巡礼-v01-p02.png"
+      ]
+    },
+    {
+      "id": "teaParty",
+      "name": "虹彩缤纷的甜点茶话",
+      "patches": [
+        "assets/opening/虹彩缤纷的甜点茶话-v01-p01.png",
+        "assets/opening/虹彩缤纷的甜点茶话-v01-p02.png"
+      ]
+    },
+    {
+      "id": "silver",
+      "name": "西尔弗和迈勒斯",
+      "patches": [
+        "assets/opening/西尔弗和迈勒斯-v01-p01.png",
+        "assets/opening/西尔弗和迈勒斯-v01-p02.png"
+      ]
+    },
+    {
+      "id": "dragon",
+      "name": "「邪龙」的苏醒",
+      "patches": [
+        "assets/opening/邪龙-的苏醒-v01-p01.png",
+        "assets/opening/邪龙-的苏醒-v01-p02.png"
+      ]
+    },
+    {
+      "id": "gladiator",
+      "name": "角斗士的凯旋",
+      "patches": [
+        "assets/opening/角斗士的凯旋-v01-p01.png",
+        "assets/opening/角斗士的凯旋-v01-p02.png"
+      ]
+    },
+    {
+      "id": "blessingM",
+      "name": "「魔女M的祝福」",
+      "patches": [
+        "assets/opening/魔女M的祝福-v01-p01.png",
+        "assets/opening/魔女M的祝福-v01-p02.png"
+      ]
+    },
+    {
+      "id": "surf",
+      "name": "强劲冲浪拍档！",
+      "patches": [
+        "assets/opening/强劲冲浪拍档-v01-p01.png",
+        "assets/opening/强劲冲浪拍档-v01-p02.png"
+      ]
+    }
+  ]
+}

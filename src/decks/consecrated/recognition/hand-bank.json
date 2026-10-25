@@ -1,0 +1,586 @@
+{
+  "schemaVersion": 1,
+  "patches": [
+    [
+      34,
+      48,
+      46,
+      22
+    ],
+    [
+      34,
+      74,
+      46,
+      22
+    ]
+  ],
+  "scoreFloor": 0.95,
+  "runnerUpGap": 0.2,
+  "entries": [
+    {
+      "id": "liben",
+      "name": "立本",
+      "views": [
+        {
+          "name": "runtime-0dc22332e8",
+          "patches": [
+            "assets/hand/立本-v01-p01.png",
+            "assets/hand/立本-v01-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "nre",
+      "name": "便携营养袋",
+      "views": [
+        {
+          "name": "native-ed5d7cb698-0",
+          "patches": [
+            "assets/hand/便携营养袋-v01-p01.png",
+            "assets/hand/便携营养袋-v01-p02.png"
+          ]
+        },
+        {
+          "name": "native-ed5d7cb698-1",
+          "patches": [
+            "assets/hand/便携营养袋-v02-p01.png",
+            "assets/hand/便携营养袋-v02-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.95
+    },
+    {
+      "id": "sand",
+      "name": "「沙中遗事」",
+      "views": [
+        {
+          "name": "native-b31b22a271-0",
+          "patches": [
+            "assets/hand/沙中遗事-v01-p01.png",
+            "assets/hand/沙中遗事-v01-p02.png"
+          ]
+        },
+        {
+          "name": "native-b31b22a271-1",
+          "patches": [
+            "assets/hand/沙中遗事-v02-p01.png",
+            "assets/hand/沙中遗事-v02-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.92
+    },
+    {
+      "id": "shift",
+      "name": "换班时间",
+      "views": [
+        {
+          "name": "original",
+          "patches": [
+            "assets/hand/换班时间-v01-p01.png",
+            "assets/hand/换班时间-v01-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "draw",
+      "name": "运筹帷幄",
+      "views": [
+        {
+          "name": "original",
+          "patches": [
+            "assets/hand/运筹帷幄-v01-p01.png",
+            "assets/hand/运筹帷幄-v01-p02.png"
+          ]
+        },
+        {
+          "name": "half-left",
+          "patches": [
+            "assets/hand/运筹帷幄-v02-p01.png",
+            "assets/hand/运筹帷幄-v02-p02.png"
+          ]
+        },
+        {
+          "name": "half-right",
+          "patches": [
+            "assets/hand/运筹帷幄-v03-p01.png",
+            "assets/hand/运筹帷幄-v03-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "stars",
+      "name": "星天之兆",
+      "views": [
+        {
+          "name": "sampler-20261013",
+          "patches": [
+            "assets/hand/星天之兆-v01-p01.png",
+            "assets/hand/星天之兆-v01-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.9
+    },
+    {
+      "id": "countdown3",
+      "name": "幻戏倒计时：3",
+      "views": [
+        {
+          "name": "native-d81982f3da-0",
+          "patches": [
+            "assets/hand/幻戏倒计时-3-v01-p01.png",
+            "assets/hand/幻戏倒计时-3-v01-p02.png"
+          ]
+        },
+        {
+          "name": "native-d81982f3da-1",
+          "patches": [
+            "assets/hand/幻戏倒计时-3-v02-p01.png",
+            "assets/hand/幻戏倒计时-3-v02-p02.png"
+          ]
+        },
+        {
+          "name": "hushang1600-right-edge",
+          "patches": [
+            "assets/hand/幻戏倒计时-3-v03-p01.png",
+            "assets/hand/幻戏倒计时-3-v03-p02.png"
+          ]
+        }
+      ],
+      "titleCandidates": [
+        "countdown3",
+        "countdown2",
+        "countdown1",
+        "show"
+      ],
+      "scoreFloor": 0.95
+    },
+    {
+      "id": "revel",
+      "name": "「狂欢节奏」",
+      "views": [
+        {
+          "name": "original",
+          "patches": [
+            "assets/hand/狂欢节奏-v01-p01.png",
+            "assets/hand/狂欢节奏-v01-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "crocodileTalent",
+      "name": "亡水溢流",
+      "views": [
+        {
+          "name": "runtime-5902fb4296",
+          "patches": [
+            "assets/hand/亡水溢流-v01-p01.png",
+            "assets/hand/亡水溢流-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scorpionTalent",
+      "name": "亡雷凝蓄",
+      "views": [
+        {
+          "name": "runtime-5902fb4296",
+          "patches": [
+            "assets/hand/亡雷凝蓄-v01-p01.png",
+            "assets/hand/亡雷凝蓄-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "emblem",
+      "name": "绝缘之旗印",
+      "views": [
+        {
+          "name": "runtime-5902fb4296",
+          "patches": [
+            "assets/hand/绝缘之旗印-v01-p01.png",
+            "assets/hand/绝缘之旗印-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "harbor",
+      "name": "璃月港口",
+      "views": [
+        {
+          "name": "runtime-5902fb4296",
+          "patches": [
+            "assets/hand/璃月港口-v01-p01.png",
+            "assets/hand/璃月港口-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lair",
+      "name": "风龙废墟",
+      "views": [
+        {
+          "name": "runtime-5902fb4296",
+          "patches": [
+            "assets/hand/风龙废墟-v01-p01.png",
+            "assets/hand/风龙废墟-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "block",
+      "name": "噬骸能量块",
+      "views": [
+        {
+          "name": "runtime-adee7d625a",
+          "patches": [
+            "assets/hand/噬骸能量块-v01-p01.png",
+            "assets/hand/噬骸能量块-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "whiteGlove",
+      "name": "白手套和渔夫",
+      "views": [
+        {
+          "name": "runtime-28a3256aeb",
+          "patches": [
+            "assets/hand/白手套和渔夫-v01-p01.png",
+            "assets/hand/白手套和渔夫-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "adeptus",
+      "name": "仙跳墙",
+      "views": [
+        {
+          "name": "runtime-28a3256aeb",
+          "patches": [
+            "assets/hand/仙跳墙-v01-p01.png",
+            "assets/hand/仙跳墙-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "serpentTalent",
+      "name": "亡风啸卷",
+      "views": [
+        {
+          "name": "runtime-d6f93903fd",
+          "patches": [
+            "assets/hand/亡风啸卷-v01-p01.png",
+            "assets/hand/亡风啸卷-v01-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cleanup",
+      "name": "「清洁工作」",
+      "views": [
+        {
+          "name": "runtime-ea6b606ed5",
+          "patches": [
+            "assets/hand/清洁工作-v01-p01.png",
+            "assets/hand/清洁工作-v01-p02.png"
+          ]
+        }
+      ]
+    }
+  ],
+  "expanded": {
+    "scoreFloor": 0.95,
+    "runnerUpGap": 0.2,
+    "patches": [
+      [
+        34,
+        65,
+        32,
+        26
+      ],
+      [
+        34,
+        103,
+        32,
+        26
+      ]
+    ],
+    "entries": [
+      {
+        "id": "liben",
+        "name": "立本",
+        "views": [
+          {
+            "name": "runtime-4e1a316fbb",
+            "patches": [
+              "assets/expanded/立本-v01-p01.png",
+              "assets/expanded/立本-v01-p02.png"
+            ]
+          }
+        ],
+        "scoreFloor": 0.95
+      },
+      {
+        "id": "sand",
+        "name": "「沙中遗事」",
+        "views": [
+          {
+            "name": "977a264019a2",
+            "patches": [
+              "assets/expanded/沙中遗事-v01-p01.png",
+              "assets/expanded/沙中遗事-v01-p02.png"
+            ]
+          },
+          {
+            "name": "db6f2846f98a",
+            "patches": [
+              "assets/expanded/沙中遗事-v02-p01.png",
+              "assets/expanded/沙中遗事-v02-p02.png"
+            ]
+          }
+        ],
+        "scoreFloor": 0.95
+      },
+      {
+        "id": "shift",
+        "name": "换班时间",
+        "views": [
+          {
+            "name": "runtime-d704f96ed1",
+            "patches": [
+              "assets/expanded/换班时间-v01-p01.png",
+              "assets/expanded/换班时间-v01-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-fd4101d622",
+            "patches": [
+              "assets/expanded/换班时间-v02-p01.png",
+              "assets/expanded/换班时间-v02-p02.png"
+            ]
+          }
+        ],
+        "scoreFloor": 0.95
+      },
+      {
+        "id": "draw",
+        "name": "运筹帷幄",
+        "views": [
+          {
+            "name": "runtime-099a91db70",
+            "patches": [
+              "assets/expanded/运筹帷幄-v01-p01.png",
+              "assets/expanded/运筹帷幄-v01-p02.png"
+            ]
+          }
+        ],
+        "scoreFloor": 0.95
+      },
+      {
+        "id": "stars",
+        "name": "星天之兆",
+        "views": [
+          {
+            "name": "runtime-cc27a1f3b4",
+            "patches": [
+              "assets/expanded/星天之兆-v01-p01.png",
+              "assets/expanded/星天之兆-v01-p02.png"
+            ]
+          }
+        ],
+        "scoreFloor": 0.95
+      },
+      {
+        "id": "countdown3",
+        "name": "幻戏倒计时：3",
+        "views": [
+          {
+            "name": "0d3712f781fc",
+            "patches": [
+              "assets/expanded/幻戏倒计时-3-v01-p01.png",
+              "assets/expanded/幻戏倒计时-3-v01-p02.png"
+            ]
+          },
+          {
+            "name": "54664236c07b",
+            "patches": [
+              "assets/expanded/幻戏倒计时-3-v02-p01.png",
+              "assets/expanded/幻戏倒计时-3-v02-p02.png"
+            ]
+          }
+        ],
+        "titleCandidates": [
+          "countdown3",
+          "countdown2",
+          "countdown1",
+          "show"
+        ],
+        "scoreFloor": 0.95
+      },
+      {
+        "id": "crocodileTalent",
+        "name": "亡水溢流",
+        "views": [
+          {
+            "name": "runtime-56b021b2da",
+            "patches": [
+              "assets/expanded/亡水溢流-v01-p01.png",
+              "assets/expanded/亡水溢流-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "scorpionTalent",
+        "name": "亡雷凝蓄",
+        "views": [
+          {
+            "name": "runtime-56b021b2da",
+            "patches": [
+              "assets/expanded/亡雷凝蓄-v01-p01.png",
+              "assets/expanded/亡雷凝蓄-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "emblem",
+        "name": "绝缘之旗印",
+        "views": [
+          {
+            "name": "runtime-56b021b2da",
+            "patches": [
+              "assets/expanded/绝缘之旗印-v01-p01.png",
+              "assets/expanded/绝缘之旗印-v01-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-c8f5d2a997",
+            "patches": [
+              "assets/expanded/绝缘之旗印-v02-p01.png",
+              "assets/expanded/绝缘之旗印-v02-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "harbor",
+        "name": "璃月港口",
+        "views": [
+          {
+            "name": "runtime-56b021b2da",
+            "patches": [
+              "assets/expanded/璃月港口-v01-p01.png",
+              "assets/expanded/璃月港口-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "lair",
+        "name": "风龙废墟",
+        "views": [
+          {
+            "name": "runtime-56b021b2da",
+            "patches": [
+              "assets/expanded/风龙废墟-v01-p01.png",
+              "assets/expanded/风龙废墟-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "whiteGlove",
+        "name": "白手套和渔夫",
+        "views": [
+          {
+            "name": "runtime-a29ef53f25",
+            "patches": [
+              "assets/expanded/白手套和渔夫-v01-p01.png",
+              "assets/expanded/白手套和渔夫-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "adeptus",
+        "name": "仙跳墙",
+        "views": [
+          {
+            "name": "runtime-b6bbe16b68",
+            "patches": [
+              "assets/expanded/仙跳墙-v01-p01.png",
+              "assets/expanded/仙跳墙-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "serpentTalent",
+        "name": "亡风啸卷",
+        "views": [
+          {
+            "name": "runtime-b7bf128aaf",
+            "patches": [
+              "assets/expanded/亡风啸卷-v01-p01.png",
+              "assets/expanded/亡风啸卷-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "block",
+        "name": "噬骸能量块",
+        "views": [
+          {
+            "name": "runtime-c8f5d2a997",
+            "patches": [
+              "assets/expanded/噬骸能量块-v01-p01.png",
+              "assets/expanded/噬骸能量块-v01-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-270b937c23",
+            "patches": [
+              "assets/expanded/噬骸能量块-v02-p01.png",
+              "assets/expanded/噬骸能量块-v02-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "cleanup",
+        "name": "「清洁工作」",
+        "views": [
+          {
+            "name": "runtime-80dd8cd73d",
+            "patches": [
+              "assets/expanded/清洁工作-v01-p01.png",
+              "assets/expanded/清洁工作-v01-p02.png"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -36,7 +36,7 @@
               this.invalidateHand("choice-generated-card-order-unknown");
               this.pendingChoiceCard={id:session.id,oldCount:session.oldCount};
               this.handCountHint=Number.isInteger(session.oldCount)?Math.min(10,session.oldCount+1):null;
-              this.handFanReady=false;this.handNeedsReset=true;this.emptyHandProven=false;this.boardReady=false;
+              this.handFanReady=false;this.handNeedsReset=true;this.boardReady=false;
               this.trace("choice-resolved",{id:session.id,confirmationInputs:session.confirmed?1:0,phase:last.phase,turn:last.turn});
               return last;
             }
@@ -97,7 +97,7 @@
           a?.type!=="card" || !["lotus","mint","gambler","exile","tassel","raven","sword","shatterbolt","sharpkernel"].includes(a.id) ||
           !b?.hand || b.hand.length!==plan.hand.length+1 || b.hand[a.index]?.id!==a.id ||
           plan.transitionPassed===true || state?.phase!=="board" || state.turn!=="user" || state.active!==b.active ||
-          stable?.reads!==2 || stable.inputRevision!==this.inputRevision || stable.key!==TCG.boardKey({...state,hand:[]}) ||
+          !(stable?.reads>=1) || stable.inputRevision!==this.inputRevision || stable.key!==TCG.boardKey({...state,hand:[]}) ||
           !TCG.legalState({...state,hand:plan.hand}) || r?.inputSent!==true || r.nativeConfirmed!==true ||
           r.id!==a.id || r.index!==a.index || r.target!==(a.target??null) || r.beforeKey!==TCG.boardKey(b))return false;
       const expected=TCG.handPlan(a,b);
@@ -133,8 +133,7 @@
           // successful here. Never send a second selection or a skill input.
           if(selected.phase.result || selected.phase.phase==="board" && selected.phase.turn==="user"){
             this.trace("card-target-resolved",{id:action.id,target:action.target,proof:"native-page-exit-only"});return;}
-          const play=selected.rows.filter(r=>TCG.norm(r.text)==="打出手牌" || type==="food"&&TCG.norm(r.text)==="确定");
-          const controls=selected.buttons.length?selected.buttons:play;
+          const controls=selected.buttons.length?selected.buttons:selected.rows.filter(r=>TCG.norm(r.text)==="打出手牌" || type==="food"&&TCG.norm(r.text)==="确定");
           const otherTarget=Object.values(targetedBanners).some(labels=>labels.includes(selected.banner))&&
             !targetedBanners[type].includes(selected.banner);
           const matched=!otherTarget&&controls.length===1&&

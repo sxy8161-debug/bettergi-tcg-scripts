@@ -690,7 +690,7 @@
     const h = indexedHand(b.hand);
     if (["switch", "skill", "probe"].includes(a.type)) return { mode: "unchanged", hand: h };
     if (a.type === "card" && ["draw", "revel", "sing", "lyre", "skivingNewAndImproved"].includes(a.id))
-      return { mode: "full", expectedCount: null };
+      return { mode: "full", expectedCount: null, refreshAfterConsumption:true };
     if (a.type === "card" || a.type === "tune") {
       if (h[a.index]?.id !== a.id) throw new Error("手牌增量计划的目标索引/身份不一致");
       return { mode: "remove", hand: indexedHand(h.filter((_, i) => i !== a.index)) };

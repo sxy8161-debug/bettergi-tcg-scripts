@@ -3,8 +3,8 @@
 // @fragment bgi-host.observe
 async observe(pendingAction = false, plan = null) {
       // The first fresh action-only board already contains its phase. Reuse it
-      // as the first stable sample instead of a separate full phase capture.
-      // No cross-frame HP caching; subsequent samples and auto quiet windows stay.
+      // instead of a separate full phase capture. Combat alone corroborates
+      // a second board; ordinary complete observations do not wait for equality.
       const p = this.initialObservationBoard?.() || null;
       if (p && (p.phase !== "board" || p.turn !== "user")) return { ...p, hand: null };
       let hand = null;
@@ -12,17 +12,13 @@ async observe(pendingAction = false, plan = null) {
       const handScan = { titles: 0 };
       // One recovery budget per pending action, not per 45-second poll.
       const recovery = this.confirmationSession
-        ? (this.confirmationSession.handRecovery ||= { failures:0, reanchored:false })
-        : { failures:0, reanchored:false };
+        ? (this.confirmationSession.handRecovery ||= { failures:0 })
+        : { failures:0 };
       this.emptyHandProven = false;
       this.pendingHandEvidence = null;
       let reusableSettled = null,
-        reusableSettledAt = 0, previousBoardKey = "";
+        reusableSettledAt = 0;
       let settled = null;
-      const boardSnapshotKey = s => JSON.stringify([
-        s.phase, s.turn, s.active, s.dice, s.characters, s.enemies,
-        s.supportCounts, s.quicken || null, s.eye || null, s.dendroCore || null,
-      ]);
       for (let attempt = 0; attempt < 3; attempt++) {
         // A failed quantity/title read may leave the same fan raised. Keep it
         // for read-only retries; only the single explicit re-anchor folds it.
@@ -95,10 +91,6 @@ async observe(pendingAction = false, plan = null) {
               }
               reusableSettled = settled;
               reusableSettledAt = handReadStart;
-            } else if (!this.autoRisk) {
-              // Same observe(), no input or obscured board. Only retain the
-              // comparison key: a NEW complete board must still match it.
-              previousBoardKey = boardSnapshotKey(settled);
             }
           }
           break;
@@ -113,7 +105,7 @@ async observe(pendingAction = false, plan = null) {
             error.cause = e;
             throw error;
           }
-          if (recovery.failures === 2 && !recovery.reanchored) {
+          if (recovery.failures === 2) {
             // A genuine second failed observation, not every normal scan.
             // Re-anchor once, then require new evidence; never resend a card.
             try {
@@ -126,7 +118,6 @@ async observe(pendingAction = false, plan = null) {
             this.invalidateHand("two-unresolved-hand-observations");
             this.boardReady = false;
             await this.reset();
-            recovery.reanchored = true;
             settled = null;
             this.trace("hand-reanchored", {
               attempt,
@@ -149,15 +140,13 @@ async observe(pendingAction = false, plan = null) {
         });
         return this.finishObservation(state, pendingAction, handRead, reusableSettledAt);
       }
-      let previousKey = previousBoardKey,
-        last = null;
+      let last = null;
       for (let attempt = 0; attempt < 6; attempt++) {
         const sampledAt = Date.now();
         try {
-          last = this.board();
+          last = this.board(true);
         } catch (e) {
           if (e.code !== "TCG_DICE_RETRY") throw e;
-          previousKey = "";
           this.trace("board-read-wait", { attempt, error: String(e.message || e) });
           const remaining = 300 - (Date.now() - sampledAt);
           if (attempt < 5 && remaining > 0) await sleep(remaining);
@@ -172,17 +161,15 @@ async observe(pendingAction = false, plan = null) {
           return { ...last, hand: null };
         }
         const state = { ...last, hand, ...(this.pendingHandEvidence ? { handEvidence: this.pendingHandEvidence } : {}) };
-        const key = boardSnapshotKey(last);
-        if (TCG.legalState(state) && TCG.enemyCount(state) !== null && key === previousKey) {
+        if (!this.observationIssues(last).length && TCG.legalState(state)) {
           return this.finishObservation(state, pendingAction, handRead);
         }
-        previousKey = key;
         const remaining = 300 - (Date.now() - sampledAt);
         if (attempt < 5 && remaining > 0) await sleep(remaining);
       }
       this.trace("board-unstable", { last, pendingAction });
       // Preserve the already-read hand: another unstable board must NOT trigger
-      // another hand scan. Recovery still requires a complete two-frame board.
+      // another hand scan. Recovery still requires a complete current board.
       settled = await this.settledBoard(true);
       if (settled.phase !== "board" || settled.turn !== "user") return { ...settled, hand: null };
       const recovered = { ...settled, hand, ...(this.pendingHandEvidence ? { handEvidence: this.pendingHandEvidence } : {}) };

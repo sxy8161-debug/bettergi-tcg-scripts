@@ -1,0 +1,208 @@
+{
+  "schemaVersion": 1,
+  "patches": [
+    [
+      -45,
+      445,
+      90,
+      85
+    ],
+    [
+      -45,
+      575,
+      90,
+      85
+    ]
+  ],
+  "scoreFloor": 0.95,
+  "runnerUpGap": 0.2,
+  "stableScore": 0.9999,
+  "entries": [
+    {
+      "id": "sand",
+      "name": "「沙中遗事」",
+      "views": [
+        {
+          "name": "native-f8245637fe-0",
+          "patches": [
+            "assets/opening/沙中遗事-v01-p01.png",
+            "assets/opening/沙中遗事-v01-p02.png"
+          ]
+        },
+        {
+          "name": "native-f8245637fe-1",
+          "patches": [
+            "assets/opening/沙中遗事-v02-p01.png",
+            "assets/opening/沙中遗事-v02-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.95
+    },
+    {
+      "id": "shift",
+      "name": "换班时间",
+      "patches": [
+        "assets/opening/换班时间-v01-p01.png",
+        "assets/opening/换班时间-v01-p02.png"
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "draw",
+      "name": "运筹帷幄",
+      "patches": [
+        "assets/opening/运筹帷幄-v01-p01.png",
+        "assets/opening/运筹帷幄-v01-p02.png"
+      ],
+      "scoreFloor": 0.93,
+      "views": [
+        {
+          "name": "original",
+          "patches": [
+            "assets/opening/运筹帷幄-v01-p01.png",
+            "assets/opening/运筹帷幄-v01-p02.png"
+          ]
+        },
+        {
+          "name": "user-2c4016e157",
+          "patches": [
+            "assets/opening/运筹帷幄-v02-p01.png",
+            "assets/opening/运筹帷幄-v02-p02.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stars",
+      "name": "星天之兆",
+      "views": [
+        {
+          "name": "native-3123c4864d-f0",
+          "patches": [
+            "assets/opening/星天之兆-v01-p01.png",
+            "assets/opening/星天之兆-v01-p02.png"
+          ]
+        },
+        {
+          "name": "native-3123c4864d-f1",
+          "patches": [
+            "assets/opening/星天之兆-v01-p01.png",
+            "assets/opening/星天之兆-v01-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.95
+    },
+    {
+      "id": "countdown3",
+      "name": "幻戏倒计时：3",
+      "views": [
+        {
+          "name": "native-74c06360bf-0",
+          "patches": [
+            "assets/opening/幻戏倒计时-3-v01-p01.png",
+            "assets/opening/幻戏倒计时-3-v01-p02.png"
+          ]
+        },
+        {
+          "name": "native-74c06360bf-1",
+          "patches": [
+            "assets/opening/幻戏倒计时-3-v02-p01.png",
+            "assets/opening/幻戏倒计时-3-v01-p02.png"
+          ]
+        }
+      ],
+      "scoreFloor": 0.95
+    },
+    {
+      "id": "revel",
+      "name": "「狂欢节奏」",
+      "patches": [
+        "assets/opening/狂欢节奏-v01-p01.png",
+        "assets/opening/狂欢节奏-v01-p02.png"
+      ],
+      "scoreFloor": 0.93
+    },
+    {
+      "id": "emblem",
+      "name": "绝缘之旗印",
+      "patches": [
+        "assets/opening/绝缘之旗印-v01-p01.png",
+        "assets/opening/绝缘之旗印-v01-p02.png"
+      ]
+    },
+    {
+      "id": "harbor",
+      "name": "璃月港口",
+      "patches": [
+        "assets/opening/璃月港口-v01-p01.png",
+        "assets/opening/璃月港口-v01-p02.png"
+      ]
+    },
+    {
+      "id": "nre",
+      "name": "便携营养袋",
+      "patches": [
+        "assets/opening/便携营养袋-v01-p01.png",
+        "assets/opening/便携营养袋-v01-p02.png"
+      ]
+    },
+    {
+      "id": "scorpionTalent",
+      "name": "亡雷凝蓄",
+      "patches": [
+        "assets/opening/亡雷凝蓄-v01-p01.png",
+        "assets/opening/亡雷凝蓄-v01-p02.png"
+      ]
+    },
+    {
+      "id": "lair",
+      "name": "风龙废墟",
+      "patches": [
+        "assets/opening/风龙废墟-v01-p01.png",
+        "assets/opening/风龙废墟-v01-p02.png"
+      ]
+    },
+    {
+      "id": "serpentTalent",
+      "name": "亡风啸卷",
+      "patches": [
+        "assets/opening/亡风啸卷-v01-p01.png",
+        "assets/opening/亡风啸卷-v01-p02.png"
+      ]
+    },
+    {
+      "id": "whiteGlove",
+      "name": "白手套和渔夫",
+      "patches": [
+        "assets/opening/白手套和渔夫-v01-p01.png",
+        "assets/opening/白手套和渔夫-v01-p02.png"
+      ]
+    },
+    {
+      "id": "crocodileTalent",
+      "name": "亡水溢流",
+      "patches": [
+        "assets/opening/亡水溢流-v01-p01.png",
+        "assets/opening/亡水溢流-v01-p02.png"
+      ]
+    },
+    {
+      "id": "liben",
+      "name": "立本",
+      "patches": [
+        "assets/opening/立本-v01-p01.png",
+        "assets/opening/立本-v01-p02.png"
+      ]
+    },
+    {
+      "id": "adeptus",
+      "name": "仙跳墙",
+      "patches": [
+        "assets/opening/仙跳墙-v01-p01.png",
+        "assets/opening/仙跳墙-v01-p02.png"
+      ]
+    }
+  ]
+}

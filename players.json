@@ -1,10 +1,11 @@
 {
-  "sharedRevision": "1.7.3",
+  "sharedRevision": "1.9.0",
   "players": {
     "raiden": {
       "title": "雷神柯莱刻晴",
+      "packageId": "RaidenColleiKeqingPlayer",
+      "publicSuite": false,
       "source": "repo/js/RaidenColleiKeqingPlayer",
-      "version": "1.5.0",
       "recognition": "src/decks/raiden/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],
@@ -17,8 +18,9 @@
     },
     "iansan": {
       "title": "伊安珊嘉明早柚",
+      "packageId": "IansanGamingSayuPlayer",
+      "publicSuite": false,
       "source": "repo/js/IansanGamingSayuPlayer",
-      "version": "1.5.0",
       "recognition": "src/decks/iansan/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],
@@ -29,8 +31,9 @@
     },
     "moonbloom": {
       "title": "月绽放",
+      "packageId": "MoonbloomPlayer",
+      "publicSuite": false,
       "source": "repo/js/MoonbloomPlayer",
-      "version": "1.5.0",
       "recognition": "src/decks/moonbloom/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],
@@ -41,13 +44,55 @@
     },
     "mozailu": {
       "title": "莫娜早柚迪卢克",
+      "packageId": "MonaSayuDilucPlayer",
+      "publicSuite": true,
       "source": "repo/js/MonaSayuDilucPlayer",
-      "version": "1.5.0",
       "recognition": "src/decks/mozailu/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],
       "coreModules": [],
       "extraAssets": []
+    },
+    "ailin": {
+      "title": "爱可菲林尼水形幻人",
+      "packageId": "EscoffierLyneyHydroTulpaPlayer",
+      "publicSuite": true,
+      "source": "repo/js/EscoffierLyneyHydroTulpaPlayer",
+      "recognition": "src/decks/ailin/recognition",
+      "defaultStrategy": "default",
+      "strategyModules": [],
+      "coreModules": [
+        "catalog.js"
+      ],
+      "extraAssets": [
+        "ailin/cold",
+        "ailin/cat",
+        "ailin/half",
+        "ailin/half-board",
+        "ailin/cold-native",
+        "ailin/cat-native",
+        "ailin/cold-board",
+        "ailin/cold-board-slot07",
+        "ailin/cat-board",
+        "ailin/summon-rim",
+        "ailin/support-rim",
+        "ailin/target-selected"
+      ]
+    },
+    "consecrated": {
+      "title": "圣骸兽（蝎蛇鳄）",
+      "packageId": "ConsecratedBeastsPlayer",
+      "publicSuite": true,
+      "source": "repo/js/ConsecratedBeastsPlayer",
+      "recognition": "src/decks/consecrated/recognition",
+      "defaultStrategy": "default",
+      "strategyModules": [],
+      "coreModules": [
+        "catalog.js"
+      ],
+      "extraAssets": [
+        "ailin/support-rim"
+      ]
     }
   }
 }

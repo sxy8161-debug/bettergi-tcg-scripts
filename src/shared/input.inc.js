@@ -28,20 +28,22 @@ cardConfirmationEntryIn(f, targetedBanners = []) {
 
 // @fragment bgi-host.cardChoicePreviewIn
 cardChoicePreviewIn(f, kind, phase = this.phaseIn(f)) {
+      const banner = TCG.norm(this.ocr(f, this.roi("choice", kind === "target" ? [600, 510, 720, 65] : [740, 510, 450, 65]))),
+        controls = this.cardPaymentControlsIn(f);
       return {
-        banner: TCG.norm(this.ocr(f, this.roi("choice", kind === "target" ? [600, 510, 720, 65] : [740, 510, 450, 65]))),
-        phase, controls: this.cardPaymentControlsIn(f),
-        ...(kind === "target" ? { buttons: this.matches(f, "core/确定", this.roi("bottom", [770, 900, 380, 90])) } : {}),
+        banner, phase, controls,
+        ...(kind === "target" && !controls.length ? { buttons: this.matches(f, "core/确定", this.roi("bottom", [770, 900, 380, 90])) } : {}),
       };
     }
 // @endfragment bgi-host.cardChoicePreviewIn
 
 // @fragment bgi-host.cardTargetPreviewIn
 cardTargetPreviewIn(f) {
+      const banner = TCG.norm(this.cardBannerIn ? this.cardBannerIn(f) : this.ocr(f, this.roi("phase", [740, 510, 450, 65]))),
+        buttons = this.matches(f, "core/确定", this.roi("bottom", [770, 900, 380, 90]));
       return {
-        banner: TCG.norm(this.cardBannerIn ? this.cardBannerIn(f) : this.ocr(f, this.roi("phase", [740, 510, 450, 65]))),
-        buttons: this.matches(f, "core/确定", this.roi("bottom", [770, 900, 380, 90])),
-        rows: this.ocrRows(f, this.roi("bottom", [770, 900, 380, 90])),
+        banner, buttons,
+        ...(!buttons.length ? { rows: this.ocrRows(f, this.roi("bottom", [770, 900, 380, 90])) } : {}),
         phase: this.phaseIn(f), warning: this.warnings(f),
       };
     }
@@ -136,8 +138,6 @@ async requireSwitchPreview(action, memory) {
       // Native normal switching has NO bottom action label. Only the fast
       // status displays 快速行动; absence alone never identifies this overlay.
       const expectedSpeed = memory.fastSwitch ? "快速行动" : "";
-      let stable = 0,
-        previousSpeed = null;
       for (let attempt = 0; attempt < 10; attempt++) {
         const sampledAt = Date.now();
         const preview = this.frame((f) => ({
@@ -169,10 +169,18 @@ async requireSwitchPreview(action, memory) {
           throw error;
         }
         const actualSpeed = TCG.norm(preview.speed);
-        stable = matched ? (actualSpeed === previousSpeed ? stable + 1 : 1) : 0;
-        previousSpeed = matched ? actualSpeed : null;
-        if (stable >= 2) return { fast: actualSpeed === "快速行动", speed: actualSpeed };
-        const remaining = (matched ? 120 : 300) - (Date.now() - sampledAt);
+        if (matched) return { fast: actualSpeed === "快速行动", speed: actualSpeed };
+        if (preview.phase.phase === "board" && preview.phase.turn === "user" &&
+            !TCG.norm(preview.banner) && !TCG.norm(preview.control)) {
+          // The first click did not open payment (native handoff was still
+          // running). Nothing was submitted: return to the existing state
+          // owner, rather than polling a nonexistent overlay or confirming it.
+          this.autoRisk = true;
+          const error = new Error("切换付款页未打开，交回当前牌桌重新决策");
+          error.code = "TCG_STATE_REFRESH";
+          throw error;
+        }
+        const remaining = 300 - (Date.now() - sampledAt);
         if (attempt < 9 && remaining > 0) await sleep(remaining);
       }
       throw new Error("切换确认页未核实横幅、控件与行动类型");
@@ -183,8 +191,8 @@ async requireSwitchPreview(action, memory) {
 async inputSkill(action, before) {
       // executeInput already verified the current actor, board and resources.
       // Fixed role + fixed slot identifies the skill; no title/type OCR.
-      const x = { NA: 1608, E: 1716, Q: 1824 }[action.skill];
-      if (!x || action.who !== before.active) throw new Error("技能槽位或当前出战角色不符");
+      const x = this.skillX(action);
+      if (action.who !== before.active) throw new Error("技能槽位或当前出战角色不符");
       this.clickAt(...this.point("bottom",x,957));
       await sleep(1200);
       const preview = this.frame(f => ({ phase:this.phaseIn(f), warning:this.warnings(f) }));
@@ -251,12 +259,15 @@ async execute(action, before, memory) {
           throw new Error("未核实身份的牌禁止调和");
         const result = await this.executeInput(action, before, memory);
         if (!result?.probed) {
+          this.handContinuation = null;
           this.actionSubmittedAt = Date.now();
           this.trace("input-submitted", { action, ms: this.actionSubmittedAt - startedAt,
             inputRevision: this.inputRevision, awaitingChoice: !!this.choiceSession });
         }
         return result;
       } catch (e) {
+        if (this.consumptionReceipt?.inputSent || e.code === "TCG_NATIVE_REJECTION")
+          this.handContinuation = null;
         this.consumptionReceipt = null;
         this.pendingHandEvidence = null;
         const nativeRejection = e.code === "TCG_NATIVE_REJECTION";
@@ -285,11 +296,11 @@ async requireNoWarning(warning = this.warnings()) {
 // @endfragment tcg-ui.requireNoWarning
 
 // @fragment tcg-ui.requireUnchangedBoard
-async requireUnchangedBoard(before) {
+async requireUnchangedBoard(before, action = null) {
       // One pre-input owner: a clean board is read with its phase in the same
       // frame. Only an actually raised view needs a phase guard and a reset.
       let entryPhasePending = !this.boardReady && !this.handFanReady && !this.handNeedsReset;
-      if (!this.boardReady && !entryPhasePending) {
+      if (this.handFanReady || this.handNeedsReset) {
         const phase = this.phase();
         if (phase.phase !== "board" || phase.turn !== "user") {
           const error = new Error("执行前页面/回合已变化");
@@ -300,19 +311,27 @@ async requireUnchangedBoard(before) {
       }
       // Dice maps are unordered and zero entries may be omitted. Compare
       // resources semantically, not by host dictionary insertion order.
-      const keyOf=s=>JSON.stringify([s.active,TCG.diceOrder.map(e=>s.dice?.[e]||0),s.characters,s.enemies,s.quicken||null,s.supportCounts||null]);
-      const expected=keyOf(before);let stable=0,last=null;
-      const recent=this.preInputBoardClean() && this.lastObservedState && keyOf(this.lastObservedState)===expected &&
+      const matches=(a,b)=>this.boardsMatch(a,b,"execution",action);
+      const recent=this.boardReady && matches(this.lastObservedState,before) &&
         this.lastObservedRevision===this.inputRevision && Date.now()-this.lastObservedAt<=1500 && !this.autoRisk;
+      if (recent) {
+        const phase = this.phase();
+        if (phase.phase !== "board" || phase.turn !== "user") {
+          const error = new Error("执行前页面/回合已变化");
+          error.code = "TCG_OBSERVATION_INTERRUPTED"; error.phase = { ...phase, hand: null };
+          throw error;
+        }
+        return before;
+      }
+      let last=null;
       for(let attempt=0;attempt<6;attempt++) {
         const sampledAt = Date.now();
         // A clean but unready entry has no reset/input between its phase and
-        // full-board reads. Let this same fresh frame prove both. Do not turn
-        // it into boardReady/recent evidence or remove either stable board.
+        // full-board reads. Let this same fresh frame prove both.
         const entryPhase = entryPhasePending; entryPhasePending = false;
-        try{last=entryPhase ? this.adoptPhase(this.board(true)) : this.board();}catch(e){
+        try{last=this.board(true);if(entryPhase)this.adoptPhase(last);}catch(e){
           if(e.code!=="TCG_DICE_RETRY")throw e;
-          stable=0;this.trace("execution-board-wait",{attempt,error:String(e.message||e)});
+          this.trace("execution-board-wait",{attempt,error:String(e.message||e)});
           const remaining = 300 - (Date.now() - sampledAt);
           if(attempt<5 && remaining>0)await sleep(remaining);continue;
         }
@@ -321,13 +340,21 @@ async requireUnchangedBoard(before) {
           error.code=!entryPhase && last.phase==="unknown" ? "TCG_STATE_REFRESH" : "TCG_OBSERVATION_INTERRUPTED";
           error.phase={...last,hand:null};this.boardReady=false;throw error;
         }
-        const matched=keyOf(last)===expected;stable=matched?stable+1:0;
-        this.trace("execution-board-wait",{attempt,matched,stable,active:last.active,dice:last.dice,changed:matched?[]:boardDifferences(before,last)});
-        if(stable>=2 || recent&&attempt===0&&matched)return last;
+        const complete=!this.observationIssues(last).length;
+        const matched=complete&&matches(before,last);
+        const changes=matched?{}:boardDifferences(before,last,true);
+        if(matched)return last;
+        this.trace("execution-board-wait",{attempt,matched,active:last.active,dice:last.dice,changed:Object.keys(changes),changes});
+        // A changed complete board invalidates the old decision immediately.
+        // Only missing observations retry; never wait for old resources back.
+        if(complete){
+          const error=new Error("执行前局面已变化，重新决策");
+          error.code="TCG_STATE_REFRESH";throw error;
+        }
         const remaining = 300 - (Date.now() - sampledAt);
         if(attempt<5 && remaining>0)await sleep(remaining);
       }
-      const error = new Error("执行前牌桌已变化或六次读取未稳定匹配");
+      const error = new Error("执行前六次读取仍有缺失字段");
       error.code = "TCG_STATE_REFRESH";
       throw error;
     }

@@ -49,6 +49,11 @@
       const entrySampledAt = Date.now(), entryRevision = this.inputRevision;
       const foodPage = this.frame((f) => this.cardConfirmationEntryIn(f, targetedBanners[type] || []));
       this.trace("card-page", { id: action.id, target: action.target, type, ...foodPage });
+      if (foodPage.phase.choiceKind === "support-discard") {
+        const error = new Error("支援区已满，卡牌尚未完成出牌；停止本局，不自动弃置已有支援或重复出牌");
+        error.code = "TCG_SUPPORT_FULL";
+        throw error;
+      }
       if (
         type === "weapon" &&
         (!weaponKind ||
@@ -99,9 +104,8 @@
             });
             return;
           }
-          const play = selected.rows.filter((r) => TCG.norm(r.text) === "打出手牌" ||
+          const controls = selected.buttons.length ? selected.buttons : selected.rows.filter((r) => TCG.norm(r.text) === "打出手牌" ||
             type === "food" && TCG.norm(r.text) === "确定");
-          const controls = selected.buttons.length ? selected.buttons : play;
           const otherTarget = Object.values(targetedBanners).some(labels => labels.includes(selected.banner)) &&
             !targetedBanners[type].includes(selected.banner);
           const matched =
@@ -153,9 +157,12 @@
             "legend",
             "food",
             "recycle",
+            "combat",
+            "summon",
+            "team-food",
           ].includes(card.type) && this.namedCardBannerMatches(action, banner);
         const teamEvent =
-          (action.id === "sing" && ["对我方所有角色生效", "对所有我方角色生效"].includes(banner)) ||
+          ((action.id === "sing" || card.type === "team-food") && ["对我方所有角色生效", "对所有我方角色生效"].includes(banner)) ||
           (["garden", "boar"].includes(action.id) &&
             ["对我方生效", "对我方全体生效"].includes(banner));
         const talentWho = this.talentTargets?.[action.id] ?? (action.id === "skivingNewAndImproved" ? 2 : null);

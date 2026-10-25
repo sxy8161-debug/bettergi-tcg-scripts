@@ -1,7 +1,10 @@
 // Shared hand fragments. Inlined at build time; no runtime dependency.
 
 // @fragment bgi-host.handCostMarkersIn
-handCostMarkersIn(f, roi, useColor = false) {
+handCostMarkersIn(f, roi, useColor = roi.layoutKey === "16:10" && roi.panel === "handExpanded") {
+      // In the 1600 fan, grayscale card decorations can merge into a real
+      // corner and move its artwork anchor. Match the corner's own colors;
+      // this is not a table/background test or a lower acceptance threshold.
       const threshold = roi.panel === "handFolded" && roi.layoutKey === "16:10" ? .88 : .9;
       return ["hand_cost_neutral", "hand_cost_element", "hand_cost_dendro", "hand_cost_electro", "hand_cost_matching", "hand_cost_pyro"]
         .flatMap(asset => this.matches(f, asset, roi, threshold, useColor));
@@ -164,28 +167,38 @@ selectedCardCostIn(f, x) {
 async expand(resetFirst = true) {
       // The native control is a toggle. Card selection does not close the fan;
       // never click that control again while the same layout remains ready.
-      if (resetFirst && !this.boardReady && !this.handFanReady) await this.reset();
-      if (this.raisedHandIn) {
-        const view = this.frame(f => {
+      const readView = f => {
+        if (!this.raisedHandIn) return null;
+        if (this.raisedHandIn(f)) return "expanded";
+        return this.collapsedLayoutIn(f).status === "readable" ? "folded" : null;
+      };
+      let needsReset;
+      let view = this.frame(f => {
+        this.requireHandObservation(this.adoptPhase(this.phaseIn(f)), "before-hand-expand");
+        needsReset = resetFirst && !this.boardReady && !this.handFanReady;
+        return needsReset ? null : readView(f);
+      });
+      if (needsReset) {
+        await this.reset();
+        view = this.frame(f => {
           this.requireHandObservation(this.phaseIn(f), "before-hand-view-toggle");
-          return this.raisedHandIn(f) ? "expanded" :
-            this.collapsedLayoutIn(f).status === "readable" ? "folded" : null;
+          return readView(f);
         });
-        // Draw/choice animations can raise or fold the fan independently of
-        // our last click. A complete native layout outranks the view hint.
-        // Unknown layout is not permission to toggle an already-open fan.
-        if (view === "expanded") {
-          if (!this.handFanReady) this.handPositionProof = null;
-          this.handFanReady = this.handNeedsReset = true;
-          this.boardReady = false;
-          this.trace("hand-expand-skipped", { reason: "native-expanded-layout" });
-          return;
-        }
-        if (view === "folded" && this.handFanReady) {
-          this.handFanReady = false;
-          this.handPositionProof = null;
-          this.trace("hand-view-reconciled", { view, reason: "native-layout-contradicts-hint" });
-        }
+      }
+      // Draw/choice animations can raise or fold the fan independently of
+      // our last click. A complete native layout outranks the view hint.
+      // Unknown layout is not permission to toggle an already-open fan.
+      if (view === "expanded") {
+        if (!this.handFanReady) this.handPositionProof = null;
+        this.handFanReady = this.handNeedsReset = true;
+        this.boardReady = false;
+        this.trace("hand-expand-skipped", { reason: "native-expanded-layout" });
+        return;
+      }
+      if (view === "folded" && this.handFanReady) {
+        this.handFanReady = false;
+        this.handPositionProof = null;
+        this.trace("hand-view-reconciled", { view, reason: "native-layout-contradicts-hint" });
       }
       if (this.handFanReady) {
         this.trace("hand-expand-skipped", { reason: "fan-already-ready" });
@@ -229,6 +242,19 @@ handPresenceIn(f) {
       for (const row of rows) {
         if (![row.x,row.y,row.w,row.h].every(Number.isFinite) || row.w <= 0 || row.h <= 0)
           return { state:"unknown", reason:"title-location-unreadable", row };
+        // Top enemy-support counters can overlap the detail-title rectangle.
+        // A full numeric row belongs to that badge only with a current card
+        // rim beneath it. An open detail panel hides that rim, so its unknown
+        // title still blocks absence. Neither a digit alone nor a missed OCR
+        // is permission to ignore an overlay.
+        const supportCounter = /^\d+$/.test(TCG.norm(row.text)) && [0,1].some(col => {
+          const [x,y,w,h] = this.roi("board",[350+170*col,120,80,65]).rect,
+            cx=row.x+row.w/2,cy=row.y+row.h/2;
+          return cx>=x&&cx<=x+w&&cy>=y&&cy<=y+h&&
+            this.matches(f,"hand_rim",this.roi("board",[350+170*col,130,80,190]),.85,false)
+              .some(r=>Math.abs(r.x-cx)<=30&&r.y>=row.y+row.h);
+        });
+        if (supportCounter) continue;
         if (titleAreas.some(([x,y,w,h]) =>
           row.x >= x && row.x < x+w && row.y+row.h/2 >= y && row.y+row.h/2 <= y+h))
           return { state:"unknown", reason:"detail-title", row };
@@ -244,7 +270,6 @@ handPresenceIn(f) {
 
 // @fragment bgi-host.handCount
 async handCount(expected = null) {
-      this.requireHandObservation(this.phase(), "before-hand-expand");
       await this.expand();
       const readCount = () =>
         this.frame((f) => {
@@ -336,10 +361,11 @@ handPoints(count) {
 // @endfragment bgi-host.handPoints
 
 // @fragment bgi-host.invalidateHand
-invalidateHand(reason) {
+invalidateHand(reason, continuation = null) {
       if (this.handCache !== null)
         this.trace("hand-cache-invalidated", { reason, count: this.handCache.length });
       this.handCache = null;
+      this.handContinuation = continuation;
       this.handCountHint = null;
       this.handPositionProof = null;
       this.emptyHandProven = false;
@@ -415,7 +441,9 @@ recordHandLayout(count) {
 
 // @fragment bgi-host.refreshHandBeforeInput
 async refreshHandBeforeInput(reason) {
-      this.invalidateHand(reason);
+      // No card was submitted: a delayed insertion changes positions, not the
+      // preceding action's guarantee that its old cards stayed in the hand.
+      this.invalidateHand(reason, this.handContinuation);
       this.requireHandObservation(this.phase(), "before-cache-refresh-reset");
       await this.reset();
       const error = new Error(reason);
@@ -434,7 +462,7 @@ async removalEvidenceBeforeReset(plan) {
       if (
         plan?.mode !== "remove" ||
         plan.hand.length === 0 ||
-        a?.type !== "card" ||
+        !["card", "tune"].includes(a?.type) ||
         !r?.inputSent ||
         r.beforeKey !== TCG.boardKey(b) ||
         r.id !== a.id ||
@@ -553,6 +581,7 @@ handSample(f, priceIndex = null) {
 
 // @fragment tcg-ui.observedHand
 async observedHand(plan = null, scan = { titles: 0 }) {
+      if (!plan && this.handContinuation) Object.assign(scan, this.handContinuation);
       if (plan?.mode === "full") {
         const session = this.confirmationSession,
           observed = session?.handObservation;
@@ -569,10 +598,11 @@ async observedHand(plan = null, scan = { titles: 0 }) {
             return TCG.indexedHand(observed.hand);
           }
         }
-        scan.retainedHand = plan.retainedHand;
+        scan.retainedHand = plan.retainedHand || plan.rejectedHand;
+        scan.retainedHandOrder = plan.retainedHandOrder === true || !!plan.rejectedHand;
         scan.retainedVariantFamilies = plan.retainedVariantFamilies;
         scan.settling = true;
-        this.invalidateHand("generated-drawn-or-replaced-card");
+        this.invalidateHand("generated-drawn-or-replaced-card", this.handContinuation);
         let hand = await this.readHand(plan.expectedCount ?? null, null, scan);
         if (plan.rejectedHand && !this.autoRisk)
           hand = TCG.reconcileHand(plan.rejectedHand, hand, true);
@@ -586,7 +616,7 @@ async observedHand(plan = null, scan = { titles: 0 }) {
         if (
           proof &&
           receipt?.inputSent &&
-          plan.action?.type === "card" &&
+          ["card", "tune"].includes(plan.action?.type) &&
           proof.beforeKey === TCG.boardKey(plan.before) &&
           proof.id === plan.action.id &&
           proof.index === plan.action.index &&
@@ -621,7 +651,7 @@ async observedHand(plan = null, scan = { titles: 0 }) {
           const count = this.frame(f => this.handCountIn(f));
           if (count === null || count === plan.hand.length) {
             this.trace("hand-incremental", { mode:"remove", count:plan.hand.length,
-              proof:plan.paidProven?"confirmed-paid-card-two-stable-boards":"independent-native-effect", visibleCount:count });
+              proof:plan.paidProven?"confirmed-paid-card-current-board":"independent-native-effect", visibleCount:count });
             return TCG.indexedHand(plan.hand);
           }
           this.emptyHandProven = false;
@@ -647,14 +677,20 @@ async observedHand(plan = null, scan = { titles: 0 }) {
       }
       const cached = plan?.mode === "unchanged" ? plan.hand : this.handCache;
       if (cached !== null && cached !== undefined) {
-        // Read-only anomaly detector, not a proof that a missing badge is zero.
-        // All real card/tune inputs check visible anomalies and exact target title.
-        const count = this.frame(f => this.handCountIn(f));
-        if (count === null || count === cached.length) {
+        // A preceding hand-changing action can insert/reorder cards without a
+        // net count change. Compare that current row before reusing its order.
+        const {count,row}=this.frame(f=>({count:this.handCountIn(f),
+          row:!plan&&this.handContinuation&&!this.handFanReady&&!this.handNeedsReset
+            ?this.collapsedIn?.(f):null}));
+        const changed=row?.status==="readable"&&(row.count!==cached.length||
+          row.slots.some(s=>s.id&&s.id!==cached[s.index]?.id));
+        if (!changed && (count === null || count === cached.length)) {
           this.trace("hand-cache-reused", { count:cached.length, mode:plan?.mode || "cached", visibleCount:count });
           return TCG.indexedHand(cached);
         }
-        this.invalidateHand("unexpected-visible-count");
+        this.invalidateHand(changed ? "current-hand-row-changed" : "unexpected-visible-count", this.handContinuation);
+        if(row?.status==="readable")scan.foldedRead={...row,nativeCount:count,
+          countConflict:count!==null&&count!==row.count};
       }
       return await this.readHand(null, null, scan);
     }
@@ -662,7 +698,6 @@ async observedHand(plan = null, scan = { titles: 0 }) {
 
 // @fragment tcg-ui.prepareHandInput
 async prepareHandInput(expected, priceIndex = null, requireReusableCount = false, deferToTitle = false) {
-      this.requireHandObservation(this.phase(), "before-target-expand");
       // execute already normalized and verified the board; do not blank-click
       // a second time simply to raise the fan.
       await this.expand(false);
@@ -707,8 +742,8 @@ async prepareHandInput(expected, priceIndex = null, requireReusableCount = false
         await this.refreshHandBeforeInput("执行前手牌数量证据冲突");
       }
       const reads = samples.map((s) => s.count), sources = samples.map((s) => s.source);
-      // Ordinary input immediately enters inspectHandCard, whose titleAt
-      // takes a fresh phase before the title click. Keep that later guard,
+      // Ordinary input immediately enters inspectHandCard, whose artwork or
+      // title path takes a fresh phase before input. Keep that later check,
       // rather than capturing two adjacent phase-only frames with no input
       // between them. Price-only probes/standalone callers keep this guard.
       if (deferToTitle !== true) this.requireHandObservation(this.phase(), "before-target-title");
@@ -752,7 +787,7 @@ async readHandTitles(cards, points, scan = { titles: 0 }) {
 // @fragment tcg-ui.readHand
 async readHand(expected = this.handCountHint, evidence = null, scan = { titles: 0 }) {
       const started = Date.now(), titlesBefore = scan.titles;
-      let observed = null;
+      let observed = null, failure = null;
       try {
         // One owner for the read transaction. The artwork adapter only seeds
         // identities/count; it cannot finish a second title/reset lifecycle.
@@ -770,7 +805,6 @@ async readHand(expected = this.handCountHint, evidence = null, scan = { titles: 
         // Establish the expanded fan once. Selecting a card only raises that
         // card; it does not require resetting/re-expanding the whole hand.
         if (n > 0 && !hand.every(Boolean) && !this.handFanReady) {
-          this.requireHandObservation(this.phase(), "before-scan-expand");
           await this.expand();
         }
         this.handScanSerial++;
@@ -785,16 +819,22 @@ async readHand(expected = this.handCountHint, evidence = null, scan = { titles: 
         observed = this.finishHandObservation ? this.finishHandObservation(hand, scan) : hand;
         if (this.handFanReady || this.handNeedsReset) {
           this.requireHandObservation(this.phase(), "before-hand-reset");
-          await this.reset();
+          // A proven empty fan cannot obscure the board; there is nothing to fold.
+          if (n === 0) {
+            this.handFanReady = false;
+            this.handNeedsReset = false;
+            this.boardReady = true;
+          } else await this.reset();
         }
         this.handCountHint = null;
         return observed;
-      } finally {
+      } catch (e) { failure = e; throw e; }
+      finally {
         // Do not click in finally: a failed title retains this observation's
         // known slots; a changed phase belongs to the recovery/phase owner.
         try { this.trace("hand-read-completed", { route: scan.route || "expanded-artwork-fallback",
           count: observed?.length ?? null, titleSlots: scan.titles - titlesBefore,
-          elapsedMs: Date.now() - started }); } catch {}
+          elapsedMs: Date.now() - started }); } catch (e) { if (!failure) throw e; }
       }
     }
 // @endfragment tcg-ui.readHand
@@ -861,16 +901,39 @@ titleIn(f, roi, kind = "card", names = null) {
 // @endfragment bgi-host.titleIn
 
 // @fragment bgi-host.inspectHandCard
-async inspectHandCard(action, x) {
+async inspectHandCard(action, x, before = null) {
+      // A fresh native artwork identity is sufficient for ordinary input.
+      // Details are only opened for unknown identities or actual deck facts.
+      if (before && !this.needsCardDetails?.(action, before) && this.expandedHandIn) {
+        let slot;
+        try {
+          slot=this.frame(f => {
+            const target=this.expandedHandIn(f, before.hand.length, action.index)
+              ?.slots.find(s => s.index === action.index);
+            if(!target?.titleCandidates)return target;
+            // The target already established this frame's complete layout.
+            const row=this.expandedHandIn(f,before.hand.length),
+              cards=row.slots.map(s=>s.id?TCG.observedCard(TCG.byId[s.id].name,s.index):null);
+            this.fillHandVariants(cards,row.slots,before.hand,[],true);
+            return cards[action.index]?{...row.slots[action.index],id:cards[action.index].id}:target;
+          });
+        }
+        catch(e) {
+          if(e.code!=="TCG_HAND_RETRY")throw e;
+          await this.refreshHandBeforeInput("目标牌面读取时数量已变化，重新核对手牌");
+        }
+        if (slot?.id) {
+          if (slot.id !== action.id)
+            await this.refreshHandBeforeInput("目标槽牌面已变化，重新核对手牌");
+          this.trace("hand-input-artwork", { id:action.id,index:action.index,additionalInputs:0 });
+          return slot.point;
+        }
+      }
       const raw = await this.titleAt(x, 945, false, false, "card", action.id, true);
       if (!raw) {
-        // No title is not a conflicting identity. No action was submitted;
-        // restore the view and retry this slot through the state owner.
-        this.requireHandObservation(this.phase(), "missing-input-title");
-        await this.reset();
-        const error = new Error("目标手牌标题暂未读到，保留身份后重试目标槽");
-        error.code = "TCG_STATE_REFRESH";
-        throw error;
+        // The target may have left after a delayed effect. A board-only
+        // refresh would keep selecting the same cached, nonexistent card.
+        await this.refreshHandBeforeInput("目标手牌标题为空，重新读取当前手牌");
       }
       if (TCG.observedCard(raw, action.index)?.id !== action.id)
         await this.refreshHandBeforeInput("目标手牌卡名校验失败，重新核对手牌");
@@ -943,9 +1006,11 @@ async titleAt(
         const raw = this.frame((f) => {
           if (watchPhase) this.requireHandObservation(this.phaseIn(f), "title-sampling");
           const title = this.titleIn(f, roi, kind);
-          // Use the already captured stable title frame for optional deck facts.
-          // Normal decks have no facts reader and perform no additional OCR.
-          if (!opening && kind === "card" && previousKey === "title:" + TCG.norm(title)) {
+          // A known target needs one positive identity, not a second copy of
+          // the same OCR. Blind discovery still corroborates an unknown title.
+          if (!opening && kind === "card" && (expected !== null
+              ? TCG.observedCard(title, 0)?.id === expected
+              : previousKey === "title:" + TCG.norm(title))) {
             const card = TCG.identify(title);
             if (card) this.readSelectedCardFacts?.(f, card, x);
           }
@@ -958,16 +1023,22 @@ async titleAt(
         lastStable = stable ? raw : "";
         const matchesExpected = expected === null || (kind === "character"
           ? who === expected : TCG.observedCard(raw, 0)?.id === expected);
-        if (stable && matchesExpected) {
+        if ((stable || expected !== null) && matchesExpected) {
           this.trace("title-read", {
             point: [x, y],
             roi,
             kind,
             expected,
             reads,
-            stable: true,
+            stable,
             matchesExpected: true,
           });
+          return raw;
+        }
+        // A positively identified, stable different card is a stale target,
+        // not an animation worth polling eight more times.
+        if (stable && expected !== null && kind === "card" && TCG.identify(raw)) {
+          this.trace("title-read", { point:[x,y],roi,kind,expected,reads,stable:true,matchesExpected:false });
           return raw;
         }
         previousKey = key;
@@ -994,7 +1065,7 @@ async inputHand(action,before,memory,prepared=null) {
       const h = current.find(c => c.index === action.index);
       if (!h || h.id !== action.id) throw new Error("执行前重新核对卡名失败");
       const selected = prepared && !prepared.viewOnly;
-      if (prepared?.viewOnly && !this.handFanReady) await this.requireUnchangedBoard(before);
+      if (prepared?.viewOnly && !this.handFanReady) await this.requireUnchangedBoard(before,action);
       const priceIndex = action.type==="card"&&this.checkCardInput?action.index:null;
       // Non-selected inputs always enter inspectHandCard below. Its fresh
       // pre-click phase owns the boundary; quantity reads stay independent.
@@ -1002,21 +1073,21 @@ async inputHand(action,before,memory,prepared=null) {
       if (prepared?.viewOnly && !sourceCount) {
         // No title/drag has been sent for this target. Unknown new quantity
         // cannot authorize bypassing the ordinary complete-board preflight.
-        await this.requireUnchangedBoard(before);
+        await this.requireUnchangedBoard(before,action);
         sourceCount=await this.prepareHandInput(before.hand.length,priceIndex,false,true);
       }
-      const x = selected?prepared.x:this.handPoints(current.length)[action.index];
-      if (!selected) await this.inspectHandCard(action, x);
+      let x = selected?prepared.x:this.handPoints(current.length)[action.index];
+      if (!selected) x = await this.inspectHandCard(action, x, before) ?? x;
       await this.checkCardInput?.(action,before,x,memory);
       const phase = this.phase();
       if (phase.turn !== "user") {
-        const error = new Error("拖牌前回合已改变"), actual = this.captureGeometry?.actualSize;
-        if (actual?.width === 2560 && [1440,1600].includes(actual.height)) {
-          error.code = "TCG_OBSERVATION_INTERRUPTED"; error.phase = { ...phase, hand: null };
-          this.boardReady = false; this.preparedHandInput = null; this.autoRisk = true;
-          this.trace("hand-input-interrupted", { action, stage: "before-drag", phase: phase.phase,
-            turn: phase.turn, inputSubmitted: false });
-        }
+        // No drag/payment was sent. The phase owner must resume from fresh
+        // observations at every supported size, not treat 1080 as fatal.
+        const error = new Error("拖牌前回合已改变");
+        error.code = "TCG_OBSERVATION_INTERRUPTED"; error.phase = { ...phase, hand: null };
+        this.boardReady = false; this.preparedHandInput = null; this.autoRisk = true;
+        this.trace("hand-input-interrupted", { action, stage: "before-drag", phase: phase.phase,
+          turn: phase.turn, inputSubmitted: false });
         throw error;
       }
       const targeted = action.type === "card" && action.target !== null;

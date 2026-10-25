@@ -17,10 +17,10 @@ function chinaTime(date){
 function releaseFiles({sourceCommit,sourceDate}){
  if(!/^[a-f0-9]{40}$/.test(sourceCommit))throw Error("Source commit must be a full Git SHA");
  const stamp=chinaTime(sourceDate),files=new Map(),players={},children=[];
- for(const [id,folder]of Object.entries(repo.players)){
+ for(const [id,folder]of Object.entries(B.scriptFolders)){
   if(!/^[A-Za-z][A-Za-z0-9]+$/.test(folder))throw Error("Invalid script directory");
   const pack=B.packageFiles(id,{semanticAssets:true}),m=JSON.parse(pack.files.get("manifest.json"));
-  if(!m.main||!pack.files.has(m.main)||m.version!==B.config.players[id].version)throw Error("Invalid manifest: "+id);
+  if(!m.main||!pack.files.has(m.main)||m.version!==B.config.sharedRevision)throw Error("Invalid manifest: "+id);
   for(const [rel,bytes]of pack.files){if(!safeRel(rel))throw Error("Invalid runtime path");files.set(`repo/js/${folder}/${rel}`,bytes);}
   players[id]=m.version;
   children.push({name:folder,type:"directory",version:m.version,author:m.authors?.[0]?.name||"",authors:m.authors,
@@ -44,8 +44,8 @@ function verifyRelease(root){
  const index=JSON.parse(fs.readFileSync(path.join(root,"repo.json")));
  if(!zlib.gunzipSync(fs.readFileSync(path.join(root,"repo.json.gz"))).equals(fs.readFileSync(path.join(root,"repo.json"))))throw Error("Compressed index mismatch");
  const nodes=index.indexes.find(n=>n.name==="js")?.children;
- if(!nodes||nodes.length!==Object.keys(repo.players).length)throw Error("Missing JS index");
- for(const folder of Object.values(repo.players)){
+ if(!nodes||nodes.length!==Object.keys(B.scriptFolders).length)throw Error("Missing JS index");
+ for(const folder of Object.values(B.scriptFolders)){
   const node=nodes.find(n=>n.name===folder),dir=path.join(root,"repo/js",folder),m=JSON.parse(fs.readFileSync(path.join(dir,"manifest.json")));
   if(!node||node.children?.length||node.version!==m.version||!safeRel(m.main)||!fs.existsSync(path.join(dir,m.main)))throw Error("JS leaf/entry mismatch");
   require("./card-atlas.cjs").validateAtlas(new Map(listFiles(dir).map(rel=>[rel,fs.readFileSync(path.join(dir,rel))])));

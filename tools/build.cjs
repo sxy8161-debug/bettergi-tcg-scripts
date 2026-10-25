@@ -1,6 +1,11 @@
 "use strict";
 const fs=require("node:fs"),path=require("node:path"),crypto=require("node:crypto"),vm=require("node:vm");
 const base=path.resolve(__dirname,".."),config=require("../players.json");
+const scriptFolders=Object.fromEntries(Object.entries(config.players).map(([id,p])=>{
+ if(!/^[A-Za-z][A-Za-z0-9]+$/.test(p.packageId||""))throw Error("Missing/invalid packageId: "+id);
+ return [id,p.packageId];
+}));
+if(new Set(Object.values(scriptFolders)).size!==Object.keys(scriptFolders).length)throw Error("Duplicate packageId");
 const sha=b=>crypto.createHash("sha256").update(b).digest("hex");
 const includes=/\/\* @include (src\/(?:shared\/[\w/-]+|decks\/[\w-]+\/[\w/-]+)\.inc\.js)(?:#([\w.-]+))? \*\//g;
 function render(text, dependencies = [], stack = [], deck = null) {
@@ -42,8 +47,8 @@ function packageFiles(id,options={}) {
     text=fs.readFileSync(path.join(dir,module),"utf8")+'\n'+text;
     dependencies.push("src/decks/"+id+"/"+module);
   }
-  if(name==="core")text+='\nglobalThis.TCG.version = '+JSON.stringify(p.version)+';\nglobalThis.TCG.sharedVersion = '+JSON.stringify(config.sharedRevision)+';\nglobalThis.TCG.defaultStrategy = '+JSON.stringify(p.defaultStrategy||"default")+';\n'+render('/* @include src/shared/rules.inc.js#tcg-rules.strategyRegistry */')+'\n';
-  if(name==="player")text=text.replace(/const VERSION = "[^"]+";/, "const VERSION = "+JSON.stringify(p.version)+";");
+  if(name==="core")text+='\nglobalThis.TCG.version = '+JSON.stringify(config.sharedRevision)+';\nglobalThis.TCG.sharedVersion = '+JSON.stringify(config.sharedRevision)+';\nglobalThis.TCG.defaultStrategy = '+JSON.stringify(p.defaultStrategy||"default")+';\n'+render('/* @include src/shared/rules.inc.js#tcg-rules.strategyRegistry */')+'\n';
+  if(name==="player")text=text.replace(/const VERSION = "[^"]+";/, "const VERSION = "+JSON.stringify(config.sharedRevision)+";");
   if(text.includes("/* @include"))throw new Error("Unresolved include");
   new vm.Script(text,{filename:id+"/"+name+".js"}); result.set("lib/"+name+".js",Buffer.from(text));
  }
@@ -58,7 +63,7 @@ function packageFiles(id,options={}) {
  new vm.Script(result.get("lib/strategy.js").toString());
  for(const name of ["manifest.json","settings.json","README.md","ATTRIBUTION.md","LICENSE-GPL-3.0.txt"]) {
   let text=fs.readFileSync(path.join(dir,"public",name),"utf8");
-  if(name==="manifest.json"){const m=JSON.parse(text);m.version=p.version;
+  if(name==="manifest.json"){const m=JSON.parse(text);m.version=config.sharedRevision;
    text=JSON.stringify(m,null,2)+"\n";}
   result.set(name,Buffer.from(text));
  }
@@ -226,10 +231,10 @@ function build(){
    if(retired[id].size){report.retiredBackup??=path.resolve(base,"../../backups","tcg-package-sync-"+new Date().toISOString().replace(/[:.]/g,"-"));retireFiles(source,retired[id],path.join(report.retiredBackup,id));}
    writeFiles(source,files);
   }
-  report.players[id]={version:p.version,files:Object.fromEntries([...files].map(([n,b])=>[n,sha(b)])),dependencies};
+  report.players[id]={version:config.sharedRevision,files:Object.fromEntries([...files].map(([n,b])=>[n,sha(b)])),dependencies};
  }
  if(!args.includes("--check")){fs.writeFileSync(path.join(base,"build-manifest.json"),JSON.stringify(report,null,2)+"\n");if(args.includes("--sync"))fs.writeFileSync(statePath,JSON.stringify(report,null,2)+"\n");}
  console.log(JSON.stringify({checked:args.includes("--check"),synced:args.includes("--sync"),players:Object.fromEntries(Object.entries(report.players).map(([id,p])=>[id,{version:p.version,files:Object.keys(p.files).length,sharedFragments:p.dependencies.length}]))}));return report;
 }
 if(require.main===module)build();
-module.exports={base,config,sha,packageFiles,packageHashes,recognitionFiles,writeFiles,build,render,assertTested,targetedProofArg,assertGeneratedClean,assertTargetClean,retiredTemplateFiles,retiredRuntimeFiles,retireFiles,commonAssets};
+module.exports={base,config,scriptFolders,sha,packageFiles,packageHashes,recognitionFiles,writeFiles,build,render,assertTested,targetedProofArg,assertGeneratedClean,assertTargetClean,retiredTemplateFiles,retiredRuntimeFiles,retireFiles,commonAssets};
