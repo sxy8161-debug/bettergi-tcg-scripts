@@ -6,13 +6,20 @@ const templatePath=/^assets\/(?:[\p{L}\p{N}_-]+\/)*[\p{L}\p{N}_-]+\.png$/u;
 // Repeated package assembly in one build/test process reuses only content-bound encodings.
 const sheets=new Map();
 function regions(bank){
+ if(bank.decks)return Object.values(bank.decks).flatMap(regions);
  return [bank,bank.expanded].filter(Boolean).flatMap(part=>part.entries.flatMap(entry=>
   [...(entry.patches||[]),...(entry.views||[]).flatMap(view=>view.patches)]));
 }
 function sheet(images){
  const key=digest(JSON.stringify(images.map(([name,bytes])=>[name,digest(bytes)])));
  if(sheets.has(key))return sheets.get(key);
- const tiles=images.map(([name,bytes])=>({name,sourceSha256:digest(bytes),image:PNG.sync.read(bytes)}));
+ const all=images.map(([name,bytes])=>({name,sourceSha256:digest(bytes),image:PNG.sync.read(bytes)})),unique=new Map();
+ for(const tile of all){
+  const image=tile.image,key=image.width+"x"+image.height+":"+digest(rgbRegion(image,[0,0,image.width,image.height]));
+  if(!unique.has(key))unique.set(key,tile);
+  tile.original=unique.get(key);
+ }
+ const tiles=[...unique.values()];
  tiles.sort((a,b)=>b.image.height-a.image.height||b.image.width-a.image.width||(a.name<b.name?-1:a.name>b.name?1:0));
  const width=Math.max(512,...tiles.map(t=>t.image.width));
  let x=0,y=0,rowHeight=0;
@@ -25,13 +32,13 @@ function sheet(images){
  for(const tile of tiles){
   const [left,top,w,h]=tile.rect;
   for(let row=0;row<h;row++)tile.image.data.copy(data,((top+row)*width+left)*4,row*w*4,(row+1)*w*4);
-  index[tile.name]={rect:tile.rect,sourceSha256:tile.sourceSha256};
  }
+ for(const tile of all)index[tile.name]={rect:tile.original.rect,sourceSha256:tile.sourceSha256};
  // BetterGI decodes templates in Color mode. No resampling, colour conversion or quantisation.
  const bytes=PNG.sync.write({width,height,data},{colorType:2,inputColorType:6,deflateLevel:9});
  const result={bytes,index};sheets.set(key,result);return result;
 }
-function packCardAtlases(input){
+function packCardAtlases(input,{uiByDeck}={}){
  const files=new Map(input),index={},uiAtlas={};
  for(const stage of ["hand","expanded","ui"]){
   const images=[...input].filter(([name])=>templatePath.test(name)&&
@@ -47,15 +54,18 @@ function packCardAtlases(input){
  const used=new Set();
  for(const name of ["hand-bank.json","opening-bank.json"]){
   if(!files.has(name))continue;
-  const bank=JSON.parse(files.get(name));
+  const document=JSON.parse(files.get(name));
+  for(const [deck,bank]of document.decks?Object.entries(document.decks):[["",document]]){
   if(bank.atlas||bank.uiAtlas)throw Error("Source bank must contain individual templates, not generated atlases");
   bank.atlas={};
-  if(name==="hand-bank.json")bank.uiAtlas=uiAtlas;
+  if(name==="hand-bank.json")bank.uiAtlas=uiByDeck
+   ?Object.fromEntries(uiByDeck[deck].map(n=>[n,uiAtlas[n]])):uiAtlas;
   for(const logical of regions(bank)){
    if(!index[logical])throw Error("Missing atlas template: "+logical);
    bank.atlas[logical]=index[logical];used.add(logical);
   }
-  files.set(name,Buffer.from(JSON.stringify(bank,null,2)+"\n"));
+  }
+  files.set(name,Buffer.from(JSON.stringify(document,null,2)+"\n"));
  }
  if(used.size!==Object.keys(index).length)throw Error("Unreferenced card atlas template");
  return files;
@@ -73,7 +83,8 @@ function rgbRegion(image,rect){
 function validateAtlas(files){
  const declared=new Map(),images=new Map();
  for(const name of ["hand-bank.json","opening-bank.json"]){
-  const bank=JSON.parse(files.get(name));
+  const document=JSON.parse(files.get(name));
+  for(const bank of document.decks?Object.values(document.decks):[document]){
   if(!bank.atlas||typeof bank.atlas!=="object")throw Error("Missing card atlas index");
   const used=new Set(regions(bank));
   if(JSON.stringify([...used].sort())!==JSON.stringify(Object.keys(bank.atlas).sort()))throw Error("Atlas reference set mismatch");
@@ -93,6 +104,7 @@ function validateAtlas(files){
    const [x,y,w,h]=region.rect,png=images.get(region.file);
    if(x<0||y<0||w<=0||h<=0||x+w>png.width||y+h>png.height)throw Error("Atlas rectangle outside image: "+logical);
    declared.set(logical,region);
+  }
   }
  }
  return declared;

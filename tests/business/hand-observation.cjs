@@ -100,7 +100,7 @@ module.exports=async function(test){
   });
 
   await test("hand input: production artwork classification binds the drag to its current slot and submits once",async()=>{
-    const {packageFiles}=require("../../tools/build.cjs"),bank=JSON.parse(packageFiles("mozailu").files.get("hand-bank.json")),
+    const {packageFiles}=require("../../tools/build.cjs"),bank=JSON.parse(packageFiles("mozailu").files.get("hand-bank.json")).decks.mozailu,
       entry=bank.expanded.entries.find(e=>e.id==="draw"),
       files=new Set([...(entry.patches||[]),...(entry.views||[]).flatMap(v=>v.patches)]);
     for(const scene of ["match","count-conflict","backend-error"]){
@@ -160,7 +160,7 @@ module.exports=async function(test){
 
   await test("Ailin four dishes classify exactly and reach card/tune input without family or title expansion",async()=>{
     const C=require("../../src/shared/collapsed-hand.inc.js"),{T,Host}=load("ailin"),
-      bank=JSON.parse(require("../../tools/build.cjs").packageFiles("ailin").files.get("hand-bank.json")),
+      bank=JSON.parse(require("../../tools/build.cjs").packageFiles("ailin").files.get("hand-bank.json")).decks.ailin,
       dishes=["wavekissedSands","verdantGift","gildedHall","autumnFrost"];
     for(const id of dishes){
       for(const part of [bank,bank.expanded]){

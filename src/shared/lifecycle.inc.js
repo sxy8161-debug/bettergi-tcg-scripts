@@ -92,12 +92,20 @@ async defer(error, codes, event, message) {
 async enter() {
       const host = this.host;
       const manifest = JSON.parse(file.readTextSync("manifest.json"));
-      host.trace("start", {
+      const start = {
+        deckId: T.deckId,
+        deckTitle: T.deckTitle,
+        deckLabel: T.deckLabel,
         version: manifest.version,
         scriptName: manifest.name,
         sharedVersion: T.sharedVersion,
         options: this.options,
-      });
+      };
+      host.trace("start", start);
+      log.info("[启动摘要] " + start.deckTitle + "｜" + start.deckLabel +
+        "｜版本" + start.version + "｜超时" + start.options.maxMinutes + "分钟" +
+        "｜起手" + (start.options.mulligan === "全部保留" ? "全部保留" : "自动换牌") +
+        "｜行动页入口：" + start.options.actionEntry);
       host.trace("team-assumed", {
         names: T.team.map((c) => c.name),
         order: "left-to-right",
@@ -193,11 +201,11 @@ async pick() {
 // @fragment lifecycle.playerOptions
 function playerOptions(settings = {}) {
   const supplied=settings||{};
-  const defaultMinutes=TCG.defaultMaxMinutes||15;
+  const defaultMinutes=15;
   const options={enemyCount:3,maxMinutes:Number(supplied.maxMinutes||defaultMinutes),
     mulligan:TCG.openingSetting(supplied.mulligan),
     actionEntry:supplied.actionEntry||"禁止从行动页启动"};
-  if(![10,15,20,30,defaultMinutes].includes(options.maxMinutes)||
+  if(![10,15,20,30,45].includes(options.maxMinutes)||
     !["全部保留","优先装备与启动牌"].includes(options.mulligan)||
     !["禁止从行动页启动","确认新开局未行动"].includes(options.actionEntry))throw new Error("设置值无效");
   return options;

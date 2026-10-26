@@ -3,9 +3,9 @@ const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("n
 module.exports=async function(test){
   await test("registered players cover builds, declared runtime suites and trusted publication verifier",()=>{
     const config=B.config.players,ids=Object.keys(config).sort();
-    assert.deepEqual(Object.keys(B.scriptFolders).sort(),ids);
+    assert.deepEqual(B.scriptFolders,{suite:B.config.package.packageId});
     for(const id of ids){
-      const p=config[id];assert.equal(B.scriptFolders[id],p.packageId);
+      const p=config[id];
       for(const name of ["core.js.tmpl","bgi.js.tmpl","player.js.tmpl","strategy.js"])
         assert(fs.existsSync(path.join(B.base,"src/decks",id,name)),id+"/"+name);
       // The local registry declares all full runners. Public source keeps only
@@ -13,7 +13,6 @@ module.exports=async function(test){
       // exported shared/business checks, not a promised full local suite.
       if(p.testRunner||p.publicSuite===true)
         assert(fs.existsSync(path.join(B.base,"tests/decks",id,"suite",p.testRunner||"run.cjs")),id+" declared test runner");
-      if(p.installed)assert.equal(path.basename(p.installed),p.packageId,id+" installation folder");
     }
     const yaml=fs.readFileSync(path.join(B.base,"distribution/release-publish.yml"),"utf8"),
       match=/const players = (\{[^;]+\});/.exec(yaml);
@@ -28,7 +27,7 @@ module.exports=async function(test){
       assert(exported.includes("tests/decks/"+id+"/suite/run.cjs"),id+" public suite is absent from export list");
     for(const rel of exported)assert(fs.existsSync(path.join(B.base,rel)),"Missing declared test export: "+rel);
     const release=require("../../tools/build-release.cjs").releaseFiles({sourceCommit:"a".repeat(40),sourceDate:"2026-10-22T00:00:00Z"});
-    assert.deepEqual(Object.keys(release.manifest.playerVersions).sort(),ids);
+    assert.deepEqual(Object.keys(release.manifest.playerVersions),["suite"]);
     assert.deepEqual(release.index.indexes[0].children.map(n=>n.name).sort(),Object.values(B.scriptFolders).sort());
   });
 };

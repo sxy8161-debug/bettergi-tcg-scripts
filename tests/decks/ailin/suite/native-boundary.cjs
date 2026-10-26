@@ -90,8 +90,8 @@ module.exports=function fixture(loadContext,mode,options={}){
       down=null;
     }});
   const {Host,Player}=c.TCGHandRecognition.classes(c,
-    JSON.parse(require("../../../../tools/build.cjs").packageFiles("ailin").files.get("hand-bank.json")),
-    JSON.parse(require("../../../../tools/build.cjs").packageFiles("ailin").files.get("opening-bank.json")));
+    JSON.parse(require("../../../../tools/build.cjs").packageFiles("ailin").files.get("hand-bank.json")).decks.ailin,
+    JSON.parse(require("../../../../tools/build.cjs").packageFiles("ailin").files.get("opening-bank.json")).decks.ailin);
   const h=new Host({}),p=new Player(h,{maxMinutes:15});
   p.memory.round=1;p.memory.used[0]=1;p.openingFlow=new c.TCG.OpeningFlow("board");p.openingFlow.complete=true;
   if(mode==="left-tune")p.memory.used[0]=0;

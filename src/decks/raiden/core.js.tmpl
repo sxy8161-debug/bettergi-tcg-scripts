@@ -2,7 +2,7 @@
 (function (root) {
   "use strict";
   /* @include src/shared/rules.inc.js#tcg-rules.projectionBudget */
-  function openingSetting(value) { return !value || value === "优先充能与调骰" ? "全部保留" : value; }
+  function openingSetting(value) { return !value || value === "优先充能与调骰" ? "优先装备与启动牌" : value; }
   const team = [
     { name: "雷电将军", element: "Electro", maxEnergy: 2, maxHp: 10, skills:{NA:"源流",E:"神变·恶曜开眼",Q:"奥义·梦想真说"} },
     { name: "柯莱", element: "Dendro", maxEnergy: 2, maxHp: 11, skills:{NA:"祈颂射艺",E:"拂花偈叶",Q:"猫猫秘宝"} },

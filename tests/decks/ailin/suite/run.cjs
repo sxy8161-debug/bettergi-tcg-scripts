@@ -205,7 +205,8 @@ async function run(test,loadContext=overrides=>load(root,overrides)){
       stopAfterNextDecision=new Error("bounded raw-boundary fixture ends after next decision");
     let running,decisions=0;
     const loader=overrides=>{
-      const env=vm.createContext({log:{info(){},warn(){},error(){}},settings:{actionEntry:"确认新开局未行动"},...overrides,
+      const p=require("../../../../players.json").players.ailin;
+      const env=vm.createContext({log:{info(){},warn(){},error(){}},settings:{deck:p.title+"（"+p.label+"）",actionEntry:"确认新开局未行动"},...overrides,
         file:{createDirectory(){},isExists(){return false;},
           readTextSync(name){if(!pack.files.has(name))throw Error("Unexpected runtime file: "+name);return pack.files.get(name).toString();},
           writeTextSync(_path,text){for(const line of text.trim().split("\n")){

@@ -2,13 +2,7 @@
 const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("node:path"),{PNG}=require("pngjs"),B=require("../../tools/build.cjs"),
  A=require("../../tools/card-atlas.cjs"),S=require("../../tools/public-assets.cjs");
 const decode=bytes=>PNG.sync.read(bytes),rgb=png=>A.rgbRegion(png,[0,0,png.width,png.height]);
-function sourceTemplates(id){
- const files=B.recognitionFiles(id);
- for(const asset of [...B.commonAssets,...B.config.players[id].extraAssets]){
-  const name="assets/"+asset+".png";files.set(name,fs.readFileSync(path.join(B.base,name)));
- }
- return files;
-}
+function sourceTemplates(){return B.suiteTemplates().files;}
 function verify(raw,packed){
  const index=A.validateAtlas(packed),images=new Map();
  const sourceImages=[...raw.keys()].filter(n=>n.endsWith(".png"));
@@ -22,18 +16,18 @@ function verify(raw,packed){
   assert.ok(A.rgbRegion(images.get(item.file),item.rect).equals(rgb(original)),name+" pixel change");
  }
  for(const name of ["hand-bank.json","opening-bank.json"]){
-  const bank=JSON.parse(packed.get(name));delete bank.atlas;delete bank.uiAtlas;
+  const bank=JSON.parse(packed.get(name));for(const part of Object.values(bank.decks)){delete part.atlas;delete part.uiAtlas;}
   assert.deepEqual(bank,JSON.parse(raw.get(name)),"Card identities, views, pairs, thresholds and geometry must not change");
  }
  return index;
 }
 module.exports=async function(test){
  await test("registered atlas packages retain every original template pixel and bank field",()=>{
-  for(const id of Object.keys(B.config.players))for(const semanticAssets of [false,true]){
-   const original=sourceTemplates(id),raw=semanticAssets?S.semanticAssets(original).files:original;
-   const p=B.packageFiles(id,{semanticAssets});verify(raw,p.files);
+  {
+   const raw=sourceTemplates();
+   const p=B.packageFiles();verify(raw,p.files);
    const opening=JSON.parse(p.files.get("opening-bank.json"));
-   assert.ok(Object.values(opening.atlas).every(r=>r.file==="assets/card-atlas/hand.png"));
+   assert.ok(Object.values(opening.decks).flatMap(b=>Object.values(b.atlas)).every(r=>r.file==="assets/card-atlas/hand.png"));
    const retire=B.retiredTemplateFiles(p.files,Object.fromEntries([...raw].map(([n,b])=>[n,B.sha(b)])));
    assert.deepEqual([...retire.keys()].sort(),[...raw.keys()].filter(n=>n.endsWith(".png")).sort());
   }

@@ -1,11 +1,15 @@
 {
-  "sharedRevision": "1.9.7",
+  "sharedRevision": "2.0.0",
+  "package": {
+    "packageId": "TCGPlayerSuite",
+    "title": "七圣召唤全自动打牌（实时计算临场变招）",
+    "source": "repo/js/TCGPlayerSuite"
+  },
   "players": {
     "raiden": {
       "title": "雷神柯莱刻晴",
-      "packageId": "RaidenColleiKeqingPlayer",
+      "label": "充能连爆",
       "publicSuite": false,
-      "source": "repo/js/RaidenColleiKeqingPlayer",
       "recognition": "src/decks/raiden/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],
@@ -18,9 +22,8 @@
     },
     "iansan": {
       "title": "伊安珊嘉明早柚",
-      "packageId": "IansanGamingSayuPlayer",
+      "label": "全能速通",
       "publicSuite": false,
-      "source": "repo/js/IansanGamingSayuPlayer",
       "recognition": "src/decks/iansan/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],
@@ -31,9 +34,8 @@
     },
     "moonbloom": {
       "title": "月绽放",
-      "packageId": "MoonbloomPlayer",
+      "label": "赚骰爆发",
       "publicSuite": false,
-      "source": "repo/js/MoonbloomPlayer",
       "recognition": "src/decks/moonbloom/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],
@@ -44,9 +46,8 @@
     },
     "mozailu": {
       "title": "莫娜早柚迪卢克",
-      "packageId": "MonaSayuDilucPlayer",
+      "label": "扩散清场",
       "publicSuite": true,
-      "source": "repo/js/MonaSayuDilucPlayer",
       "recognition": "src/decks/mozailu/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],
@@ -55,9 +56,8 @@
     },
     "ailin": {
       "title": "爱可菲林尼水形幻人",
-      "packageId": "EscoffierLyneyHydroTulpaPlayer",
+      "label": "反应快攻",
       "publicSuite": true,
-      "source": "repo/js/EscoffierLyneyHydroTulpaPlayer",
       "recognition": "src/decks/ailin/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],
@@ -81,9 +81,8 @@
     },
     "consecrated": {
       "title": "圣骸兽（特化对单）",
-      "packageId": "ConsecratedBeastsPlayer",
+      "label": "对单核爆",
       "publicSuite": true,
-      "source": "repo/js/ConsecratedBeastsPlayer",
       "recognition": "src/decks/consecrated/recognition",
       "defaultStrategy": "default",
       "strategyModules": [],

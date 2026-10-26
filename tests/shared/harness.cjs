@@ -35,6 +35,9 @@ function load(base, overrides = {}) {
   require("../business/runtime.cjs").loadDefinitions(fs.readFileSync(path.join(base,"main.js"),"utf8"),context);
   return context;
 }
+function bank(base,name,id=process.env.TCG_TEST_DECK||"raiden"){
+  return JSON.parse(fs.readFileSync(path.join(base,name),"utf8")).decks[id];
+}
 
 // Explicit no-pixel input fixture. The tested API consumes normalized points;
 // it does not pretend to recognize a frame or to run a native game.
@@ -48,4 +51,4 @@ function nativeInput(onClick = () => {}, onMove = () => {}) {
     leftButtonClick() { onClick(...point); },
   };
 }
-module.exports = { load, clone, historical, nativeInput };
+module.exports = { load, clone, historical, nativeInput, bank };

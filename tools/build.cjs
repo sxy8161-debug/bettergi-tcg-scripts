@@ -1,11 +1,8 @@
 "use strict";
 const fs=require("node:fs"),path=require("node:path"),crypto=require("node:crypto"),vm=require("node:vm");
 const base=path.resolve(__dirname,".."),config=require("../players.json");
-const scriptFolders=Object.fromEntries(Object.entries(config.players).map(([id,p])=>{
- if(!/^[A-Za-z][A-Za-z0-9]+$/.test(p.packageId||""))throw Error("Missing/invalid packageId: "+id);
- return [id,p.packageId];
-}));
-if(new Set(Object.values(scriptFolders)).size!==Object.keys(scriptFolders).length)throw Error("Duplicate packageId");
+const scriptFolders={suite:config.package.packageId};
+if(!/^[A-Za-z][A-Za-z0-9]+$/.test(config.package.packageId))throw Error("Missing/invalid suite packageId");
 const sha=b=>crypto.createHash("sha256").update(b).digest("hex");
 const includes=/\/\* @include (src\/(?:shared\/[\w/-]+|decks\/[\w-]+\/[\w/-]+)\.inc\.js)(?:#([\w.-]+))? \*\//g;
 function render(text, dependencies = [], stack = [], deck = null) {
@@ -36,61 +33,71 @@ function documentationLinks(text){
   .replace(/`ATTRIBUTION\.md`/g,"[素材来源与署名](#attribution)")
   .replace(/`LICENSE-GPL-3\.0\.txt`/g,"[许可证全文](#license)");
 }
-function packageFiles(id,options={}) {
- const p=config.players[id];if(!p)throw new Error("Unknown player "+id);
- const result=new Map(),dir=path.join(base,"src/decks",id),dependencies=[];
+function deckParts(id,dependencies) {
+ const p=config.players[id],dir=path.join(base,"src/decks",id),parts={};
  for(const name of ["core","bgi","player"]){
-  const t=fs.readFileSync(path.join(dir,name+".js.tmpl"),"utf8");
-  let text="// Generated from 牌手共享. Edit layered source, not this standalone output.\n"+render(t,dependencies,[],id);
-  if(name==="core")for(const module of [...(p.coreModules||[])].reverse()) {
-    if(!/^[\w-]+\.js$/.test(module))throw Error("Invalid core module: "+module);
-    text=fs.readFileSync(path.join(dir,module),"utf8")+'\n'+text;
-    dependencies.push("src/decks/"+id+"/"+module);
+  let source=fs.readFileSync(path.join(dir,name+".js.tmpl"),"utf8");
+  if(name==="bgi"){
+   const host="/* @include src/shared/host.inc.js */";
+   if(!source.startsWith(host))throw Error("Deck adapter must begin with the common host: "+id);
+   source=source.slice(host.length);
   }
-  if(name==="core")text+='\nglobalThis.TCG.version = '+JSON.stringify(config.sharedRevision)+';\nglobalThis.TCG.sharedVersion = '+JSON.stringify(config.sharedRevision)+';\nglobalThis.TCG.defaultStrategy = '+JSON.stringify(p.defaultStrategy||"default")+';\n'+render('/* @include src/shared/rules.inc.js#tcg-rules.strategyRegistry */')+'\n';
-  if(name==="player")text=text.replace(/const VERSION = "[^"]+";/, "const VERSION = "+JSON.stringify(config.sharedRevision)+";");
-  if(text.includes("/* @include"))throw new Error("Unresolved include");
-  new vm.Script(text,{filename:id+"/"+name+".js"}); result.set("lib/"+name+".js",Buffer.from(text));
+  let text=render(source,dependencies,[],id);
+  if(name==="core")for(const module of [...(p.coreModules||[])].reverse()){
+   if(!/^[\w-]+\.js$/.test(module))throw Error("Invalid core module: "+module);
+   text=fs.readFileSync(path.join(dir,module),"utf8")+"\n"+text;
+   dependencies.push("src/decks/"+id+"/"+module);
+  }
+  if(name==="core")text+="\nglobalThis.TCG.version="+JSON.stringify(config.sharedRevision)+";\nglobalThis.TCG.sharedVersion="+JSON.stringify(config.sharedRevision)+";\nglobalThis.TCG.deckId="+JSON.stringify(id)+";\nglobalThis.TCG.defaultStrategy="+JSON.stringify(p.defaultStrategy||"default")+";\n"+render("/* @include src/shared/rules.inc.js#tcg-rules.strategyRegistry */",dependencies)+"\n";
+  if(name==="core")text+="\nglobalThis.TCG.deckTitle="+JSON.stringify(p.title)+";\nglobalThis.TCG.deckLabel="+JSON.stringify(p.label)+";\n";
+  if(name==="player")text=text.replace(/const VERSION = "[^"]+";/,"const VERSION = "+JSON.stringify(config.sharedRevision)+";");
+  parts[name]=text;
  }
- let strategy=render(fs.readFileSync(path.join(dir,"strategy.js"),"utf8"),dependencies,[],id)+'\nglobalThis.TCG.registerStrategy("default", globalThis.TCG.choose);\n';
- for(const entry of p.strategyModules||[]) {
-  if(!entry.startsWith("strategies/")||!entry.endsWith(".js"))throw Error("Strategy module must live in strategies/: "+entry);
-  const full=path.resolve(dir,entry);if(!full.startsWith(dir+path.sep))throw Error("Strategy module outside deck root");
-  const code=render(fs.readFileSync(full,"utf8"),dependencies,[],id);new vm.Script(code,{filename:entry});strategy+='\n'+code+'\n';
+ let strategy=render(fs.readFileSync(path.join(dir,"strategy.js"),"utf8"),dependencies,[],id)+"\nglobalThis.TCG.registerStrategy(\"default\",globalThis.TCG.choose);\n";
+ for(const module of p.strategyModules||[]){
+  if(!/^strategies\/[\w-]+\.js$/.test(module))throw Error("Invalid strategy module: "+module);
+  strategy+=render(fs.readFileSync(path.join(dir,module),"utf8"),dependencies,[],id)+"\n";
  }
- strategy+='\nglobalThis.TCG.selectStrategy(globalThis.TCG.defaultStrategy);\n';
- result.set("lib/strategy.js",Buffer.from(strategy));
- new vm.Script(result.get("lib/strategy.js").toString());
- for(const name of ["manifest.json","settings.json","README.md","ATTRIBUTION.md","LICENSE-GPL-3.0.txt"]) {
-  let text=fs.readFileSync(path.join(dir,"public",name),"utf8");
-  if(name==="manifest.json"){const m=JSON.parse(text);m.version=config.sharedRevision;
-   text=JSON.stringify(m,null,2)+"\n";}
-  result.set(name,Buffer.from(text));
+ parts.strategy=strategy+"\nglobalThis.TCG.selectStrategy(globalThis.TCG.defaultStrategy);\n";
+ return parts;
+}
+function suiteTemplates() {
+ const files=new Map(),hands={decks:{}},openings={decks:{}},uiByDeck={};
+ for(const [id,p]of Object.entries(config.players)){
+  const raw=require("./public-assets.cjs").semanticAssets(recognitionFiles(id)).files;
+  const names=new Map([...raw.keys()].filter(n=>n.endsWith(".png")).map(n=>[n,n.replace(/^(assets\/(?:hand|opening|expanded)\/)/,"$1"+id+"-")]));
+  const rename=x=>typeof x==="string"?(names.get(x)||x):Array.isArray(x)?x.map(rename):x&&typeof x==="object"?Object.fromEntries(Object.entries(x).map(([k,v])=>[k,rename(v)])):x;
+  hands.decks[id]=rename(JSON.parse(raw.get("hand-bank.json")));
+  openings.decks[id]=rename(JSON.parse(raw.get("opening-bank.json")));
+  for(const [name,bytes]of raw)if(name.endsWith(".png"))files.set(names.get(name),bytes);
+  uiByDeck[id]=[...commonAssets,...p.extraAssets].map(n=>"assets/"+n+".png");
+  for(const name of uiByDeck[id])files.set(name,fs.readFileSync(path.join(base,name)));
  }
- const readme=documentationLinks(result.get("README.md").toString()),attribution=documentationLinks(result.get("ATTRIBUTION.md").toString());
- result.set("README.md",Buffer.from(readme+'\n\n<a id="attribution"></a>\n\n'+attribution+
-  '\n\n<a id="license"></a>\n\n## 许可证全文\n\n<details>\n<summary>GNU General Public License v3.0（完整原文）</summary>\n\n```text\n'+
-  result.get("LICENSE-GPL-3.0.txt").toString()+'\n```\n\n</details>\n'));
- result.delete("ATTRIBUTION.md");result.delete("LICENSE-GPL-3.0.txt");
- const recognition=p.recognition?recognitionFiles(id):new Map();
- for(const [rel,bytes]of recognition)result.set(rel,bytes);
- const readers=p.recognition?["collapsed-hand","opening-hand","hand-recognition"]:[];
- for(const name of readers){
-  const rel="src/shared/"+name+".inc.js",bytes=fs.readFileSync(path.join(base,rel));
-  new vm.Script(bytes.toString(),{filename:rel});result.set("lib/"+name+".js",bytes);dependencies.push(rel);
+ files.set("hand-bank.json",Buffer.from(JSON.stringify(hands,null,2)+"\n"));
+ files.set("opening-bank.json",Buffer.from(JSON.stringify(openings,null,2)+"\n"));
+ return {files,uiByDeck};
+}
+function packageFiles(id="suite",options={}) {
+ if(id!=="suite"&&!config.players[id])throw Error("Unknown player "+id);
+ const dependencies=[],parts=Object.fromEntries(Object.keys(config.players).map(id=>[id,deckParts(id,dependencies)]));
+ const labels=Object.fromEntries(Object.entries(config.players).map(([id,p])=>[p.title+"（"+p.label+"）",id]));
+ const selected="const TCGSelectedDeck=("+JSON.stringify(labels)+")[(typeof settings===\"undefined\"?{}:settings).deck||"+JSON.stringify(Object.keys(labels)[0])+"];\nif(!TCGSelectedDeck)throw Error(\"未知牌组设置\");\n";
+ const cases=names=>"switch(TCGSelectedDeck){\n"+Object.entries(parts).map(([id,p])=>"case "+JSON.stringify(id)+": {\n"+names.map(n=>"// @module "+id+"/"+n+"\n"+p[n]).join("\n;\n")+"\n;break;\n}").join("\n")+"\n}\n";
+ let main='"use strict";\n'+selected+cases(["core","strategy"])+"\n// @module common-host\n"+render("/* @include src/shared/host.inc.js */",dependencies)+"\n;\n"+cases(["bgi","player"]);
+ for(const name of ["collapsed-hand","opening-hand","hand-recognition"]){
+  const rel="src/shared/"+name+".inc.js";main+="\n// @module "+name+"\n"+fs.readFileSync(path.join(base,rel),"utf8")+"\n;\n";dependencies.push(rel);
  }
- const select=p.recognition?'const {Host, Player} = TCGHandRecognition.classes(globalThis, JSON.parse(file.readTextSync("hand-bank.json")), JSON.parse(file.readTextSync("opening-bank.json")));':'const Host = TCGBetterGI.BetterGIHost, Player = TCGPlayer.Player;';
- const modules=["core","strategy","bgi","player",...readers];
- const bundled=modules.map(name=>'// @module '+name+'\n'+result.get("lib/"+name+".js").toString()).join('\n;\n');
- const entry='\n;\n// @tcg-entry\n(async function () {\n  "use strict";\n  const options = TCGPlayer.playerOptions(typeof settings === "undefined" ? {} : settings);\n  '+select+'\n  return new Player(new Host(options), options).run();\n})();\n';
- new vm.Script(bundled+entry,{filename:id+"/main.js"});
- result.set("main.js",Buffer.from(bundled+entry));
- for(const name of modules)result.delete("lib/"+name+".js");
- for(const n of [...commonAssets,...p.extraAssets])result.set("assets/"+n+".png",fs.readFileSync(path.join(base,"assets",n+".png")));
- for(const name of result.keys())if(/(?:tests|evidence|logs|tools|node_modules|src)\//.test(name))throw new Error("Internal file in runtime package: "+name);
- dependencies.push("src/shared/rules.inc.js#tcg-rules.strategyRegistry");
- const published=options.semanticAssets?require("./public-assets.cjs").semanticAssets(result).files:result;
- return {files:require("./card-atlas.cjs").packCardAtlases(published),dependencies:[...new Set(dependencies)].sort()};
+ main+='\n// @tcg-entry\n(async function(){\n"use strict";\nconst supplied={...(typeof settings==="undefined"?{}:settings)};\ndelete supplied.mulligan;\nconst options=TCGPlayer.playerOptions(supplied);\nconst {Host,Player}=TCGHandRecognition.classes(globalThis,JSON.parse(file.readTextSync("hand-bank.json")).decks[TCGSelectedDeck],JSON.parse(file.readTextSync("opening-bank.json")).decks[TCGSelectedDeck]);\nreturn new Player(new Host(options),options).run();\n})();\n';
+ new vm.Script(main,{filename:"suite/main.js"});
+ const raw=suiteTemplates(),files=raw.files;
+ const manifest=JSON.parse(fs.readFileSync(path.join(base,"src/suite/manifest.json"),"utf8"));manifest.name=config.package.title;manifest.version=config.sharedRevision;
+ files.set("manifest.json",Buffer.from(JSON.stringify(manifest,null,2)+"\n"));
+ const settings=JSON.parse(fs.readFileSync(path.join(base,"src/suite/settings.json"),"utf8")),deckSetting=settings.find(s=>s.name==="deck");
+ deckSetting.options=Object.keys(labels);deckSetting.default=deckSetting.options[0];
+ files.set("settings.json",Buffer.from(JSON.stringify(settings,null,2)+"\n"));
+ files.set("main.js",Buffer.from(main));
+ files.set("README.md",Buffer.from(fs.readFileSync(path.join(base,"distribution/README.md"),"utf8")+'\n\n<a id="license"></a>\n\n## 许可证全文\n\n<details>\n<summary>GNU General Public License v3.0（完整原文）</summary>\n\n```text\n'+fs.readFileSync(path.join(base,"src/decks/raiden/public/LICENSE-GPL-3.0.txt"),"utf8")+'\n```\n\n</details>\n'));
+ return {files:require("./card-atlas.cjs").packCardAtlases(files,{uiByDeck:raw.uiByDeck}),dependencies:[...new Set(dependencies)].sort()};
 }
 function recognitionFiles(id,directory=config.players[id].recognition){
   const dir=path.resolve(base,directory);
@@ -154,7 +161,7 @@ function assertTested(packages,targetedProof=null,{allowFullReport=false}={}) {
    :report.full;
  if(report.failed!==0||!accepted||report.sharedVersion!==config.sharedRevision)throw new Error("Current validation has not passed for the requested scope");
  const hashes=packageHashes(packages);
- for(const id of Object.keys(config.players)) {
+ for(const id of Object.keys(packages)) {
   const tested=report.packages?.[id],current=hashes[id];
   if(!tested || !current || JSON.stringify(Object.keys(tested).sort())!==JSON.stringify(Object.keys(current).sort()))
    throw new Error("Tested package files changed: "+id);
@@ -163,7 +170,7 @@ function assertTested(packages,targetedProof=null,{allowFullReport=false}={}) {
  }
 }
 function assertGeneratedClean(id,files,previous) {
- const p=config.players[id],source=path.resolve(base,p.source);
+ const p=config.package,source=path.resolve(base,p.source);
  const baseline=previous?.players[id]?.files;
  const initial=p.baselineSource?path.resolve(base,p.baselineSource):null;
  return assertTargetClean(id,source,files,baseline,initial,"Generated source changed outside shared layer");
@@ -171,7 +178,7 @@ function assertGeneratedClean(id,files,previous) {
 const {templatePath}=require("./card-atlas.cjs");
 function retiredTemplateFiles(files,baseline){
  const retained=new Set([...files].filter(([rel])=>templatePath.test(rel)).map(([,bytes])=>sha(bytes)));
- if(files.has("hand-bank.json")&&JSON.parse(files.get("hand-bank.json")).atlas)
+ if(files.has("hand-bank.json")&&(JSON.parse(files.get("hand-bank.json")).atlas||JSON.parse(files.get("hand-bank.json")).decks))
   for(const region of require("./card-atlas.cjs").validateAtlas(files).values())retained.add(region.sourceSha256);
  return new Map(Object.entries(baseline||{}).filter(([rel,hash])=>!files.has(rel)&&templatePath.test(rel)&&retained.has(hash)));
 }
@@ -220,12 +227,12 @@ function build(){
  const args=process.argv.slice(2),targetedProof=targetedProofArg(args);
  if(args.some(a=>!["--check","--sync"].includes(a)&&!a.startsWith("--targeted-proof=")))throw new Error("Usage: node tools/build.cjs [--check|--sync] [--targeted-proof=path]");
  const statePath=path.join(base,"build-state.json"),previous=fs.existsSync(statePath)?JSON.parse(fs.readFileSync(statePath)):null,report={sharedRevision:config.sharedRevision,players:{}};
- const packages=Object.fromEntries(Object.keys(config.players).map(id=>[id,packageFiles(id)]));
+ const packages={suite:packageFiles()};
  if(targetedProof)report.validation={scope:"targeted",proof:targetedProof};
  const retired={};
  if(args.includes("--sync")){assertTested(packages,targetedProof);for(const [id,{files}]of Object.entries(packages))retired[id]=assertGeneratedClean(id,files,previous);}
- for(const id of Object.keys(config.players)) {
-  const p=config.players[id],{files,dependencies}=packages[id],source=path.resolve(base,p.source);
+ for(const id of Object.keys(packages)) {
+  const p=config.package,{files,dependencies}=packages[id],source=path.resolve(base,p.source);
   if(args.includes("--check"))for(const [rel,bytes] of files){if(!fs.existsSync(path.join(source,rel))||sha(fs.readFileSync(path.join(source,rel)))!==sha(bytes))throw new Error("Generated source drift: "+id+"/"+rel);}
   else if(args.includes("--sync")){
    if(retired[id].size){report.retiredBackup??=path.resolve(base,"../../backups","tcg-package-sync-"+new Date().toISOString().replace(/[:.]/g,"-"));retireFiles(source,retired[id],path.join(report.retiredBackup,id));}
@@ -237,4 +244,4 @@ function build(){
  console.log(JSON.stringify({checked:args.includes("--check"),synced:args.includes("--sync"),players:Object.fromEntries(Object.entries(report.players).map(([id,p])=>[id,{version:p.version,files:Object.keys(p.files).length,sharedFragments:p.dependencies.length}]))}));return report;
 }
 if(require.main===module)build();
-module.exports={base,config,scriptFolders,sha,packageFiles,packageHashes,recognitionFiles,writeFiles,build,render,assertTested,targetedProofArg,assertGeneratedClean,assertTargetClean,retiredTemplateFiles,retiredRuntimeFiles,retireFiles,commonAssets};
+module.exports={base,config,scriptFolders,sha,packageFiles,packageHashes,recognitionFiles,suiteTemplates,writeFiles,build,render,assertTested,targetedProofArg,assertGeneratedClean,assertTargetClean,retiredTemplateFiles,retiredRuntimeFiles,retireFiles,commonAssets};
