@@ -80,7 +80,7 @@
       ]
     },
     "consecrated": {
-      "title": "圣骸兽（特化对单）",
+      "title": "圣骸兽",
       "label": "对单核爆",
       "publicSuite": true,
       "recognition": "src/decks/consecrated/recognition",
