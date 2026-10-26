@@ -29,6 +29,7 @@ function releaseFiles({sourceCommit,sourceDate}){
  const index={time:stamp.compact,url:`https://github.com/${repo.releaseRepository}/archive/refs/heads/${repo.releaseBranch}.zip`,file:"repo.json",indexes:[{name:"js",type:"directory",children}]};
  files.set("repo.json",json(index));files.set("repo.json.gz",zlib.gzipSync(files.get("repo.json"),{mtime:0}));
  files.set("README.md",B.packageFiles().files.get("README.md"));
+ files.set("RELEASE-NOTES.md",Buffer.from(fs.readFileSync(path.join(B.base,"distribution/RELEASE-NOTES.md"),"utf8").replaceAll("{{TITLE}}",B.config.package.title).replaceAll("{{VERSION}}",B.config.sharedRevision)));
  files.set("LICENSE-GPL-3.0.txt",fs.readFileSync(path.join(B.base,"src/decks/raiden/public/LICENSE-GPL-3.0.txt")));
  const manifest={schemaVersion:1,sourceRepository:repo.sourceRepository,sourceCommit,sourceDate,sharedVersion:B.config.sharedRevision,
   playerVersions:players,files:Object.fromEntries([...files].map(([name,bytes])=>[name,B.sha(bytes)]))};

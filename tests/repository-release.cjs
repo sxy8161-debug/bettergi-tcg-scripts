@@ -43,6 +43,8 @@ test("release tree uses compatible JS leaf nodes, complete standalone packages a
  assert.equal(index.indexes.length,1);assert.equal(index.indexes[0].name,"js");assert.equal(index.indexes[0].children.length,Object.keys(B.scriptFolders).length);
  for(const [id,folder]of Object.entries(B.scriptFolders)){const n=index.indexes[0].children.find(n=>n.name===folder);assert.equal(n.children,undefined);assert.ok(n.description.includes("~|~"));assert.ok(files.has("repo/js/"+n.name+"/manifest.json"));assert.equal(n.version,B.config.sharedRevision);assert.equal(manifest.playerVersions[id],n.version);}
  assert.equal(manifest.sharedVersion,B.config.sharedRevision);
+ const notes=files.get("RELEASE-NOTES.md").toString();assert.ok(notes.includes(B.config.sharedRevision));assert.ok(!notes.includes("{{"));
+ assert.ok(notes.includes("README.md#raiden"));assert.ok(files.get("README.md").includes(Buffer.from("GNU GENERAL PUBLIC LICENSE")));
  assert.equal(index.time,"20261017080000");assert.ok(index.url.endsWith("/refs/heads/release.zip"));
  assert.equal(Object.keys(manifest.files).length+1,files.size);for(const [n,sha]of Object.entries(manifest.files))assert.equal(B.sha(files.get(n)),sha);
  assert.ok(require("node:zlib").gunzipSync(files.get("repo.json.gz")).equals(files.get("repo.json")));
