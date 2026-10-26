@@ -10,7 +10,7 @@
     voltage: "补充未满的角色充能",
     stars: "补充出战角色充能",
     calx: "转移后台充能",
-    draw: "补充手牌，抽牌后重新规划",
+    draw: "补充手牌",
     thundergrass: "选择后续使用的雷草祝佑",
     shatterbolt: "为后续元素爆发准备减费",
     sharpkernel: "为后续元素战技准备减费",
@@ -45,7 +45,7 @@
       enemy = estimate.target,
       reasons = [];
     if (enemy && estimate.direct > 0 && Number.isFinite(enemy.hp) && estimate.direct >= enemy.hp)
-      reasons.push(`敌方出战剩${enemy.hp}点生命，按当前伤害估计尝试主动补刀`);
+      reasons.push(`敌方出战剩${enemy.hp}点生命，准备补刀`);
     if (enemy?.auraKnown === true && estimate.consumed) {
       const reaction =
         estimate.element === "Electro"
@@ -109,8 +109,8 @@
       (card) => card.type === "weapon" && card.weaponTarget === action.target,
     );
     return memory.weapons[action.target] && weapon
-      ? `让持有「${weapon.name}」的角色接力，后续按实际牌面重算`
-      : "转交出战位置，后续按实际牌面重算";
+      ? `让持有「${weapon.name}」的角色接力`
+      : "转交出战位置，准备接力";
   }
 
   // Formatter adapted from Iansan/Gaming/Sayu 0.1.9. Estimates are labelled;
@@ -143,7 +143,7 @@
         );
       }
       case "probe":
-        return "确认" + who + "的" + skill + "费用，再决定后续行动。";
+        return "查看" + who + "的" + skill + "费用，安排接下来的输出。";
       case "switch": {
         const current = state.characters[state.active],
           fragile =

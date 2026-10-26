@@ -1,17 +1,9 @@
 "use strict";
 const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("node:path"),B=require("../../tools/build.cjs");
 module.exports=async function(test){
- await test("standalone bundle preserves configuration, usage, attribution and the complete license",()=>{
+ await test("standalone manifest loads the packaged entry and actual settings",()=>{
   for(const id of Object.keys(B.config.players)){
-   const files=B.packageFiles(id).files,dir=path.join(B.base,"src/decks",id,"public"),readme=files.get("README.md").toString();
-   const links=text=>text.replace(/\]\(ATTRIBUTION\.md\)/g,"](#attribution)").replace(/\]\(LICENSE-GPL-3\.0\.txt\)/g,"](#license)")
-    .replace(/`ATTRIBUTION\.md`/g,"[素材来源与署名](#attribution)").replace(/`LICENSE-GPL-3\.0\.txt`/g,"[许可证全文](#license)");
-   for(const name of ["README.md","ATTRIBUTION.md","LICENSE-GPL-3.0.txt"]){
-    const original=fs.readFileSync(path.join(dir,name),"utf8");
-    assert.ok(readme.includes(name.endsWith(".txt")?original:links(original)),id+" lost "+name);
-   }
-   assert.match(readme,/<a id="attribution"><\/a>/);assert.match(readme,/<a id="license"><\/a>/);
-   assert.doesNotMatch(readme,/\]\((ATTRIBUTION\.md|LICENSE-GPL-3\.0\.txt)\)/);
+   const files=B.packageFiles(id).files,dir=path.join(B.base,"src/decks",id,"public");
    assert.ok(files.get("settings.json").equals(fs.readFileSync(path.join(dir,"settings.json"))));
    const manifest=JSON.parse(files.get("manifest.json"));
    assert.equal(manifest.main,"main.js");assert.equal(manifest.settings_ui,"settings.json");

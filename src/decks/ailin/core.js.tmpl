@@ -229,8 +229,8 @@
     if((a.type==="card"||a.type==="tune")&&h[a.index]?.id!==a.id)throw Error("手牌索引与身份不一致");
     const remaining=indexedHand(h.filter((_,i)=>a.type!=="card"||i!==a.index));
     // These actions consume only their source, never reorder or replace the
-    // remaining dishes. New boiler/draw cards are still read from the row;
-    // equal native family counts retain the old dishes' relative order.
+    // remaining cards. Newly generated/drawn cards are read from the row;
+    // an equal native count retains the complete old hand in its known order.
     const retains=["card","skill","switch"].includes(a.type);
     const full=(refreshAfterConsumption=false)=>({mode:"full",refreshAfterConsumption,
       ...(retains?{retainedHand:remaining,retainedHandOrder:true}:{})});

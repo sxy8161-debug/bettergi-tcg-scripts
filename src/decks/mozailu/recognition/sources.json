@@ -4,7 +4,7 @@
   "validationUsedAsTraining": false,
   "layout": "semantic-v1",
   "runtimeFiles": {
-    "hand-bank.json": "418ee1215eef28a541d5cee1526fbf5d05188f41f5351b27ce81ecf0ebd8f1e1",
+    "hand-bank.json": "c84e041fd753e89f4793174d10aacc4acbc402bb8151cea594ac95ab54dc92d2",
     "opening-bank.json": "e152657dca2f1f593fea35ec1235f1605cc652ef819782fc5a1439efc58daa38",
     "assets/hand/偷懒的新方法-v01-p01.png": "7d5cc11b72b3fb8a56dc89c0a94392bfd1510ee13d5aa4668d0d916775e0d128",
     "assets/hand/偷懒的新方法-v01-p02.png": "cdeec6059c66724599703dbe6158a21638e453e002436296ae70e96c420e1c4e",
@@ -126,7 +126,11 @@
     "assets/opening/蒂玛乌斯-v01-p01.png": "1592bc2bd4743cefe01ad817e1c90dd3dddf7f9bf60df41ff984a3d0d2c8ad5f",
     "assets/opening/蒂玛乌斯-v01-p02.png": "9963db98f3764ff48d8faad30dbebef539322105700e62397ea4d421a16b038d",
     "assets/opening/迪娜泽黛-v01-p01.png": "b7a6a155ee2bfafb01dce901764e9d5c83c296b2b0db18304b33740b5b0d192b",
-    "assets/opening/迪娜泽黛-v01-p02.png": "63660e0a04bd817ad6b8efa62d47b12bf25c1e0990ccc1baf77401c594ed7d4f"
+    "assets/opening/迪娜泽黛-v01-p02.png": "63660e0a04bd817ad6b8efa62d47b12bf25c1e0990ccc1baf77401c594ed7d4f",
+    "assets/hand/流火焦灼-v02-p01.png": "987396d4c93ce886b889391a2585c777e74f279b14f38db1ed8bad1aa57ed4ec",
+    "assets/hand/流火焦灼-v02-p02.png": "0b98c079a890e269b81f0b0731ce7726f08ce36e12f6899f0964716ae72f79b4",
+    "assets/expanded/流火焦灼-v02-p01.png": "b22d41103d9a654acede6685c0df675d019cdfef5809f7d717849463037ae1a2",
+    "assets/expanded/流火焦灼-v02-p02.png": "b39824134982d181d5f5bcf8cae169d71cf21962b4ca577d15b045fc786f8985"
   },
   "assetFiles": {
     "assets/hand/偷懒的新方法-v01-p01.png": "assets/templates/iansan/hand/偷懒的新方法-v01-p01.png",
@@ -249,6 +253,10 @@
     "assets/opening/蒂玛乌斯-v01-p01.png": "assets/templates/mozailu/opening/蒂玛乌斯-v01-p01.png",
     "assets/opening/蒂玛乌斯-v01-p02.png": "assets/templates/mozailu/opening/蒂玛乌斯-v01-p02.png",
     "assets/opening/迪娜泽黛-v01-p01.png": "assets/templates/mozailu/opening/迪娜泽黛-v01-p01.png",
-    "assets/opening/迪娜泽黛-v01-p02.png": "assets/templates/mozailu/opening/迪娜泽黛-v01-p02.png"
+    "assets/opening/迪娜泽黛-v01-p02.png": "assets/templates/mozailu/opening/迪娜泽黛-v01-p02.png",
+    "assets/hand/流火焦灼-v02-p01.png": "assets/templates/mozailu/hand/流火焦灼-v02-p01.png",
+    "assets/hand/流火焦灼-v02-p02.png": "assets/templates/mozailu/hand/流火焦灼-v02-p02.png",
+    "assets/expanded/流火焦灼-v02-p01.png": "assets/templates/mozailu/expanded/流火焦灼-v02-p01.png",
+    "assets/expanded/流火焦灼-v02-p02.png": "assets/templates/mozailu/expanded/流火焦灼-v02-p02.png"
   }
 }

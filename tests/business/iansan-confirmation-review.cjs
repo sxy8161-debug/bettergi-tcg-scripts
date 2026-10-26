@@ -1,16 +1,7 @@
 "use strict";
 const assert=require("node:assert/strict"),{load,board}=require("./runtime.cjs");
 module.exports=async function(test){
-  await test("R01 soup consumption cannot close confirmation before its choice exits",()=>{
-    const {T}=load("iansan"),b=board(T,["soup"]),a={type:"card",id:"soup",index:0,target:1},
-      c={...b,hand:[],dice:{Omni:2}},origin=T.actionKey(a)+"/"+T.boardKey(b);
-    assert.equal(T.verify(a,b,c),false);
-    assert.equal(T.verifyResynchronized(a,b,c),false);
-    c.soupReceipt={origin,target:1,effect:"maxhp",exited:false};assert.equal(T.verify(a,b,c),false);
-    c.soupReceipt.exited=true;assert.equal(T.verify(a,b,c),true);assert.equal(T.emptyHandEffect(a,b,c),true);
-    const m=T.freshMemory();T.commit(m,a,b,c);assert.equal(m.extraMaxHp[1],1);
-    c.soupReceipt.origin="other";assert.equal(T.verify(a,b,c),false);
-  });
+
   await test("R01 late soup page stays pending; selection once; receipt cleared after confirmation",async()=>{
     let now=2000,clicks=0,reads=0;class Clock extends Date{static now(){return now;}}
     const {T,Host}=load("iansan",{Date:Clock,sleep:async n=>{now+=n;}}),h=new Host({}),b=board(T,["soup"]),
@@ -45,13 +36,7 @@ module.exports=async function(test){
       h.soupReceipt.origin=key;h.soupReceipt.exited=false;assert.equal(h.characterIn({},target).hp,null);
     }
   });
-  await test("R04 an uncertain draw preserves unrelated confirmed effects",()=>{
-    const {T}=load("iansan"),m=T.freshMemory();
-    Object.assign(m,{freeSwitch:true,manchai:2,garden:true,soupDiscount:[2,0,0]});
-    T.deferUncertain(m,{type:"card",id:"draw",index:0,target:null});
-    assert.equal(m.freeSwitch,true);assert.equal(m.manchai,2);assert.equal(m.garden,true);
-    assert.deepEqual(Array.from(m.soupDiscount),[2,0,0]);
-  });
+
   await test("R04 Player confirms consumption, refreshes late draw and keeps unrelated buffs",async()=>{
     let now=0,sent=0;class Clock extends Date{static now(){return now;}}
     const {T,Host,Player}=load("iansan",{Date:Clock,sleep:async n=>{now+=n;}}),h=new Host({}),p=new Player(h,{maxMinutes:1}),

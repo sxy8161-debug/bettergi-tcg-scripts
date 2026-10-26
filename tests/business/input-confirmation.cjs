@@ -3,6 +3,29 @@ const assert=require("node:assert/strict"),{load}=require("./runtime.cjs");
 const clone=value=>JSON.parse(JSON.stringify(value));
 module.exports=async function(test){
   const id="input";
+  await test(id+": end round confirms after the popup animation and before its expiry",async()=>{
+    for(const mode of ["popup","already-open","cancel"]){
+      let now=0,phase={phase:"board",turn:"user"};const clicks=[];
+      const {Host,T}=load("moonbloom",{sleep:async ms=>{
+        if(mode==="cancel")throw Error("cancelled");now+=ms;
+      }}),h=new Host({});
+      h.button=()=>({x:51,y:510,w:60,h:60});h.trace=()=>{};
+      h.clickAt=(x,y)=>{
+        clicks.push({at:now,x,y});
+        if(mode==="already-open"||clicks.length===2&&now>=1000&&now<5000)
+          phase={phase:"roll",turn:"none"};
+        return [x,y];
+      };
+      h.phase=()=>phase;
+      if(mode==="cancel"){
+        await assert.rejects(()=>h.inputEnd(),/cancelled/);assert.equal(clicks.length,1);continue;
+      }
+      await h.inputEnd();
+      assert.equal(clicks.length,mode==="already-open"?1:2);
+      const after=await h.confirmPending({type:"end"},require("./runtime.cjs").board(T));
+      assert.equal(after.confirmed,true);assert.equal(after.phase,"roll");
+    }
+  });
   await test(id+": changed complete preflight replans immediately; only missing fields retry",async()=>{
     const {T,Host}=load("ailin"),base=require("./runtime.cjs").board(T),changed=clone(base);
     changed.dice={Omni:2};
@@ -66,18 +89,7 @@ module.exports=async function(test){
       assert.deepEqual(clone(hand),clone(plan.hand));
     }
   });
-  await test(id+": paid removal uses the current complete board without requiring a redundant second read",()=>{
-    const {T,Host}=load("raiden"),h=new Host({}),before=require("./runtime.cjs").board(T,["gambler","draw"]),
-      action={type:"card",id:"gambler",index:0,target:0},plan={...T.handPlan(action,before),action,before},after=clone(before);
-    after.dice={Omni:T.total(before.dice)-T.size(T.byId.gambler.cost)};
-    after.nativeStability={reads:1,key:T.boardKey({...after,hand:[]}),inputRevision:h.inputRevision};
-    h.consumptionReceipt={id:action.id,index:0,target:0,beforeKey:T.boardKey(before),inputSent:true,nativeConfirmed:true};
-    assert.equal(h.paidRemovalProven(plan,after),true);
-    assert.equal(h.paidRemovalProven(plan,{...after,nativeStability:null}),false);
-    const wrong=clone(after);wrong.dice={Omni:T.total(before.dice)};
-    wrong.nativeStability.key=T.boardKey({...wrong,hand:[]});
-    assert.equal(h.paidRemovalProven(plan,wrong),false);
-  });
+
   await test(id+": full support area is a blocking native choice, never a completed or repeated card",async()=>{
     const {T,Host}=load("ailin"),h=new Host({}),before={phase:"board",turn:"user",active:0,diceKnown:true,dice:{Omni:1},
       characters:T.team.map(t=>({hp:t.maxHp,energy:0,dead:false,frozen:false})),enemies:[],

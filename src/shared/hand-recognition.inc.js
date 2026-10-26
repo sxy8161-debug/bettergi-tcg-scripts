@@ -199,7 +199,11 @@
         // Equal counts plus a unique identity or an explicit relative-order
         // contract resolve old members; new family members still need titles.
         if(!retainedHand)return;
-        const complete=slots.every(s=>s.id||s.titleCandidates);
+        // Folded and expanded readers fill the same observation. An identity
+        // already read in the folded row is not lost when its expanded art
+        // misses; use the combined current evidence for family counting.
+        const observed=slots.map(s=>cards[s.index]?{...s,id:cards[s.index].id}:s);
+        const complete=observed.every(s=>s.id||s.titleCandidates);
         const done=new Set();
         for(const slot of slots)if(!slot.id&&slot.titleCandidates){
           const family=slot.titleCandidates,key=family.slice().sort().join("/");
@@ -209,7 +213,7 @@
           const unchangedFamily=retainedFamilies.some(ids=>ids.length===family.length&&ids.every(id=>family.includes(id)));
           if(!complete&&!unchangedFamily)continue;
           const prior=retainedHand.filter(c=>family.includes(c.id)),ids=new Set(prior.map(c=>c.id));
-          const current=slots.filter(s=>s.id?family.includes(s.id):
+          const current=observed.filter(s=>s.id?family.includes(s.id):
             s.titleCandidates?.length===family.length&&s.titleCandidates.every(id=>family.includes(id)));
           if(!prior.length||prior.length!==current.length||ids.size!==1&&!retainedOrder)continue;
           if(current.some((s,i)=>s.id&&s.id!==(retainedOrder?prior[i].id:prior[0].id)))continue;

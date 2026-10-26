@@ -34,9 +34,12 @@ handCostLayoutIn(f, nativeCount = null) {
 
 // @fragment bgi-host.handPriceIn
 handPriceIn(f, marker) {
-      const cost = number(this.numericAt(f, this.observedRoi("handExpanded", [Math.round(marker.x + 12), Math.round(marker.y - 5), 36, 42]), 4));
+      const area = this.observedRoi("handExpanded", [Math.round(marker.x + 12), Math.round(marker.y - 5), 36, 42]);
+      const cost = number(this.numericAt(f, area, 4));
+      // A larger surrounding crop still loses the native green digit in the
+      // saved selected-card frames. Re-read the same digit at its useful scale.
       return cost !== null ? { cost, reads: 1 } : {
-        cost: number(this.numericAt(f, this.observedRoi("handExpanded", [Math.round(marker.x), Math.round(marker.y - 30), 60, 90]), 4)), reads: 2,
+        cost: number(this.numericAt(f, area, 3)), reads: 2,
       };
     }
 // @endfragment bgi-host.handPriceIn
@@ -582,6 +585,28 @@ handSample(f, priceIndex = null) {
 // @fragment tcg-ui.observedHand
 async observedHand(plan = null, scan = { titles: 0 }) {
       if (!plan && this.handContinuation) Object.assign(scan, this.handContinuation);
+      // The action guarantees these old cards survive in the same order.
+      // If the current native count is exactly that list's length, there is
+      // no unidentified insertion to scan. Keep identity separate from view
+      // and price; a changed/missing count follows the normal full reader.
+      const retained = plan?.mode === "full" ? plan : !plan ? this.handContinuation : null;
+      if (retained?.retainedHandOrder === true && retained.retainedHand?.length > 0) {
+        const count = this.frame(f => {
+          this.requireHandObservation(this.phaseIn(f), "before-retained-hand-reuse");
+          const native = this.handCountIn(f);
+          if (native !== null || this.handFanReady || this.handNeedsReset) return native;
+          const row = this.collapsedLayoutIn?.(f);
+          if (row?.status !== "readable") return null;
+          this.lastHandCountSource = "full-folded-layout";
+          return row.count;
+        });
+        if (count === retained.retainedHand.length) {
+          if (this.handFanReady || this.handNeedsReset) await this.reset();
+          this.trace("hand-retained-reused", { count, source:this.lastHandCountSource,
+            proof:"retained-order-and-current-native-count", titleInputs:0 });
+          return TCG.indexedHand(retained.retainedHand);
+        }
+      }
       if (plan?.mode === "full") {
         const session = this.confirmationSession,
           observed = session?.handObservation;
@@ -680,7 +705,8 @@ async observedHand(plan = null, scan = { titles: 0 }) {
         // A preceding hand-changing action can insert/reorder cards without a
         // net count change. Compare that current row before reusing its order.
         const {count,row}=this.frame(f=>({count:this.handCountIn(f),
-          row:!plan&&this.handContinuation&&!this.handFanReady&&!this.handNeedsReset
+          row:!plan&&this.handContinuation&&!(this.handContinuation.retainedHandOrder===true&&
+            this.handContinuation.retainedHand?.length===cached.length)&&!this.handFanReady&&!this.handNeedsReset
             ?this.collapsedIn?.(f):null}));
         const changed=row?.status==="readable"&&(row.count!==cached.length||
           row.slots.some(s=>s.id&&s.id!==cached[s.index]?.id));

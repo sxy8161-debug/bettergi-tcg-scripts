@@ -58,7 +58,7 @@
     "assets/opening/一掷乾坤-v01-p02.png": "d7ab7d24e6aa4beb12b0dc016f417a49150f7ec9bdcba488866f294edb4e1d4f",
     "assets/opening/元素共鸣-强能之雷-v01-p01.png": "decd398a0acecec63d1553f5f71e56fc4b376f9545181d1cba71f8cf78145544",
     "assets/opening/元素共鸣-强能之雷-v01-p02.png": "2b7b42bd3c10e94eea644eac72017ef0b7d81930854951994f698c944d01c670",
-    "hand-bank.json": "19ddd46e440351192a98373cb29ed22baef92caf0bb9959bec773b12eab2d570",
+    "hand-bank.json": "30a0f0d2d0356c80e04035b3fad2c46863775052df0b5c003f18a577efd31281",
     "opening-bank.json": "61572161906c5c0f8b776dd4d854b928e8a2e30f3cfb5dc9c653060a816e83b0",
     "assets/opening/元素共鸣-交织之雷-v01-p01.png": "532e94a09b1a0f9a50bea5208ddc151fa004d3f47b34ba65277639a9b6eb6460",
     "assets/opening/元素共鸣-交织之雷-v01-p02.png": "21d5f51dba61b702cf3678dca4657a9e92f12e4753d43f0b34fb03aeb3f4bbd5",
@@ -187,7 +187,13 @@
     "assets/expanded/飞叶迴斜-v05-p01.png": "24d5dfdcb902c0085c4984a79c7e722a6bd4e2a2ef7d56a9070c799c844f518d",
     "assets/expanded/飞叶迴斜-v05-p02.png": "c7e3e9670b42f08c19e6d37e3a4fa0682903c5e966dc31fa5d9a8b8203e59b00",
     "assets/expanded/赌徒的耳环-v01-p01.png": "92daf9b84b4158fb31a55cd841323763af571d86f0a2ad3978f29c5c0d4d6316",
-    "assets/expanded/赌徒的耳环-v01-p02.png": "25e0c68d9756133b037a13441db9c093f686685a8663f84c5cbe472c352db8a7"
+    "assets/expanded/赌徒的耳环-v01-p02.png": "25e0c68d9756133b037a13441db9c093f686685a8663f84c5cbe472c352db8a7",
+    "assets/hand/抵天雷罚-v03-p01.png": "ca6d3a659a6ef023c6ce01d6417556f9359b90eb45d9e99d7fe39d8e3be39d24",
+    "assets/hand/抵天雷罚-v03-p02.png": "603b7778103858dcc16b6c499a98b431b26fa805f65854b5e68acee4dfd9362d",
+    "assets/expanded/抵天雷罚-v01-p01.png": "0db27d535a316b68045f0fa93d0f113e75a697006dcb3b975e3c5957a372f36d",
+    "assets/expanded/抵天雷罚-v01-p02.png": "4821e4c3ea13c368dd23654f4168268c02cfe2959888de5c16c09b5b190b8574",
+    "assets/expanded/流放者头冠-v01-p01.png": "45b75fb32229f078db33dc55f63c5429807a26a3bd23094b1deb4cfa01a11d59",
+    "assets/expanded/流放者头冠-v01-p02.png": "1c64f1415bc977db6be44b5321b1369beb664f20212c71079b79065c3f4324d2"
   },
   "assetFiles": {
     "assets/hand/白垩之术-v01-p01.png": "assets/templates/raiden/hand/白垩之术-v01-p01.png",
@@ -371,6 +377,12 @@
     "assets/expanded/飞叶迴斜-v05-p01.png": "assets/templates/raiden/expanded/飞叶迴斜-v05-p01.png",
     "assets/expanded/飞叶迴斜-v05-p02.png": "assets/templates/raiden/expanded/飞叶迴斜-v05-p02.png",
     "assets/expanded/赌徒的耳环-v01-p01.png": "assets/templates/raiden/expanded/赌徒的耳环-v01-p01.png",
-    "assets/expanded/赌徒的耳环-v01-p02.png": "assets/templates/raiden/expanded/赌徒的耳环-v01-p02.png"
+    "assets/expanded/赌徒的耳环-v01-p02.png": "assets/templates/raiden/expanded/赌徒的耳环-v01-p02.png",
+    "assets/hand/抵天雷罚-v03-p01.png": "assets/templates/raiden/hand/抵天雷罚-v03-p01.png",
+    "assets/hand/抵天雷罚-v03-p02.png": "assets/templates/raiden/hand/抵天雷罚-v03-p02.png",
+    "assets/expanded/抵天雷罚-v01-p01.png": "assets/templates/raiden/expanded/抵天雷罚-v01-p01.png",
+    "assets/expanded/抵天雷罚-v01-p02.png": "assets/templates/raiden/expanded/抵天雷罚-v01-p02.png",
+    "assets/expanded/流放者头冠-v01-p01.png": "assets/templates/raiden/expanded/流放者头冠-v01-p01.png",
+    "assets/expanded/流放者头冠-v01-p02.png": "assets/templates/raiden/expanded/流放者头冠-v01-p02.png"
   }
 }

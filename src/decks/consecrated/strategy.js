@@ -390,12 +390,13 @@
         if (effect.draw===1 || usefulHealing || !serpentAlive(s) || payableBurst)
           add(a,payableBurst||retainsDefeat(risk.minimumBlocks)?"burst":"block-cycle","最高费并列最差结果可接受，过量倍率可换产骰、治疗或抽牌；只正常打出一次块");
       }
-      if (h.id==="sand" && s.hand.length>=4 && blocks<4 &&
-          !s.hand.some((_,index)=>protectedCard(s,m,index)) &&
+      if (h.id==="sand" && s.hand.length>=4 && blocks<2 &&
+          !(needCharge&&count(s,"stars")>0) &&
           s.hand.filter(x=>["emblem","adeptus","crocodileTalent","serpentTalent","revel"].includes(x.id)).length>=3)
-        add({...a,choice:"sanctify"},"draw","坏手牌己方换底；不触发倒计时舍弃或保留旧手牌");
+        add({...a,choice:"sanctify"},"draw","块还没成对，先把拥挤的天赋、增伤和多余过牌换底，寻找启动资源");
     }
     return list.sort((a,b)=>goals.indexOf(a.development.goal)-goals.indexOf(b.development.goal)||
+      Number(a.id==="sand")-Number(b.id==="sand")||
       a.development.paid-b.development.paid);
   }
   function choose(s,m) {
@@ -439,32 +440,36 @@
         if (attacks.length) return routeAction(attacks[0],!alive?"飞蛇阵亡，转现有辅助技能与陷阱收尾":"已知最后回合，比较当前可兑现伤害");
       }
       const helper=alive?tank(s,m):undefined;
+      // Helpers already hold the field for development. Do not rotate them
+      // for a small HP difference; return the charged/pressured serpent to a
+      // healthier teammate and keep the burst components for the next window.
+      const endTarget=!m.endRelayUsed && (pressure(s,s.active) || s.active===1&&
+        (s.characters[1].hp<T.team[1].maxHp || !needCharge)) ?
+        s.characters.map((c,who)=>({c,who})).filter(({c,who})=>who!==s.active&&T.alive(c)&&
+          (s.characters[s.active].frozen || c.hp>s.characters[s.active].hp)).sort((a,b)=>b.c.hp-a.c.hp)[0]?.who:undefined;
+      const canRelay=endTarget!==undefined&&T.actionLegal(s,{type:"switch",target:endTarget},m);
       if (afterBurst && attacks.length) {
         // Fast funding is not another enemy handoff. Two tunes that buy E's
         // extra damage/draw should not lose to a switch plus a weaker NA.
         const value=r=>(Math.min(r.hit.direct,target(s).hp)+r.hit.splash+
           (r.terminal.who===1&&r.terminal.skill==="E"&&r.drawRoom>0?.5:0))/
           (1+Number(r.conditional)+.25*Math.max(0,r.steps-1-Number(r.conditional)));
-        const follow=attacks.filter(r=>r.hit.direct>0).sort((a,b)=>
+        const follow=attacks.filter(r=>r.hit.direct>0&&!pressure(s,r.terminal.who)).sort((a,b)=>
           value(b)-value(a)||Number(a.conditional)-Number(b.conditional)||
           survivalRisk(a)-survivalRisk(b)||routeOrder(a,b));
-        if (follow.length) return routeAction(follow[0],"爆发后仍未结束，先兑现可支付的持续输出，不再把充能、发育或辅助禁Q放在续攻之前");
+        if (follow.length) return routeAction(follow[0],"继续用能承接行动的角色输出；飞蛇受压时交给健康队友接力，准备下一轮爆发");
       }
       if (alive && s.active===1) {
         // Compare the charged burst with current output before more full-
         // energy draw attacks. Low HP must not strand a large usable burst.
         const burst=routes.filter(r=>r.terminal.who===1&&r.terminal.skill==="Q").sort((a,b)=>b.hit.direct-a.hit.direct||routeOrder(a,b));
         const ordinary=Math.max(0,...routes.filter(r=>r.terminal.who===1&&r.terminal.skill!=="Q").map(r=>r.hit.direct));
-        if (burst.length && (helper===undefined||s.characters[1].hp<=2||pressed&&burst[0].hit.direct>ordinary))
-          return routeAction(burst[0],"飞蛇已受压，优先兑现现有爆发而非满能继续战技等牌");
+        if (burst.length && (helper===undefined||!canRelay&&(s.characters[1].hp<=2||pressed&&burst[0].hit.direct>ordinary)))
+          return routeAction(burst[0],"飞蛇已受压且无可支付撤回，先兑现现有爆发伤害");
       }
       // Once useful output is unavailable, hand the remaining enemy actions
       // to a healthier teammate before declaring end. Reserve only the switch
       // fee from optional development; attack/finisher routes above stay first.
-      const endTarget=!m.endRelayUsed && (s.characters[s.active].frozen ||
-        s.characters[s.active].hp<T.team[s.active].maxHp || s.active===1&&!needCharge) ?
-        s.characters.map((c,who)=>({c,who})).filter(({c,who})=>who!==s.active&&T.alive(c)&&
-          (s.characters[s.active].frozen || c.hp>s.characters[s.active].hp)).sort((a,b)=>b.c.hp-a.c.hp)[0]?.who:undefined;
       const reserve=Math.max(needCharge&&s.active===1?Math.min(3,T.total(s.dice)):0,
         endTarget!==undefined?Math.min(T.switchCost(m).any,T.total(s.dice)):0);
       // A confirmed Shift has already paid for a retreat. Finish that relay
@@ -485,22 +490,24 @@
           return Number(a.conditional)-Number(b.conditional)||value(b)-value(a)||routeOrder(a,b);
         });
         const startup=cards.find(a=>["support","draw","thunder-engine"].includes(a.development.goal));
-        if (charge[0]?.first.type==="tune" && startup) return startup;
+        if (startup && (s.characters[1].energy>0 || charge[0]?.first.type==="tune")) return startup;
         if (charge.length && !pressed) return routeAction(charge[0],"飞蛇优先少准备地补能；同等操作优先战技伤害与抽牌");
         if (star) return star;
       }
       if (cards.length) return cards[0];
       if (alive && !needCharge &&
           !s.characters[1].frozen && m.bursts[1]===0) {
-        // Without the scorpion engine, spend the available output rather
-        // than waiting for a one-shot. Keep E before Q only when both can be
-        // paid from CURRENT dice; the actual draw is still observed next.
-        const draw=routes.filter(r=>r.terminal.who===1&&r.terminal.skill==="E"&&r.drawRoom>0&&!pressed).sort(routeOrder);
+        // A full-energy E wastes its charge gain. Once the supply engine is
+        // gone, or there is no useful draw attack, spend the stronger Q first
+        // so subsequent attacks rebuild energy instead of ending with a full hand.
+        // An extra draw is useful on the current healthy serpent, but not a
+        // reason to switch it back into combat before the burst is ready.
+        const draw=routes.filter(r=>!r.conditional&&r.terminal.who===1&&r.terminal.skill==="E"&&r.drawRoom>0&&!pressed).sort(routeOrder);
         const burst=routes.filter(r=>r.terminal.who===1&&r.terminal.skill==="Q")
           .sort((a,b)=>b.hit.direct/(b.steps+.5)-a.hit.direct/(a.steps+.5)||routeOrder(a,b));
-        const directE=draw.find(r=>r.first.type==="skill"),paid=directE&&T.payment(s.dice,T.skillCost(1,"E",m,s));
-        if (s.characters[0].dead===true && burst.length && (!paid || !T.payment(paid.remaining,T.skillCost(1,"Q",m,s))))
-          return routeAction(burst[0],"毒蝎供块已中断，现有骰子不能同时支付战技和爆发，先兑现爆发伤害再继续补能输出");
+        const ordinary=Math.max(0,...routes.filter(r=>r.terminal.who===1&&r.terminal.skill!=="Q").map(r=>r.hit.direct));
+        if (burst.length && burst[0].hit.direct>ordinary && (s.characters[0].dead===true || s.hand.length===10&&!draw.length))
+          return routeAction(burst[0],"现有爆发强于普通攻击，供块中断或满手无法补牌，先开大再补能续攻");
         if (draw.length) return routeAction(draw[0],"飞蛇已满能但组件不足且无有效发育动作，用可支付战技补伤抽牌后重算");
       }
       if (alive && s.active!==1 && needCharge && !s.characters[1].frozen && !pressed && !afterBurst) {

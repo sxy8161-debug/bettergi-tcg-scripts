@@ -6,13 +6,21 @@
   /* @include src/shared/lifecycle.inc.js#lifecycle.BUDGET_FIELDS */
   const OPENING_DEFAULT="优先装备与启动牌";
   /* @include src/shared/lifecycle.inc.js#lifecycle.playerOptions */
+  /* @include src/shared/lifecycle.inc.js#lifecycle.ELEMENT_NAMES */
   function actionCommentary(a,s,m) {
-    if(a.type==="skill")return T.team[a.who].name+"准备"+T.team[a.who].skills[a.skill]+"；伤害为估计，结算后以实际血量为准。";
-    if(a.type==="switch")return "切换"+T.team[a.target].name+"，按实际牌面接力。";
-    if(a.type==="card")return "使用「"+T.byId[a.id].name+"」"+(a.target!=null?"，目标"+T.team[a.target].name:"")+"。";
-    if(a.type==="tune")return "调和「"+(T.byId[a.id]?.name||s.hand[a.index].name)+"」，补充当前角色所需骰子。";
-    if(a.type==="probe")return "核实当前技能费用，不施放技能。";
-    return "结束回合。";
+    let text;
+    if(a.type==="skill") {
+      text=T.team[a.who].name+"使用「"+T.team[a.who].skills[a.skill]+"」";
+      const purpose={"0:E":"先挂水，为后续扩散或蒸发铺垫", "1:E":"衔接扩散与风风轮舞踢", "2:E":"用战技衔接输出"}[a.who+":"+a.skill];
+      if(purpose)text+="，"+purpose;
+    }else if(a.type==="switch")text="切换"+T.team[a.target].name+"接力";
+    else if(a.type==="card")text="使用「"+T.byId[a.id].name+"」"+(a.target!=null?"，目标"+T.team[a.target].name:"");
+    else if(a.type==="tune")text="调和「"+(T.byId[a.id]?.name||s.hand[a.index].name)+"」，补充"+(ELEMENT_NAMES[a.element]||"当前角色所需元素")+"骰";
+    else if(a.type==="probe")return "查看技能费用，安排接下来的输出。";
+    else return "结束回合，准备下一轮。";
+    const next=a.planning?.sequence?.slice(1).find(key=>key.startsWith("skill:"));
+    if(next){const [,who,skill]=next.split(":");text+="。接下来准备让"+T.team[who].name+"使用「"+T.team[who].skills[skill]+"」";}
+    return text+"。";
   }
   // One owner for lifecycle/progress. Host owns native evidence and input;
   // strategy owns the next plan. Recovery never replays a submitted action.

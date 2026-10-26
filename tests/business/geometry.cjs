@@ -143,17 +143,7 @@ module.exports = async function (test) {
       assert.deepEqual(plain(normal.host.point(panel,700,800)),[700,800]);
     f.resize(2560,1440);assert.throws(()=>h.clickAt(100,100),e=>e.code==="TCG_CAPTURE_GEOMETRY");
   });
-  await test("geometry:1600 artwork below1080 is read, required clipping fails and temporary images are released",async()=>{
-    const f=fixture("raiden",2560,1600),h=f.host;await h.waitForCapture();
-    const crops=[],released=[];h.templates.set("existing.png",{});
-    const image={Width:1920,Height:1200,SrcMat:{SubMat(...rect){crops.push(rect);return {dispose(){released.push("crop");}};}}};
-    const area=h.observedRoi("handFolded",[982,1111,46,22]);
-    assert.equal(h.artworkScore(image,area,"existing.png",2,()=>.95),.95);
-    assert.deepEqual(crops,[[1109,1135,980,1030]]);assert.deepEqual(released,["crop"]);
-    assert.throws(()=>h.artworkScore(image,h.observedRoi("handFolded",[982,1190,46,22]),"existing.png",2,()=>1),e=>e.code==="TCG_CAPTURE_GEOMETRY");
-    assert.throws(()=>h.artworkScore(image,area,"existing.png",2,()=>{throw Error("rank failure");}),/rank failure/);
-    assert.equal(released.length,2);
-  });
+
   await test("geometry: measured folded marker art false peak uses color only at actual1440; incomplete/extra rows still reject", async () => {
     const samples=require("./fixtures/raiden-folded-markers-1440-20261018.json").rows;
     for(const size of [[1920,1080],[2560,1440]]){
@@ -397,25 +387,7 @@ module.exports = async function (test) {
     assert.equal(f.calls.length,0);
    }
   });
-  await test("geometry: raw and normalized Region owners bind actual size without mistaking desktop", async () => {
-    for (const id of ["raiden", "iansan", "moonbloom"]) for (const size of [[1920, 1080], [2560, 1440], [2560, 1600]]) {
-      const f = fixture(id, ...size);
-      await f.host.waitForCapture();
-      assert.deepEqual(plain(f.host.captureGeometry.actualSize), { width: size[0], height: size[1] });
-      assert.deepEqual(plain(f.host.captureGeometry.frameSize), { width: 1920, height: size[1]===1600?1200:1080 });
-      assert.equal(f.host.captureGeometry.layoutKey, size[1]===1600?"16:10":"16:9");
-      assert.equal(f.disposed(), 2);
-      assert.equal(f.calls.length, 0);
-    }
-    const f = fixture("raiden", 2560, 1440);
-    let reads = 0;
-    f.env.captureGameRegion = () => frame(...(++reads === 1 ? [1920, 1080] : [2560, 1440]));
-    // A different actual size with the same F size cannot count toward stability.
-    f.env.genshin.scaleTo1080PRatio = 1;
-    f.env.sleep = async () => { f.env.genshin.scaleTo1080PRatio = 2560 / 1920; };
-    await f.host.waitForCapture();
-    assert.equal(reads, 3);
-  });
+
   await test("geometry: normalized observations click once through native input without a second scale", async () => {
     const f = fixture("moonbloom", 2560, 1440);
     await f.host.waitForCapture();

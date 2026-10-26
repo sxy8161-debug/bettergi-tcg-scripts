@@ -45,25 +45,25 @@
   function actionCommentary(a,s,m){
     const prefix="【"+axisNames[a.axis||T.axis(s,m)]+"】";
     let text;
-    if(a.type==="probe")text=a.scope==="card"?"仅核实「"+T.byId[a.id].name+"」所需的手牌信息，补齐后重新决策，不提交出牌":
-      "核实"+T.team[a.who].name+"的"+skillNames[a.skill]+"费用，再决定后续行动";
+    if(a.type==="probe")text=a.scope==="card"?"查看「"+T.byId[a.id].name+"」，安排手牌的使用顺序":
+      "查看"+T.team[a.who].name+"的"+skillNames[a.skill]+"费用，安排接下来的输出";
     else if(a.type==="skill"){
       const hit=T.damageEstimate(s,m,a.who,a.skill);
       text=T.team[a.who].name+"准备使用"+(a.skill==="T"?"特技「"+T.techniques[a.technique].name+"」":skillNames[a.skill]);
-      if(hit.direct>0)text+="，模型预计本次直伤"+hit.direct+"点，实际以结算为准";
+      if(hit.direct>0)text+="，预计造成"+hit.direct+"点伤害";
       else text+="，优先为后续反应与资源转换铺垫";
-    }else if(a.type==="switch")text="准备切换"+T.team[a.target].name+"接手，交接出战位置后按实际牌面重算";
+    }else if(a.type==="switch")text="准备切换"+T.team[a.target].name+"接力";
     else if(a.type==="tune")text="调和「"+T.byId[a.id].name+"」"+(a.funding?"，为"+plannedActionLabel(a.funding.goal)+"筹集有效骰":"，将无效骰转换为当前角色所需元素");
     else if(a.type==="card"){
       const c=T.byId[a.id],purpose={weapon:"准备武器与后续输出",artifact:"准备后续资源收益",support:"铺设后续资源转换",legend:"按当前资源选择生成牌",
-        attachment:"调整手牌附着与费用，生效后重算",switch:"准备免费切换",draw:"补充手牌，按实际抽牌结果重算",energy:"转移充能，为爆发创造条件",
-        return:"回收武器并重新利用减费",choice:"按当前可支付性选择生成牌",adventure:"准备后续回合资源",dice:"补充可用骰子，颜色以实际结果为准",
-        status:"准备后续行动的资源收益",food:"准备当前增益或续航",kernel:"兑现核的幻戏攻击，不按普通技能记充能",branch:"处理祝佑分支效果",
-        technique:"装备特技，再按实际资源决定是否使用","heal-dice":"兼顾续航与骰子资源",heal:"恢复生命，保留后续接力"}[c.type];
+        attachment:"调整手牌附着与费用",switch:"准备免费切换",draw:"补充手牌",energy:"转移充能，为爆发创造条件",
+        return:"回收武器并重新利用减费",choice:"选择接下来要用的牌",adventure:"准备后续回合资源",dice:"补充可用骰子",
+        status:"准备后续行动的资源收益",food:"准备当前增益或续航",kernel:"兑现核的幻戏攻击",branch:"处理祝佑分支效果",
+        technique:"装备特技，准备后续输出","heal-dice":"兼顾续航与骰子资源",heal:"恢复生命，保留后续接力"}[c.type];
       text="准备使用「"+c.name+"」"+(T.characterTarget(c)?"，目标"+T.team[a.target].name:"")+"，"+purpose;
-    }else text="当前没有可支付且有收益的动作，结束回合";
-    if(a.planning?.sequence.length>1)text+="；预计后续："+a.planning.sequence.slice(1,4).map(plannedActionLabel).join(" → ")+"（每步确认后重算）";
-    if(a.planning?.terminal)text+="；当前估算有收尾机会，并非已确认获胜";
+    }else text="结束回合，准备下一轮";
+    if(a.planning?.sequence.length>1)text+="；接下来准备："+a.planning.sequence.slice(1,4).map(plannedActionLabel).join(" → ");
+    if(a.planning?.terminal)text+="；争取这一轮收尾";
     return prefix+text+"。";
   }
   root.TCGPlayer={Player,playerOptions,actionCommentary};

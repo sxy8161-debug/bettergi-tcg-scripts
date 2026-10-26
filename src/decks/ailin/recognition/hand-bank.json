@@ -253,36 +253,30 @@
     {
       "id": "wavekissedSands",
       "name": "白浪拂沙",
-      "titleCandidates": [
-        "wavekissedSands",
-        "verdantGift",
-        "gildedHall",
-        "autumnFrost"
-      ],
       "views": [
         {
-          "name": "runtime-29a4388bd6",
+          "name": "runtime-c814f44e07",
           "patches": [
             "assets/hand/白浪拂沙-v01-p01.png",
             "assets/hand/白浪拂沙-v01-p02.png"
           ]
         },
         {
-          "name": "runtime-c814f44e07",
+          "name": "runtime-9c5c88b5b3",
           "patches": [
             "assets/hand/白浪拂沙-v02-p01.png",
             "assets/hand/白浪拂沙-v02-p02.png"
           ]
         },
         {
-          "name": "runtime-9c5c88b5b3",
+          "name": "runtime-b7e0557c91",
           "patches": [
             "assets/hand/白浪拂沙-v03-p01.png",
             "assets/hand/白浪拂沙-v03-p02.png"
           ]
         },
         {
-          "name": "runtime-b7e0557c91",
+          "name": "runtime-1bc07c86d3",
           "patches": [
             "assets/hand/白浪拂沙-v04-p01.png",
             "assets/hand/白浪拂沙-v04-p02.png"
@@ -314,12 +308,6 @@
             "assets/hand/鎏金殿堂-v01-p02.png"
           ]
         }
-      ],
-      "titleCandidates": [
-        "wavekissedSands",
-        "verdantGift",
-        "gildedHall",
-        "autumnFrost"
       ]
     },
     {
@@ -358,13 +346,34 @@
             "assets/hand/一捧绿野-v01-p01.png",
             "assets/hand/一捧绿野-v01-p02.png"
           ]
+        },
+        {
+          "name": "runtime-1e53d36fbe",
+          "patches": [
+            "assets/hand/一捧绿野-v02-p01.png",
+            "assets/hand/一捧绿野-v02-p02.png"
+          ]
         }
-      ],
-      "titleCandidates": [
-        "wavekissedSands",
-        "verdantGift",
-        "gildedHall",
-        "autumnFrost"
+      ]
+    },
+    {
+      "id": "autumnFrost",
+      "name": "雾凇秋分",
+      "views": [
+        {
+          "name": "runtime-aa111c728f",
+          "patches": [
+            "assets/hand/雾凇秋分-v01-p01.png",
+            "assets/hand/雾凇秋分-v01-p02.png"
+          ]
+        },
+        {
+          "name": "runtime-673506dd37",
+          "patches": [
+            "assets/hand/雾凇秋分-v02-p01.png",
+            "assets/hand/雾凇秋分-v02-p02.png"
+          ]
+        }
       ]
     }
   ],
@@ -430,6 +439,13 @@
             "patches": [
               "assets/expanded/最好的伙伴-v01-p01.png",
               "assets/expanded/最好的伙伴-v01-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-4cff54004a",
+            "patches": [
+              "assets/expanded/最好的伙伴-v02-p01.png",
+              "assets/expanded/最好的伙伴-v02-p02.png"
             ]
           }
         ],
@@ -601,12 +617,6 @@
       {
         "id": "wavekissedSands",
         "name": "白浪拂沙",
-        "titleCandidates": [
-          "wavekissedSands",
-          "verdantGift",
-          "gildedHall",
-          "autumnFrost"
-        ],
         "views": [
           {
             "name": "runtime-50e55fc9d0",
@@ -620,6 +630,20 @@
             "patches": [
               "assets/expanded/白浪拂沙-v02-p01.png",
               "assets/expanded/白浪拂沙-v02-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-41a671b213",
+            "patches": [
+              "assets/expanded/白浪拂沙-v03-p01.png",
+              "assets/expanded/白浪拂沙-v03-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-b008c973e0",
+            "patches": [
+              "assets/expanded/白浪拂沙-v04-p01.png",
+              "assets/expanded/白浪拂沙-v04-p02.png"
             ]
           }
         ]
@@ -648,12 +672,6 @@
               "assets/expanded/鎏金殿堂-v01-p02.png"
             ]
           }
-        ],
-        "titleCandidates": [
-          "wavekissedSands",
-          "verdantGift",
-          "gildedHall",
-          "autumnFrost"
         ]
       },
       {
@@ -678,6 +696,60 @@
             "patches": [
               "assets/expanded/魔女M的祝福-v01-p01.png",
               "assets/expanded/魔女M的祝福-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "verdantGift",
+        "name": "一捧绿野",
+        "views": [
+          {
+            "name": "runtime-8523c60578",
+            "patches": [
+              "assets/expanded/一捧绿野-v01-p01.png",
+              "assets/expanded/一捧绿野-v01-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-1700560dd2",
+            "patches": [
+              "assets/expanded/一捧绿野-v02-p01.png",
+              "assets/expanded/一捧绿野-v02-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "autumnFrost",
+        "name": "雾凇秋分",
+        "views": [
+          {
+            "name": "runtime-a0ee1619e2",
+            "patches": [
+              "assets/expanded/雾凇秋分-v01-p01.png",
+              "assets/expanded/雾凇秋分-v01-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-af595698c7",
+            "patches": [
+              "assets/expanded/雾凇秋分-v02-p01.png",
+              "assets/expanded/雾凇秋分-v02-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-3f6570d793",
+            "patches": [
+              "assets/expanded/雾凇秋分-v03-p01.png",
+              "assets/expanded/雾凇秋分-v03-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-fcfa5433ad",
+            "patches": [
+              "assets/expanded/雾凇秋分-v04-p01.png",
+              "assets/expanded/雾凇秋分-v04-p02.png"
             ]
           }
         ]

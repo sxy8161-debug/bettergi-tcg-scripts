@@ -15,8 +15,8 @@
     house: "为后续装备减费",
     shift: "为接下来的切换减费",
     fast: "准备快速切换",
-    draw: "补充手牌，抽牌后重新规划",
-    revel: "补充手牌，抽牌后重新规划",
+    draw: "补充手牌",
+    revel: "补充手牌",
     boar: "为装备替换准备返骰",
     sing: "为后续减费与抽牌组合做准备",
     opera: "布置满足装备条件时的返骰支援",
@@ -53,7 +53,7 @@
     // Direct damage only: prepared/end-phase hits cannot justify this attack's
     // kill. The opponent's shields/reply and estimated own buffs remain unknown.
     if (enemy && Number.isFinite(enemy.hp) && estimate.direct >= enemy.hp)
-      reasons.push(`敌方出战剩${enemy.hp}点生命，按当前伤害估计尝试主动补刀`);
+      reasons.push(`敌方出战剩${enemy.hp}点生命，准备补刀`);
     if (reaction && aura) reasons.push(`敌方已有${aura}附着，尝试${reaction}`);
     if (skill === "NA" && !reasons.length) {
       reasons.push(estimate.weapon > 0
@@ -108,11 +108,11 @@
       const ready = ["E", "Q", "NA"].some((skill) =>
         T.followupReachable(state, memory, { who: state.active, skill }));
       return (ready ? "由健康队友接手承伤，保留后续输出"
-        : "剩余资源不足以继续输出，先由健康队友接手承伤") + "；后续按实际牌面重算";
+        : "剩余资源不足以继续输出，先由健康队友接手承伤");
     }
     return weapon
-      ? `让持有「${weapon}」的角色接力，后续按实际牌面重算`
-      : "转交出战位置，后续按实际牌面重算";
+      ? `让持有「${weapon}」的角色接力`
+      : "转交出战位置，准备接力";
   }
 
   // Separate observed facts, selected intentions and explicitly labelled estimates.
@@ -135,7 +135,7 @@
         return `${ready}${intent}，${attackPurpose(state, memory, action.who, action.skill)}${finish}。`;
       }
       case "probe":
-        return `确认${who}的${skill}费用，再决定后续行动。`;
+        return `查看${who}的${skill}费用，安排接下来的输出。`;
       case "switch": {
         const current = state.characters[state.active];
         const fragile =

@@ -3,9 +3,9 @@
 // two published input outcomes, not derived from the implementation under test.
 // Player.act, Host.observe/board/execute/confirm, choose and commit stay real.
 const {clone}=require("../../../shared/harness.cjs");
-module.exports=function fixture(loadContext,mode="skills",options={}){
+module.exports=function fixture(loadContext,mode,options={}){
   let time=100000,point=null,preview=null,stage=0,fan=false,selected=false,down=null,soupPage=false,optionSelected=false,
-    summonPage=false,summonSelected=-1,mConfirmReadyAt=0,selectedId=null,supportPayment=false,pickSelected=-1,rerollSent=0,tuningPage=false,
+    summonPage=false,summonSelected=-1,mConfirmReadyAt=0,selectedId=null,supportPayment=false,pickSelected=-1,tuningPage=false,
     artifactPage=false,artifactSelected=false;
   const clicks=[],events=[],drags=[];
   const entryHand=["blessingM","surf","dragon","blessingM","surf","dragon","boar"];
@@ -23,10 +23,6 @@ module.exports=function fixture(loadContext,mode="skills",options={}){
   ]:mode==="replacement"?[
     {active:null,dice:3,hp:10,energy:0,enemyHp:20,dead:[0,1]},
     {active:2,dice:3,hp:8,energy:0,enemyHp:20,dead:[0,1]}
-  ]:mode==="reroll"?[
-    {dice:3,colors:{Geo:2,Pyro:1},hp:10,energy:0,enemyHp:20},
-    {dice:3,colors:{Pyro:2,Geo:1},hp:10,energy:0,enemyHp:20},
-    {dice:3,colors:{Pyro:3},hp:10,energy:0,enemyHp:20}
   ]:mode==="support-life"?[
     {dice:1,hp:10,energy:0,enemyHp:20,cat:0,hand:"chef",supports:supportBefore},
     {dice:0,hp:10,energy:0,enemyHp:20,cat:0,supports:[...supportBefore,{index:3,counter:null}]},
@@ -45,14 +41,10 @@ module.exports=function fixture(loadContext,mode="skills",options={}){
   ]:mode==="last-autumn"?[
     {dice:2,hp:10,energy:0,enemyHp:20,cat:0,hand:"autumnFrost"},
     {dice:2,hp:11,energy:0,enemyHp:20,cat:0}
-  ]:mode==="last-artifact"?[
+  ]:[
     {dice:2,hp:10,energy:0,enemyHp:20,cat:0,hand:"gladiator"},
     {dice:2,hp:10,energy:0,enemyHp:20,cat:0},
     {dice:0,hp:9,energy:1,enemyHp:16,cat:1}
-  ]:[
-    {dice:6,hp:10,energy:0,enemyHp:20,cat:0},
-    {dice:3,hp:9,energy:1,enemyHp:16,cat:1},
-    {dice:0,hp:10,energy:2,enemyHp:10,cat:1}
   ];
   class Clock extends Date{static now(){return time;}}
   const c=loadContext({Date:Clock,sleep:async ms=>{time+=ms;},log:{info(){},warn(){},error(){}},
@@ -67,7 +59,6 @@ module.exports=function fixture(loadContext,mode="skills",options={}){
       if(artifactPage&&artifactSelected&&x===960&&y===945){stage=1;artifactPage=false;}
       if(tuningPage&&x===940&&y===935){stage++;tuningPage=false;selected=false;selectedId=null;fan=false;}
       if(mode==="replacement"&&stage===0&&x===1175&&y===720){if(pickSelected===2)stage=1;else pickSelected=2;}
-      if(mode==="reroll"&&x===960&&y===950&&rerollSent<2){rerollSent++;stage=rerollSent;}
       if(supportPayment&&x===960&&y===945){stage=1;supportPayment=false;}
       if(summonPage&&y===680&&[1460,1630].includes(x))summonSelected=x===1460?0:1;
       if(summonPage&&summonSelected>=0&&x===960&&y===945){stage=1;summonPage=false;}
@@ -115,10 +106,9 @@ module.exports=function fixture(loadContext,mode="skills",options={}){
     const [x,y]=area.rect,s=f.scene;
     if(asset==="core/元素调和"&&f.tuningPage)return [box(920,920,40,30)];
     if(asset==="disable"&&y===545&&s.dead?.includes([663,873,1083].indexOf(x)))return [box(x,y)];
-    if(asset==="core/确定"&&mode==="reroll"&&rerollSent<2)return [box(928,934,64,32)];
     if(asset==="ailin/target-selected"&&f.summonPage&&f.summonSelected>=0&&x===1395+170*f.summonSelected)
       return [box(x+20,y+40,45,38)];
-    if(asset==="user_turn")return f.preview||f.soupPage||f.supportPayment||f.tuningPage||f.artifactPage||mode==="replacement"&&stage===0||mode==="reroll"&&rerollSent<2?[]:[box(64,518)];
+    if(asset==="user_turn")return f.preview||f.soupPage||f.supportPayment||f.tuningPage||f.artifactPage||mode==="replacement"&&stage===0?[]:[box(64,518)];
     if(asset==="hand_rim"&&area.panel==="board")return (s.supports||[{index:0,counter:2}])
       .filter(item=>x===305+170*(item.index%2)&&y===585+198*Math.floor(item.index/2))
       .map(item=>box(350+170*(item.index%2),620+198*Math.floor(item.index/2),6,90))
@@ -173,11 +163,6 @@ module.exports=function fixture(loadContext,mode="skills",options={}){
       if(rect[0]===138&&rect[1]===1020)return "请选择出战角色";
       if(f.pickSelected===2&&rect[0]===311&&rect[1]===115)return "水形幻人";
       if(rect[0]===700&&rect[1]===508)return "请选择一位角色出战";
-    }
-    if(mode==="reroll"&&rerollSent<2){
-      if(multiple)return [];
-      if(rect[0]===844&&rect[1]===167)return "重投骰子";
-      if(rect[0]===700&&rect[1]===835)return "剩余重投次数："+(2-rerollSent);
     }
     if(f.supportPayment){
       if(multiple)return rect[0]===770&&rect[1]===900?[{text:"打出手牌",x:860,y:920,w:200,h:50}]:[];

@@ -228,6 +228,13 @@
             "assets/hand/抵天雷罚-v02-p01.png",
             "assets/hand/抵天雷罚-v02-p02.png"
           ]
+        },
+        {
+          "name": "runtime-e6e8339a33",
+          "patches": [
+            "assets/hand/抵天雷罚-v03-p01.png",
+            "assets/hand/抵天雷罚-v03-p02.png"
+          ]
         }
       ]
     },
@@ -742,6 +749,32 @@
             "patches": [
               "assets/expanded/赌徒的耳环-v01-p01.png",
               "assets/expanded/赌徒的耳环-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "penance",
+        "name": "抵天雷罚",
+        "views": [
+          {
+            "name": "runtime-a993f2848d",
+            "patches": [
+              "assets/expanded/抵天雷罚-v01-p01.png",
+              "assets/expanded/抵天雷罚-v01-p02.png"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "exile",
+        "name": "流放者头冠",
+        "views": [
+          {
+            "name": "runtime-a993f2848d",
+            "patches": [
+              "assets/expanded/流放者头冠-v01-p01.png",
+              "assets/expanded/流放者头冠-v01-p02.png"
             ]
           }
         ]

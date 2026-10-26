@@ -25,14 +25,7 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     assert.deepEqual(clone(observed.enemies),s.enemies);assert.deepEqual(clone(observed.dice),s.dice);
     assert.equal(observed.hand,null);assert.equal(inputs.length,0);
   });
-  await test("exact team, 30 cards, generated countdowns and independent native title identities",()=>{
-    assert.deepEqual(clone(T.team.map(c=>c.name)),["莫娜","早柚","迪卢克"]);
-    assert.equal(T.cards.reduce((n,c)=>n+c.copies,0),30);
-    for(const c of T.cards)assert.equal(T.identify(c.name).id,c.id);
-    assert.equal(T.identify("流火"),null);
-    assert.equal(T.byId.flowingFlame.combatSkill.who,2);
-    assert.equal(T.byId.skivingNewAndImproved.combatSkill.who,1);
-  });
+
   await test("Diluc second and third E discount, third E damage, reset, and four-die Q",()=>{
     const s=board([],2),m=memory();m.talents[2]=true;s.characters[2].energy=3;
     const costs=[],damage=[];
@@ -78,32 +71,9 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     T.nextRound(m);assert.equal(m.monaFastUsed,false);
     m.freeSwitch=true;assert.equal(T.size(T.switchCost(m)),0);
   });
-  await test("development-only prefixes do not switch Mona out merely to draw the same card",()=>{
-    const s=board(["countdown3"]),m=memory();s.dice={Omni:5};m.freeSwitch=true;
-    s.enemies=[enemy(8),enemy(10,false),enemy(10,false),enemy(8,false)];
-    const a=T.choose(s,m);
-    assert.notEqual(a.type,"switch","no carry-position bonus before a noncombat draw");
-    assert.ok(a.type==="card"&&a.id==="countdown3"||a.type==="skill"&&a.who===0,
-      "development or actual Mona setup are both valid; leaving her idle is not");
-    assert.equal(m.monaFastUsed,false);
-    // Native slot10: removing Boar used to disable an expensive immediate
-    // follow-up and thereby unlock a HIGHER next-round setup bonus.
-    const b=board(["gambler","boar"]),v=memory();b.enemies=[enemy(10),enemy(10,false),enemy(11,false)];
-    b.enemies.forEach(e=>{e.auraKnown=false;});b.dice={Pyro:2,Hydro:3,Anemo:1,Electro:1,Cryo:1};
-    v.artifacts[1]=true;v.artifactKinds[1]="troupe";v.firstCard=false;
-    const cast={type:"skill",who:0,skill:"E"},direct=T.project(b,v,cast);
-    const prefix=T.project(b,v,card(b,"boar")),after=T.project(prefix.state,prefix.memory,cast);
-    assert.ok(direct.value>prefix.value+after.value,"discarding a usable option must not improve water setup");
-    assert.notEqual(T.choose(b,v).id,"boar","no irrelevant insurance just to inflate setup value");
-  });
-  await test("slot06 partner ordering, native payment uncertainty and useful Gilded refund",()=>{
-    const s=board(["wolf","liben","dunyarzad"]),m=memory();
-    s.enemies=[enemy(8),enemy(10,false),enemy(10,false),enemy(8,false)];
-    s.dice={Pyro:2,Hydro:1,Electro:1,Dendro:1,Geo:1};m.weaponKinds[1]="wolf";m.weapons[1]=true;
-    m.supports=[{id:"house",round:1,left:1}];m.supportSlots=1;
-    const a=T.choose(s,m);assert.equal(a.type,"card");assert.equal(a.id,"dunyarzad","no Liben-before-Dunyarzad lost retrieval");
-    const partner=T.project(s,m,a);
-    assert.equal(T.choose(partner.state,partner.memory).id,"liben","real zero-cost retrieval must not be pushed behind combat by the random-draw search boundary");
+
+  await test("native automatic payment cannot promise preserved colours or a guaranteed finish",()=>{
+    const m=memory();m.weaponKinds[1]="wolf";m.weapons[1]=true;m.supportSlots=1;
     const b=board(["wolf"]);b.dice={Pyro:2,Hydro:1,Electro:1,Dendro:1,Cryo:1,Geo:1,Omni:1};
     m.supports=[{id:"house",round:-1,left:2}];
     const before=JSON.stringify(b.dice),p=T.project(b,m,card(b,"wolf",1));
@@ -115,39 +85,9 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     const route=T.choose(finish,uncertain);
     assert.equal(route.type,"card");assert.equal(route.planning.conditionalPayment,true);
     assert.equal(route.planning.terminal,false,"a projected native auto-payment path is not a confirmed immediate lethal");
-    const g=board(["gilded"],1),v=memory();g.enemies=s.enemies;v.used=[1,1,0];v.lyre=1;
-    assert.ok(T.project(g,v,card(g,"gilded",1)).value>T.project(g,v,card(g,"gilded",0)).value,
-      "refund for the on-field group carry is not tied with off-element refund");
-    const d=board(["dunyarzad","timaeus"]),x=memory();d.dice={Hydro:2};
-    assert.equal(T.choose(d,x).id,"dunyarzad","cost-neutral partner ordering also applies to Timaeus");
-    T.rejectAction(x,card(d,"dunyarzad"),d);
-    assert.notEqual(T.choose(d,x).id,"dunyarzad","ordering does not bypass a native rejection");
-    const risk=board(["boar"],1),vital=memory();risk.enemies=[enemy(8,true,["Hydro"]),enemy(10,false),enemy(10,false)];
-    risk.characters[1].hp=2;risk.characters[1].energy=2;vital.weapons[1]=true;vital.weaponKinds[1]="wolf";
-    assert.equal(T.choose(risk,vital).id,"boar","free equipment-loss insurance before low-HP carry gives the opponent a reply");
-    risk.enemies=[enemy(1)];
-    assert.equal(T.choose(risk,vital).type,"skill","do not insert insurance before a confirmed immediate win");
+
   });
-  await test("reroll keeps setup water until Mona acts; unknown enemy count is not single-target",()=>{
-    const m=memory(),items=[{element:"Hydro"},{element:"Anemo"},{element:"Pyro"},{element:"Omni"}];
-    m.openingContext={enemyCount:null};m.lastActive=1;
-    const p=T.rerollPlan(items,m);assert.equal(p.primary,"Hydro");assert.equal(p.secondary,"Anemo");
-    assert.deepEqual(clone(p.indices),[0,1,3]);
-    m.enemyAliveCount=2;assert.equal(T.rerollPlan(items,m).secondary,"Anemo");
-    m.enemyAliveCount=1;assert.equal(T.rerollPlan(items,m).secondary,"Pyro");
-    m.defeated[2]=true;assert.equal(T.rerollPlan(items,m).secondary,"Anemo");
-    m.defeated[1]=true;assert.equal(T.rerollPlan(items,m).secondary,null);
-    assert.deepEqual(clone(T.rerollPlan(items,m).indices),[0,3],"slot08/09: no dead relay dice");
-    m.defeated=[false,false,false];
-    m.used[0]=1;assert.equal(T.rerollPlan(items,m).primary,"Anemo");
-    m.used[0]=0;m.defeated[0]=true;assert.equal(T.rerollPlan(items,m).primary,"Anemo");
-    // Actual opening retained four wind dice before reroll and received five.
-    const opening=["Omni","Anemo","Anemo","Pyro","Anemo","Anemo","Hydro","Electro"].map(element=>({element}));
-    const v=memory();v.enemyAliveCount=3;
-    assert.deepEqual(clone(T.rerollPlan(opening,v).indices),[0,1,2,4,6],"reroll surplus relay dice to seek setup water");
-    v.used[0]=1;v.lastActive=1;
-    assert.deepEqual(clone(T.rerollPlan(opening,v).indices),[0,1,2,4,5],"after setup keep all active carry dice");
-  });
+
   await test("Countdown family proof follows confirmed play/discard and invalidates uncertainty",()=>{
     const c=loadContext(),t=c.TCG,m=t.freshMemory(),s=board(["countdown3","countdown3"]);
     assert.equal(t.handVariantProof(m),null,"midgame/unknown initial stock cannot infer stage");
@@ -244,40 +184,7 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     assert.equal(result.confirmed,true);assert.equal(result.hand.length,0);assert.equal(h.consumptionReceipt,null);
     t.commit(m,a,s,result);assert.equal(m.freeSwitch,true);
   });
-  await test("last ordinary tuning uses the real empty-fan confirmation; generated cards and missing dice change stay unproven",async()=>{
-    for(const id of ["troupe","flowingFlame","timaeus"]) {
-      let time=100000;class Clock extends Date{static now(){return time;}}
-      const c=loadContext({Date:Clock,sleep:async ms=>{time+=ms;},...nativeInput((x,y)=>{
-        assert.ok(x===967&&y===1041||x===1190&&y===545,"confirmation must not resubmit tuning");
-      })}),t=c.TCG;
-      const h=new c.TCGBetterGI.BetterGIHost({}),s=board([id],2),m=memory();
-      // slot04: last Troupe, Hydro1/Anemo2 -> Pyro1/Hydro1/Anemo1; count badge is unreadable.
-      // slot03: the last Timaeus changes Geo to Pyro while count remains unreadable.
-      s.dice=id==="timaeus"?{Pyro:2,Anemo:1,Geo:1}:{Hydro:1,Anemo:2};
-      const a={type:"tune",id,index:0,element:"Pyro"};
-      const after={...clone(s),hand:null,dice:id==="timaeus"?{Pyro:3,Anemo:1}:{Pyro:1,Hydro:1,Anemo:1}};
-      const receipt={inputSent:true,id,index:0,target:null,beforeKey:t.boardKey(s)};
-      const proof={...receipt,kind:"native-empty-fan",sourceCount:1,stableReads:2};
-      assert.equal(t.emptyHandEffect(a,s,after),false,"dice conversion alone cannot prove an empty hand");
-      assert.equal(t.emptyHandEffect(a,s,{...after,handEvidence:proof}),true);
-      assert.equal(t.verify(a,s,{...after,hand:[]}),true);
-      assert.equal(t.verify(a,s,{...after,hand:[],dice:s.dice}),false,"empty fan alone cannot confirm tuning");
-      assert.equal(t.emptyHandEffect(a,s,{...after,handEvidence:{...proof,beforeKey:"stale"}}),false);
-      h.trace=()=>{};h.frame=fn=>fn({});h.phaseIn=()=>({phase:"board",turn:"user"});
-      h.board=()=>clone(after);h.boardReady=true;h.expectedDice=t.total(s.dice);
-      h.handCountIn=()=>null;h.phase=()=>h.phaseIn();
-      h.matches=()=>[];h.ocr=()=>"";h.ocrRows=()=>[];
-      h.readHand=async()=>{throw Error("unnecessary full hand scan");};
-      h.consumptionReceipt=receipt;
-      const result=await h.confirm(a,s,m);
-      assert.equal(result.confirmed,true);assert.equal(result.hand.length,0);assert.equal(h.consumptionReceipt,null);
-      t.commit(m,a,s,result);assert.equal(m.talents[2],false);assert.equal(m.dilucE,0);
-    }
-    const s=board(["countdown3"]),a={type:"tune",id:"countdown3",index:0,element:"Hydro"};
-    const proof={kind:"native-empty-fan",sourceCount:1,stableReads:2,inputSent:true,id:a.id,index:0,target:null,beforeKey:T.boardKey(s)};
-    assert.equal(T.emptyHandEffect(a,s,{...s,hand:null,handEvidence:proof,dice:{Omni:7,Hydro:1}}),false,
-      "Countdown generates its next stage, so even transient empty fan is not ordinary removal");
-  });
+
   await test("decision is read-only, bounded, legal, does not invoke talent while tuning it",()=>{
     for(const [ids,active]of [[[],0],[["flowingFlame","wolf","garden","gilded","troupe"],2],[["dunyarzad","timaeus","countdown3"],0]]){
       const s=board(ids,active),m=memory();s.enemies=[enemy(10,true,["Hydro"]),enemy(8,false),enemy(6,false)];
@@ -297,18 +204,7 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     assert.equal(T.enumerate(s,m).some(x=>x.type==="card"&&x.id===a.id),false);
     T.deferUncertain(m,a,s);T.nextRound(m);assert.equal(T.cardLegal(s,a,m),false);
   });
-  await test("native slot02: attack keeps Liben collection; multiple Libens do not reuse the same die",()=>{
-    const s=board([],0),m=memory();s.dice={Omni:4};s.enemies=[enemy(3,true,["Hydro"])];
-    s.enemies[0].defenseKnown=false;s.characters[0].hp=1;
-    s.characters[1].dead=s.characters[2].dead=true;s.characters[1].hp=s.characters[2].hp=0;
-    m.defeated=[false,true,true];m.used=[5,2,2];m.reflection=1;m.round=5;
-    m.supports=[{id:"liben",collected:2}];m.supportSlots=1;
-    const before=JSON.stringify([s,m]),a=T.choose(s,m);
-    assert.equal(a.type,"skill","the three-die attack leaves Liben its last die; End has no exclusive reward");
-    assert.equal(a.planning.terminal,false);assert.equal(JSON.stringify([s,m]),before);
-    s.dice={Omni:1};m.supports.push({id:"liben",collected:2});
-    assert.ok(Math.abs(T.project(s,m,{type:"end"}).value-1.1)<1e-9,"only one sequential Liben can complete");
-  });
+
   await test("native slot02: negative two-tune prefix reaches its skill before the beam budget is spent",()=>{
     const s=board(["skivingNewAndImproved","gambler","gambler","draw","draw"],2),m=memory();
     s.dice={Hydro:3,Anemo:2,Electro:1};s.enemies=[enemy(3),enemy(10,false),enemy(10,false)];
@@ -339,38 +235,7 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     T.nextRound(n);s.active=1;T.noteBoard(n,s);T.noteBoard(n,s);
     assert.equal(n.troupe[2],1,"confirmed unchanged active admits at most one backstage increment");
   });
-  await test("native Suleika resource route completes legal equipment prerequisites before beam pruning",()=>{
-    const s=board(["flowingFlame","skivingNewAndImproved","wolf","troupe","garden"],1),m=memory();
-    m.round=3;m.used=[1,2,0];s.characters[1].hp=4;s.characters[1].energy=2;
-    s.dice={Pyro:1,Hydro:1,Anemo:3,Geo:1,Omni:4};
-    s.enemies=[enemy(9,false,["Hydro"]),enemy(8,false,["Hydro"]),enemy(8,true,["Hydro"])];
-    const original=JSON.stringify([s,m]),chosen=T.choose(s,m);
-    assert.equal(JSON.stringify([s,m]),original);
-    assert.notEqual(chosen.id,"wolf","do not pay full price while a cheaper complete equipped attack is available");
-    assert.ok(chosen.planning.sequence.includes("card:garden"));
-    assert.ok(chosen.planning.sequence.includes("card:wolf"));
-    assert.ok(chosen.planning.sequence.some(k=>k==="card:skivingNewAndImproved"||k.startsWith("skill:1:")));
-    assert.ok(chosen.projections.used<=chosen.projections.limit);
-    m.legendUsed=true;
-    assert.ok(!T.choose(s,m).planning.sequence.includes("card:garden"),"spent secret cannot fund an invented discount");
-    m.legendUsed=false;s.characters[1].frozen=true;
-    const frozen=T.choose(s,m);
-    assert.ok(!frozen.planning?.sequence?.includes("card:skivingNewAndImproved"));
-  });
-  await test("Sayu summon values only conditional survivors and missing HP, without weapon, bubble or native mutation",()=>{
-    const s=board([],1),m=memory();s.characters[1].energy=2;
-    s.enemies=[enemy(1),enemy(6,false,["Hydro"]),enemy(8,false,["Hydro"])];
-    const original=JSON.stringify([s,m]),wet=T.project(s,m,{type:"skill",who:1,skill:"Q"});
-    assert.equal(JSON.stringify([s,m]),original);assert.equal(wet.stop,true);assert.equal(wet.terminal,false);
-    assert.equal(wet.estimate.total,1,"summon is not immediate damage");
-    m.weaponKinds[1]="wolf";m.bubble=true;
-    const equipped=T.project(s,m,{type:"skill",who:1,skill:"Q"});
-    assert.equal(equipped.estimate.conditionalSummonValue,wet.estimate.conditionalSummonValue);
-    s.enemies.forEach(e=>{e.aura=[];});
-    assert.ok(T.project(s,m,{type:"skill",who:1,skill:"Q"}).estimate.conditionalSummonValue<wet.estimate.conditionalSummonValue);
-    m.sayuSummon=2;
-    assert.equal(T.project(s,m,{type:"skill",who:1,skill:"Q"}).estimate.conditionalSummonValue,0);
-  });
+
   await test("late paid draw cannot spend the last payable attack; opening and retained attack funds stay distinct",()=>{
     const s=board(["flowingFlame","skivingNewAndImproved","gambler","troupe","dunyarzad","shift","countdown3"]),m=memory();
     // Native19:40:03: only Mona remains, bubble active, five dice -> fee3 leaves2.

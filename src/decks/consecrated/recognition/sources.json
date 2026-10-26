@@ -65,7 +65,7 @@
     "assets/expanded/幻戏倒计时-3-v01-p02.png": "29b6d3503b5293c8a6815579dc9c92c558604e9c829be7d7730b3aceb8b71198",
     "assets/expanded/幻戏倒计时-3-v02-p01.png": "038c7d16d2bd1a2df70d64e2ad653c9bb54877e06c6a539a3803a459509d1164",
     "assets/expanded/幻戏倒计时-3-v02-p02.png": "38444d9d9a2306ec7b5280c4d4e5caace349d211122a95b6a5ed72c0273844ba",
-    "hand-bank.json": "d681417f6cbd019925836da654fe151e0c3ac0b699f4c89a2d98d1cfa7f110e0",
+    "hand-bank.json": "3221d02a92f9ee16379d706d4fdd2a0cb9ccbfe8ccde9a0be7627a8d84239c9a",
     "opening-bank.json": "7ce8a2889f70cafa616b5659fc6b7a434920da15977b06e070a82506e1595550",
     "assets/hand/亡水溢流-v01-p01.png": "633e488bc70f57a311fa3002294880f81e72126302417a36aecfd02b58d6868e",
     "assets/hand/亡水溢流-v01-p02.png": "4db980c8ecb919d88c89fed6d6d996ed9acde6056a136fcdefdc060874d540d4",
@@ -132,7 +132,11 @@
     "assets/expanded/清洁工作-v01-p01.png": "5090c3fc432fc994b2af0101d025b1428b7e5c198cfceec3896074dcb51475fa",
     "assets/expanded/清洁工作-v01-p02.png": "7dfd67ef89feaa648cf7febcfa14b346e6ca7ae03d2e4289ab15d0a3f45a5de9",
     "assets/expanded/噬骸能量块-v02-p01.png": "1255c7574ec3a2f2160374a0a8558bcc60e14ad9a6920b468cd876c901c41ca6",
-    "assets/expanded/噬骸能量块-v02-p02.png": "e0230cf9d020a8d7a7776e3d86358665b18e22dda57309cd27897bb0d211cd75"
+    "assets/expanded/噬骸能量块-v02-p02.png": "e0230cf9d020a8d7a7776e3d86358665b18e22dda57309cd27897bb0d211cd75",
+    "assets/hand/亡水溢流-v02-p01.png": "0cc783cf3bdcbcfa84bb08afc2e133fef2524adcb51b4d69025e291d1bf11d6b",
+    "assets/hand/亡水溢流-v02-p02.png": "4c5c16951dbabd64fea9b9fd6520496749223bda944cd0f3a77e8d71a0d9b697",
+    "assets/hand/亡风啸卷-v02-p01.png": "7fdc9bbd05d42072d37c0ae585d94ca85f339a138daf9acc997068df34a7460f",
+    "assets/hand/亡风啸卷-v02-p02.png": "1938151f5fb0ddc4cc15f78c1e0b2bfdeefde57737d50e080b78ed093f438da4"
   },
   "assetFiles": {
     "assets/hand/立本-v01-p01.png": "assets/templates/mozailu/hand/立本-v01-p01.png",
@@ -261,6 +265,10 @@
     "assets/expanded/清洁工作-v01-p01.png": "assets/templates/consecrated/expanded/清洁工作-v01-p01.png",
     "assets/expanded/清洁工作-v01-p02.png": "assets/templates/consecrated/expanded/清洁工作-v01-p02.png",
     "assets/expanded/噬骸能量块-v02-p01.png": "assets/templates/consecrated/expanded/噬骸能量块-v02-p01.png",
-    "assets/expanded/噬骸能量块-v02-p02.png": "assets/templates/consecrated/expanded/噬骸能量块-v02-p02.png"
+    "assets/expanded/噬骸能量块-v02-p02.png": "assets/templates/consecrated/expanded/噬骸能量块-v02-p02.png",
+    "assets/hand/亡水溢流-v02-p01.png": "assets/templates/consecrated/hand/亡水溢流-v02-p01.png",
+    "assets/hand/亡水溢流-v02-p02.png": "assets/templates/consecrated/hand/亡水溢流-v02-p02.png",
+    "assets/hand/亡风啸卷-v02-p01.png": "assets/templates/consecrated/hand/亡风啸卷-v02-p01.png",
+    "assets/hand/亡风啸卷-v02-p02.png": "assets/templates/consecrated/hand/亡风啸卷-v02-p02.png"
   }
 }

@@ -5,13 +5,29 @@
   /* @include src/shared/lifecycle.inc.js#lifecycle.INPUT_REFRESHES */
   /* @include src/shared/lifecycle.inc.js#lifecycle.BUDGET_FIELDS */
   /* @include src/shared/lifecycle.inc.js#lifecycle.playerOptions */
-  function actionCommentary(a,s) {
-    if (a.type==="skill") return T.team[a.who].name+"使用「"+T.team[a.who].skills[a.skill]+"」，结算后按真实血量和手牌重新决定。";
-    if (a.type==="switch") return "切换"+T.team[a.target].name+"；不预支切换后的返骰。";
-    if (a.type==="card") return "使用「"+T.byId[a.id].name+"」"+(a.target!=null?"，目标"+T.team[a.target].name:"")+"；随机结果以实际牌面为准。";
-    if (a.type==="tune") return "调和「"+(T.byId[a.id]?.name||s.hand[a.index].name)+"」，确认实际转换后重新决策。";
-    if (a.type==="probe") return a.scope==="card"?"核实当前手牌费用与附着，不出牌。":"核实当前技能费用，不施放技能。";
-    return "当前没有可支付且值得执行的动作，结束回合。";
+  /* @include src/shared/lifecycle.inc.js#lifecycle.ELEMENT_NAMES */
+  function actionCommentary(a,s,m) {
+    let text;
+    if(a.type==="skill") {
+      text=T.team[a.who].name+"使用「"+T.team[a.who].skills[a.skill]+"」";
+      if(a.who===1&&a.skill==="E")text+="，补伤害、抽牌"+(s.characters[1].energy<2?"，为爆发积累充能":"");
+      else if(a.who===1&&a.skill==="Q")text+="，消耗能量块集中打出爆发伤害";
+      else if(a.skill==="NA")text+="，压低对手血线"+(s.characters[a.who].energy<T.team[a.who].maxEnergy?"并积累充能":"");
+    }else if(a.type==="switch")text="切换"+T.team[a.target].name+(a.endTurnRelay?"承伤，让当前角色留在后台休整":"接力");
+    else if(a.type==="card") {
+      const purpose={scorpionTalent:"补充能量块，启动毒蝎的抽牌联动",serpentTalent:"补充能量块，为后续切换准备返骰",
+        crocodileTalent:"补充能量块，准备打块后的治疗",emblem:"提高飞蛇的爆发伤害",adeptus:"为接下来的爆发增伤",
+        stars:"补充出战角色的充能",block:"用能量块换取万能骰",harbor:"为后续回合补充手牌",lair:"检索天赋牌",
+        whiteGlove:"准备清洁工作，为后续攻击增伤",cleanup:"提高下一次攻击的伤害",liben:"收集回合末剩余骰子，准备后续资源",draw:"补充手牌",revel:"补充手牌",shift:"省下接力所需的切换骰子"}[a.id];
+      text="使用「"+T.byId[a.id].name+"」"+(a.target!=null?"，目标"+T.team[a.target].name:"")+(purpose?"，"+purpose:"");
+    }else if(a.type==="tune")text="调和「"+(T.byId[a.id]?.name||s.hand[a.index].name)+"」，补充"+(ELEMENT_NAMES[a.element]||"当前角色所需元素")+"骰";
+    else if(a.type==="probe")return a.scope==="card"?"查看「"+T.byId[a.id].name+"」的费用，安排能量块的弃牌与产骰。":"查看技能费用，安排接下来的输出。";
+    else return "结束回合，准备下一轮。";
+    const next=a.followup||a.plan?.terminal;
+    if(next?.type==="skill"&&!(a.type==="skill"&&a.who===next.who&&a.skill===next.skill))
+      text+="。接下来准备让"+T.team[next.who].name+"使用「"+T.team[next.who].skills[next.skill]+"」";
+    if(a.type==="skill"&&Number.isFinite(a.plan?.estimate?.direct))text+="，预计造成"+a.plan.estimate.direct+"点伤害";
+    return text+"。";
   }
   // Reuse the shared lifecycle owner for observation, input and confirmation.
   class Player {

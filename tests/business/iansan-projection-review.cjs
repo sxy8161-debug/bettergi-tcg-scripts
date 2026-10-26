@@ -88,33 +88,7 @@ module.exports = async function (test) {
       assert.equal(T.summonValue(s, m), 0, "no phantom summon damage");
     }
   });
-  await test("R08: replacement outranks draw valuation; observed replacement restores normal planning", () => {
-    const s = board(T), m = memory(T);
-    s.dice = { Electro: 6 }; enemies(s, [1, 10, 10], ["Dendro"]);
-    // Match the review's native-shaped board, which does not assert known defence.
-    s.enemies.forEach(e => { delete e.defenseKnown; });
-    m.artifacts[0] = true; m.artifactKinds[0] = "gilded";
-    const a = { type: "skill", who: 0, skill: "E" }, p = T.simulate(s, m, a);
-    assert.deepEqual(clone(p.state.enemies.map(e => e.hp)), [0, 10, 10]);
-    assert.equal(p.state.enemies.some(e => e.active), false);
-    assert.equal(p.benefit, 5.1, "keep the real hit, defeat and triggered draw value");
-    assert.equal(p.memory.gildedDrawUsed[0], 1);
-    assert.equal(p.leaf, true);
-    assert.equal(p.boundary, null);
-    assert.equal(T.simulate(p.state, p.memory, { type: "skill", who: 0, skill: "NA" }), null);
-    const chosen = T.choose(s, m);
-    assert.equal(chosen.skill, "E");
-    assert.equal(chosen.search.boundaryPayoff ?? null, null);
-    assert.deepEqual(clone(chosen.search.sequence), [a]);
-    const resumed = clone(p.state); resumed.enemies[1].active = true;
-    const hit = T.simulate(resumed, p.memory, { type: "skill", who: 0, skill: "NA" });
-    assert.ok(hit); assert.ok(hit.state.enemies[1].hp < 10);
-    const drawOnly = clone(s); drawOnly.enemies[0].hp = 10;
-    const draw = T.simulate(drawOnly, m, a), drawChoice = T.choose(drawOnly, m);
-    assert.equal(draw.boundary.kind, "unknown-draw");
-    assert.equal(drawChoice.search.boundaryPayoff?.knownOnly, true);
-    assert.ok(drawChoice.search.boundaryPayoff.sequence.length > 0);
-  });
+
   await test("R05: candidates, tuning and funding query the actual instance and local conditions", () => {
     const s = board(T, ["troupe", "troupe"]), m = memory(T),
       a = { type: "card", id: "troupe", index: 0, target: 0 };

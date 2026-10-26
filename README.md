@@ -1,6 +1,6 @@
 # [我不是牌神]七圣召唤自动牌手
 
-BetterGI 七圣召唤 PVE 全自动牌手，提供雷神柯莱刻晴、伊安珊嘉明早柚、月绽放、莫娜早柚迪卢克、爱可菲林尼水形幻人、圣骸兽（蝎蛇鳄）六套牌组。自动完成起手换牌、选人、重投骰子、出牌、元素调和、技能、切换和回合推进，角色阵亡后由存活角色继续接力。
+BetterGI 七圣召唤 PVE 全自动牌手，提供雷神柯莱刻晴、伊安珊嘉明早柚、月绽放、莫娜早柚迪卢克、爱可菲林尼水形幻人、圣骸兽（特化对单）六套牌组。自动完成起手换牌、选人、重投骰子、出牌、元素调和、技能、切换和回合推进，角色阵亡后由存活角色继续接力。
 
 - **雷柯刻**：雷电将军爆发补能，柯莱挂草激化，刻晴用雷楔返场、附魔普攻和爆发穿透衔接输出，支持新手版与完全版牌组。
 - **伊嘉早**：伊安珊挂雷与增伤，嘉明负责火伤、超载和返场追击，早柚利用扩散与爆发兼顾多目标输出和治疗。
@@ -10,7 +10,7 @@ BetterGI 七圣召唤 PVE 全自动牌手，提供雷神柯莱刻晴、伊安珊
 
 - **圣骸兽**：飞蛇蓄能与爆发，毒蝎和角鳄接替承伤；结合后台天赋、能量块、倒计时与支援安排资源，主要面向普通PVE单体挑战，不承诺固定回合或特殊机制通关。
 
-当前统一版本：**1.9.0**。共享层与六套牌手使用同一版本号，后续同步更新。
+当前统一版本：**1.9.7**。共享层与六套牌手使用同一版本号，后续同步更新。
 
 普通技能按当前出战角色和固定槽位释放，不再依赖技能名称或技能类别的文字识别；点击后根据实际骰子与战斗结果确认。
 
@@ -18,6 +18,8 @@ BetterGI 七圣召唤 PVE 全自动牌手，提供雷神柯莱刻晴、伊安珊
 
 ## 本次更新
 
+- 手牌没有增减、原有顺序保持不变时直接沿用已识别牌名，减少行动前反复展开手牌和补读标题。
+- 爱林水的白浪拂沙、一捧绿野、鎏金殿堂和雾凇秋分按各自图案直接识别，图案匹配成功后不再为确认料理种类重复打开标题；补充实际折叠与展开牌面，移除一组仅含共同蓝色花纹的旧模板。
 - 新增圣骸兽（毒蝎／飞蛇／角鳄）牌组，支持三兽后台快速天赋、能量块随机弃牌、倒计时降阶及「沙中遗事」选择；随机结果按真实手牌与骰子重新决策。
 - 爱林水起手将「最好的伙伴！」和「一掷乾坤」合计保留一张，多余调骰牌置换以寻找核心启动组件；其他伙伴支援的留牌规则不变。
 - 爱林水修复装备选人页退出异常，兼容「卯师傅」被读作「卵师傅」的标题误字，并补充白浪拂沙的实际牌面。
@@ -62,7 +64,7 @@ https://github.com/sxy8161-debug/bettergi-tcg-scripts-release
 - [月绽放](https://github.com/sxy8161-debug/bettergi-tcg-scripts-release/blob/release/repo/js/MoonbloomPlayer/README.md)
 - [莫娜早柚迪卢克](https://github.com/sxy8161-debug/bettergi-tcg-scripts-release/blob/release/repo/js/MonaSayuDilucPlayer/README.md)
 - [爱可菲林尼水形幻人](https://github.com/sxy8161-debug/bettergi-tcg-scripts-release/blob/release/repo/js/EscoffierLyneyHydroTulpaPlayer/README.md)
-- [圣骸兽（蝎蛇鳄）](https://github.com/sxy8161-debug/bettergi-tcg-scripts-release/blob/release/repo/js/ConsecratedBeastsPlayer/README.md)
+- [圣骸兽（特化对单）](https://github.com/sxy8161-debug/bettergi-tcg-scripts-release/blob/release/repo/js/ConsecratedBeastsPlayer/README.md)
 
 作者：巨鲸也是咸鱼。代码与素材来源、完整许可证见各牌手 README 末尾的对应章节。
 

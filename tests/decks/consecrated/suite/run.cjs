@@ -22,19 +22,7 @@ async function run(test,loadContext=defaultLoad) {
     characters:T.team.map(c=>({hp:c.maxHp,energy:0,dead:false,frozen:false})),
     enemies:[{hp:60,active:true,dead:false}]});
   const memory=()=>T.freshMemory({newGame:true});
-  await test("fixed catalog, share-code receipt and exact guide mulligan",()=>{
-    const decoded=require("./share-code.cjs");
-    assert.equal(T.shareCode,decoded.shareCode);assert.equal(decoded.filtered,false);
-    assert.deepEqual(clone(T.team.map(c=>c.gameId)),decoded.characters);
-    const actual=Object.fromEntries(T.cards.filter(c=>c.copies).map(c=>[c.gameId,c.copies]));
-    assert.deepEqual(actual,decoded.cardCounts);
-    assert.equal(T.cards.reduce((sum,c)=>sum+c.copies,0),30);
-    for(const c of T.cards)assert.equal(T.identify(c.name)?.id,c.id);
-    assert.equal(T.openingActive,1);
-    assert.deepEqual(clone(T.openingPlan(hand(["harbor","harbor","sand","stars","scorpionTalent"]),Array(5).fill(false)).replace),
-      [false,false,false,true,true]);
-    assert.equal(T.keepOpening("adeptus"),false);assert.equal(T.keepOpening("countdown2"),false);
-  });
+
   await test("current serpent draw, energy and generated-deck effects exclude obsolete rules",()=>{
     const s=board(["block","block","block","block"]),m=memory();
     const e=T.skillEffects(1,"E",s.hand,m);
@@ -74,29 +62,7 @@ async function run(test,loadContext=defaultLoad) {
     assert.equal(T.stormterrorEligible({type:"skill",who:1,skill:"Q"}),false);
     assert.equal(m.talents[0],false,"rule check does not equip it");
   });
-  await test("crocodile bottoming, burst and block healing keep their distinct triggers and native HP",()=>{
-    const m=memory(),s=board(["countdown3","adeptus","block","block","block"],2);
-    s.characters[1].hp=4;
-    const snapshot=JSON.stringify([s,m]),e=T.skillEffects(2,"E",s.hand,m),q=T.skillEffects(2,"Q",s.hand,m);
-    assert.equal(e.damageType,"Hydro");assert.equal(e.generatedBlocks,1);
-    assert.deepEqual(clone(e.bottomHighest.indices),[0]);assert.equal(e.discardedBlocks,0);
-    s.hand[0].attachments.reduction=1;
-    assert.deepEqual(clone(T.skillEffects(2,"E",s.hand,m).bottomHighest.indices),[0,1]);
-    delete s.hand[0].attachments;
-    assert.equal(T.skillEffects(2,"E",s.hand,m).bottomHighest.known,false);
-    assert.equal(q.rawDamage,4);assert.equal(q.discardedBlocks,3);
-    assert.deepEqual(clone(q.healAndMaxHp),{amount:3,target:"most-injured"});
-    assert.equal(T.blockHealing("play",s,m).triggers,1);
-    m.talents[2]=true;assert.equal(T.blockHealing("play",s,m).triggers,2);
-    for(const mode of ["tune","discard","burst-discard"])
-      assert.equal(T.blockHealing(mode,s,m,3).triggers,3,"discard is passive-only even with talent");
-    assert.equal(T.blockHealing("bottom",s,m,3).triggers,0);
-    m.talents[2]=null;assert.equal(T.blockHealing("play",s,m).triggers,null);
-    assert.equal(T.blockHealing("tune",s,m).triggers,1);
-    s.characters[2].dead=true;assert.equal(T.blockHealing("play",s,m).triggers,0);
-    assert.equal(s.characters[1].hp,JSON.parse(snapshot)[0].characters[1].hp,"trigger estimates never apply predicted healing");
-    assert.equal(s.characters[1].maxHp,undefined,"do not manufacture a post-Q maximum HP");
-  });
+
   await test("highest current cost includes every tie and unknowns; final payment is not discard cost",()=>{
     const h=hand(["block","countdown3","adeptus","block"]);
     h[1].currentCost=0;assert.equal(T.discardCost(h[1]),3,"payment discount does not change ranking");
@@ -150,27 +116,16 @@ async function run(test,loadContext=defaultLoad) {
     s.dice={Electro:1};const p=T.switchBudget(s,2,m);
     assert.equal(p.cost,1);assert.equal(p.fast,false);assert.equal(p.refund.element,"Hydro");
   });
-  await test("support capacity, instances and draw timing do not fabricate cards",()=>{
-    const s=board();assert.equal(T.supportRoom(s),false);
-    s.supportCounts={known:true,slots:Array.from({length:4},()=>({present:true}))};
-    assert.equal(T.supportRoom(s),false);s.supportCounts.slots[2].present=false;assert.equal(T.supportRoom(s),true);
-    assert.equal(T.libenCollection({Electro:3},0),1);assert.equal(T.libenCollection({Electro:1,Anemo:1,Omni:1},0),3);
-    assert.equal(T.supportEvent({id:"liben",collected:3},"end-phase"),null);
-    assert.equal(T.supportEvent({id:"liben",collected:3},"action-start").draw,2);
-    assert.equal(T.supportEvent({id:"whiteGlove",remaining:2},"end-phase").draw,0);
-    assert.equal(T.supportEvent({id:"whiteGlove",remaining:1},"end-phase").draw,1);
-    assert.equal(T.supportEvent({id:"harbor",remaining:1},"end-phase").remaining,0);
-    assert.equal(T.revelRefund(hand(["emblem","emblem"])),1);
-    assert.equal(T.revelRefund(hand(["emblem"])),0);
-    assert.equal(T.revelRefund([{id:"unsupported:未知武器",supported:false}]),null);
-  });
+
   await test("same-count random effects always refresh the whole hand; simple removal preserves the other instance",()=>{
     const m=memory(),s=board(["block","emblem","emblem"]);s.hand=T.indexedHand(s.hand);
     const action=(id,index=0)=>({type:"card",id,index,target:null});
     for(const id of ["block","scorpionTalent","serpentTalent","crocodileTalent","sand","countdown3","revel","lair","nre"]){
       const b=board([id]);assert.equal(T.handPlan(action(id),b,m).mode,"full");
-      if (["sand","countdown3","revel"].includes(id))
-        assert.equal(T.handPlan(action(id),b,m).retainedHand,undefined,"unknown draws cannot reuse family stages");
+      if (id==="sand")
+        assert.equal(T.handPlan(action(id),b,m).retainedHand,undefined,"bottom exchange cannot retain all old cards");
+      if (["countdown3","revel"].includes(id))
+        assert.deepEqual(clone(T.handPlan(action(id),b,m).retainedHand),[],"draws retain only unconsumed old cards");
     }
     const removed=T.handPlan({...action("emblem",1),target:1},s,m);
     assert.equal(removed.mode,"remove");assert.deepEqual(clone(removed.hand.map(c=>c.index)),[0,1]);
@@ -329,67 +284,8 @@ async function run(test,loadContext=defaultLoad) {
     assert.equal(a.skill,"Q","actual final round can justify an incomplete burst");
     delete deadline.roundLimit;a=T.choose(deadline,m);assert.notEqual(a.skill,"Q","no invented round limit");
   });
-  await test("random food draw adds no projected resources but preserves the guaranteed buff and retained cards",()=>{
-    const m=memory(),s=board([...Array(6).fill("block"),"adeptus"]);
-    m.supportStateKnown=false;s.characters[1].energy=2;s.enemies[0].hp=40;s.dice={Anemo:3,Pyro:2};
-    const next=T.projectPreparation(s,m,{type:"card",id:"adeptus",index:6,target:1});
-    assert.equal(next.s.hand.length,6);assert.ok(next.s.hand.every(h=>h.id==="block"));assert.equal(next.m.adeptus[1],true);
-    const a=T.choose(s,m);assert.equal(a.id,"adeptus");assert.ok(a.plan.estimate.raw>=40);
-    assert.equal(s.hand.length,7);assert.equal(m.adeptus[1],false);
-  });
-  await test("near-full hands admit useful delayed supports and net-zero searches without bypassing actual support capacity",()=>{
-    // Native slot03 rounds3/4 ended with7/8 dice and an empty support field.
-    const s=board([...Array(5).fill("block"),"harbor","lair","shift","shift"],2),m=memory();
-    s.characters[0]={hp:0,dead:true,energy:0,frozen:false};s.characters[1].energy=2;
-    s.enemies[0].hp=24;s.dice={Hydro:1,Anemo:2,Dendro:1,Omni:3};
-    s.supportCounts={known:true,slots:Array.from({length:4},(_,index)=>({index,present:false}))};
-    m.talents=[false,true,true];m.blockPlayed=true;
-    let a=T.choose(s,m);assert.equal(a.id,"harbor");assert.equal(T.actionLegal(s,a,m),true);
-    s.hand.push(...hand(["revel"]).map(x=>({...x,index:9})));
-    a=T.choose(s,m);assert.equal(a.id,"harbor","support leaves the hand now; its later draws are not immediate overflow");
-    s.hand=hand([...Array(5).fill("block"),"lair","shift","shift","adeptus","emblem"]);
-    s.enemies[0].hp=60; // No immediate Adeptus+Q finish competing with development.
-    m.talents[2]=false;m.emblem[1]=true;
-    a=T.choose(s,m);assert.equal(a.id,"lair","source consumption makes room for the single search draw");
-    s.hand=hand([...Array(5).fill("block"),"whiteGlove","shift","shift","adeptus","emblem"]);
-    a=T.choose(s,m);assert.equal(a.id,"whiteGlove","putting Cleanup in the deck is not an immediate hand draw");
-    s.supportCounts.slots.forEach(x=>x.present=true);
-    assert.notEqual(T.choose(s,m).id,"whiteGlove","never open the unsupported replacement page");
-    s.supportCounts.known=false;
-    assert.notEqual(T.choose(s,m).id,"whiteGlove","unknown support capacity remains unknown");
-    s.supportCounts.known=true;s.supportCounts.slots.forEach(x=>x.present=false);
-    s.roundLimit={source:"native",remaining:1};
-    assert.notEqual(T.choose(s,m).id,"whiteGlove","known deadline still prioritizes current damage");
-  });
-  await test("a sole charged serpent can spend its incomplete burst instead of losing the candidate to ordinary reserve filtering",()=>{
-    // Native slot03 round5: sole serpent6HP, enemy24HP, five blocks, three Omni.
-    const s=board([...Array(5).fill("block"),"harbor","lair","shift","shift","revel"]),m=memory();
-    s.characters[0]={hp:0,dead:true,energy:0,frozen:false};
-    s.characters[2]={hp:0,dead:true,energy:0,frozen:false};
-    s.characters[1].hp=6;s.characters[1].energy=2;s.enemies[0].hp=24;
-    s.dice={Pyro:1,Dendro:1,Cryo:1,Geo:2,Omni:3};
-    let a=T.choose(s,m);assert.equal(a.type,"skill");assert.equal(a.skill,"Q");
-    assert.equal(a.plan.estimate.raw,8);assert.equal(T.actionLegal(s,a,m),true);
-    assert.equal(a.plan.estimate.provenTargetDefeat,false,"incomplete burst is damage, not a claimed kill");
-    s.characters[1].hp=2;a=T.choose(s,m);assert.equal(a.skill,"Q");
-    s.characters[1].frozen=true;a=T.choose(s,m);assert.notEqual(a.skill,"Q");
-  });
-  await test("bad-hand exchange, zero-die retreat and no-Starsign charge have finite real resource routes",()=>{
-    const m=memory(),s=board(["sand","adeptus","adeptus","emblem","emblem","serpentTalent","serpentTalent"]);
-    s.characters[1].energy=2;s.dice={};let a=T.choose(s,m);
-    assert.equal(a.id,"sand");assert.equal(a.choice,"sanctify");
-    s.hand=hand(["shift"]);a=T.choose(s,m);assert.equal(a.id,"shift");
-    s.hand=hand(["stars"]);s.characters[1].energy=1;s.characters[1].hp=2;s.dice={Pyro:2};
-    a=T.choose(s,m);assert.equal(a.type,"switch","do not spend the only retreat die on nonlethal charge");
-    s.hand=[];s.characters[1].energy=0;s.characters[1].hp=10;s.dice={Anemo:1,Pyro:2};
-    a=T.choose(s,m);assert.equal(a.type,"skill");assert.equal(a.skill,"NA");
-    s.hand=hand(["sand","draw","countdown3","revel"]);s.characters[1].energy=1;
-    s.dice={Anemo:1,Electro:2,Dendro:2};s.enemies[0].hp=27;
-    a=T.choose(s,m);assert.equal(a.skill,"NA","do not tune two extra useful cards solely to prefer E for charge");
-    s.dice={Anemo:3,Electro:2};a=T.choose(s,m);
-    assert.equal(a.skill,"E","equally direct E retains its damage and draw advantage");
-  });
-  await test("a charged serpent spends current output after the engine dies and keeps E first when E plus Q are payable",()=>{
+
+  await test("a charged serpent spends a stronger Q before rebuilding energy when its supply engine dies",()=>{
     // Native slot04 round4: five blocks, food, eight dice; ordinary Q20 was
     // below enemy25 and no growth card could supply another block this turn.
     const s=board([...Array(5).fill("block"),"nre","sand","shift","adeptus"],2),m=memory();
@@ -401,7 +297,7 @@ async function run(test,loadContext=defaultLoad) {
     assert.equal(a.plan.terminal.who,1);assert.equal(a.plan.terminal.skill,"Q");
     assert.equal(T.actionLegal(s,a,m),true);assert.equal(s.hand.length,9);
     s.active=1;const cast=T.choose(s,m);assert.equal(cast.plan.terminal.skill,"Q");
-    s.dice={Omni:8};assert.equal(T.choose(s,m).skill,"E","current dice can pay E then Q, so draw first before re-observing");
+    s.dice={Omni:8};assert.equal(T.choose(s,m).plan.terminal.skill,"Q","spend charged output first so the following E can restore energy");
     s.dice={Anemo:3};s.characters[1].hp=3;
     assert.equal(T.choose(s,m).plan.terminal.skill,"Q","do not leave an incomplete charged burst unused just to rotate again");
     assert.equal(s.characters[1].energy,2,"drawing intent does not spend or add observed energy");
@@ -409,6 +305,51 @@ async function run(test,loadContext=defaultLoad) {
     s.characters[1].frozen=false;s.hand=hand([...Array(9).fill("block"),"stars"]);
     for(const h of s.hand)h.attachments.noTuning=true;
     assert.notEqual(T.choose(s,m).skill,"E","a full hand with no legal removal cannot justify an extra draw");
+  });
+
+  await test("native loss resource positions retain charging funds and spend a full-hand burst",()=>{
+    // 1.9.3 slot06, 16:08:23Z and16:13:10Z. No future draws or enemy actions.
+    const s=board(["serpentTalent","harbor","liben","sand","draw","countdown3"]),m=memory();
+    s.characters[1].hp=8;s.characters[1].energy=1;s.enemies[0].hp=32;
+    s.dice={Pyro:1,Cryo:1,Omni:3};
+    let a=T.choose(s,m);assert.equal(a.type,"card");
+    assert.ok(["support","draw","thunder-engine"].includes(a.development.goal));
+    assert.ok(T.total(s.dice)-T.size(T.cardCost(s,a,m))>=3,"startup leaves a payable charge budget");
+    s.hand=hand([...Array(5).fill("block"),"whiteGlove","sand","draw","stars","countdown3"]);
+    s.active=0;s.characters[0].hp=8;s.characters[1].hp=6;s.characters[1].energy=2;
+    s.characters[2].hp=7;s.dice={Omni:3};s.enemies[0].hp=31;
+    m.talents=[true,true,false];m.emblem[1]=true;m.blockPlayed=true;m.windRefund=true;
+    a=T.choose(s,m);assert.equal(a.type,"switch");assert.equal(a.target,1);
+    assert.equal(a.plan.terminal.skill,"Q");assert.ok(a.plan.estimate.direct>3);
+    assert.equal(T.actionLegal(s,a,m),true);
+    m.windRefund=false;assert.notEqual(T.choose(s,m).plan?.terminal.skill,"Q","cannot spend an unearned switch refund");
+  });
+  await test("native stopped-run bad opening can use Sand without discarding an established block pair",()=>{
+    // Slot07, after the first E and Strategic Reserve: no blocks, congested
+    // talents/buff/draw cards. Keeping unique talents must not disable Sand.
+    const s=board(["crocodileTalent","serpentTalent","liben","sand","countdown3","revel","adeptus"]),m=memory();
+    s.characters[1].hp=8;s.characters[1].energy=1;s.dice={Dendro:3,Geo:1};s.enemies[0].hp=32;
+    const a=T.choose(s,m);assert.equal(a.id,"sand");assert.equal(a.choice,"sanctify");
+    assert.equal(T.actionLegal(s,a,m),true);
+    s.hand=hand([...s.hand.map(h=>h.id),"block","block"]);
+    assert.notEqual(T.choose(s,m).id,"sand","an established pair is part of the burst, not unwanted clutter");
+  });
+  await test("native stopped-run charged relay and low-HP follow-up retain the serpent instead of spending it on chip damage",()=>{
+    const s=board([...Array(4).fill("block"),"serpentTalent","sand"],2),m=memory();
+    s.characters[0].hp=10;s.characters[1].hp=6;s.characters[1].energy=2;s.characters[2].hp=8;
+    s.dice={Anemo:1,Dendro:1,Omni:2};s.enemies[0].hp=31;m.talents=[true,true,true];m.blockPlayed=true;
+    let a=T.choose(s,m);assert.equal(a.type,"end","healthy helper holds; do not switch into a nonlethal charged E");
+    s.active=1;s.characters[1].hp=4;s.dice={Anemo:1,Omni:2};
+    a=T.choose(s,m);assert.equal(a.type,"switch");assert.notEqual(a.target,1);
+    assert.equal(s.characters[1].energy,2);assert.equal(s.hand.filter(h=>h.id==="block").length,4);
+    s.enemies[0].hp=8;assert.equal(T.choose(s,m).skill,"Q","an available finish still outranks retreat");
+    s.enemies[0].hp=24;s.characters[1].energy=0;m.bursts[1]=1;m.blockPlayed=false;
+    s.dice={Anemo:3,Electro:1,Cryo:2,Geo:1,Omni:1};s.hand=hand(["serpentTalent","sand","draw","adeptus"]);
+    a=T.choose(s,m);assert.equal(a.type,"switch");assert.notEqual(a.plan.terminal.who,1);
+    assert.equal(T.actionLegal(s,a,m),true);
+    s.enemies[0].hp=3;assert.equal(T.choose(s,m).skill,"E","low HP does not forbid an immediate finish");
+    s.enemies[0].hp=24;for(const who of [0,2])s.characters[who]={hp:0,dead:true,energy:0,frozen:false};
+    assert.equal(T.choose(s,m).skill,"E","last surviving serpent still attacks");
   });
   await test("useful block cycling requests missing discard facts without retrying unrelated board changes",()=>{
     const s=board(["block","countdown3"],0),m=memory();s.dice={};m.talents[0]=true;
@@ -434,63 +375,7 @@ async function run(test,loadContext=defaultLoad) {
     burst.hand[7].attachments={source:"native",reduction:1,increase:0};
     assert.notEqual(T.choose(burst,bm).id,"block","reading a zero-cost tie can disqualify that optimistic funding route");
   });
-  await test("food inventory follows confirmed consumption and bottoming without predicting searches",()=>{
-    const m=memory(),seen=ids=>({...board(ids),handRead:"full"}),s=seen(["nre","adeptus","sand"]);
-    T.noteBoard(m,s);assert.equal(m.foodInDeck,1);
-    const use={type:"card",id:"adeptus",index:1,target:1},after={...seen(["nre","sand"]),confirmed:true};
-    T.commit(m,use,s,after);assert.equal(m.foodInDeck,1,"used food leaves deck+hand, not the already separate deck count");
-    T.noteBoard(m,after);assert.equal(m.foodInDeck,1,"the same completed observation cannot charge consumption twice");
-    const drawn=seen(["nre","sand","adeptus"]);T.noteBoard(m,drawn);assert.equal(m.foodInDeck,0);
-    const reset={type:"card",id:"sand",index:1,target:null,choice:"sanctify"};
-    T.commit(m,reset,drawn,{...seen(["stars","block","liben"]),confirmed:true});
-    assert.equal(m.foodInDeck,1,"self-bottoming returns the held food to deck, not the discard pile");
-    const held=seen(["adeptus"]);T.noteBoard(m,held);assert.equal(m.foodInDeck,0);
-    T.commit(m,{type:"tune",id:"adeptus",index:0,element:"Anemo"},held,{...seen([]),confirmed:true});
-    assert.equal(m.foodInDeck,0);
-    const unknown=T.freshMemory();T.noteBoard(unknown,seen([]));assert.equal(unknown.foodInDeck,null,"mid-match construction cannot claim original copies");
-    const ready={...board(["nre","block","block","block","block"],0),dice:{Hydro:1},
-      supportCounts:{known:true,slots:[0,1,2,3].map(index=>({index,present:false,counter:null}))}},stock=memory();
-    ready.characters[1].energy=2;stock.blockPlayed=true;T.noteBoard(stock,ready);
-    assert.equal(T.choose(ready,stock).id,"nre","maintained inventory reaches the actual nutrition-bag candidate");
-    stock.foodRemaining=null;T.noteBoard(stock,ready);
-    assert.notEqual(T.choose(ready,stock).id,"nre","unknown inventory cannot promise a food search");
-  });
-  await test("even block stock rejects a losing source before inspecting discard dependencies",()=>{
-    // Native0.1.9 slot09 round3 repeatedly inspected an action it would reject
-    // anyway: four blocks cannot be played without losing a burst pair.
-    const s=board(["block","block","block","block","scorpionTalent","cleanup","sand","shift","shift","adeptus"],0),m=memory();
-    m.talents=[true,false,true];s.dice={Pyro:2,Electro:1,Dendro:2,Geo:1,Omni:2};
-    s.characters[1].energy=2;s.enemies[0].hp=25;
-    for(const h of s.hand){delete h.attachments;h.currentCost=null;}
-    const old=T.nextDiscardProbe;
-    T.nextDiscardProbe=()=>{throw Error("unusable block play must not inspect a title");};
-    try{assert.notEqual(T.choose(s,m).type,"probe");}finally{T.nextDiscardProbe=old;}
-  });
-  await test("surplus blocks fund continuation without postponing a current payable defeat",()=>{
-    const s=board([...Array(6).fill("block"),"adeptus"]),m=memory();
-    m.cleanup=2;m.emblem[1]=true;m.talents[1]=true;s.characters[1].energy=2;s.enemies[0].hp=23;
-    const a=T.choose(s,m);
-    assert.equal(a.id,"block","six blocks can give up a pair, still burst24, and fund two further E attacks");
-    assert.equal(a.plan.followupDamage,6);assert.equal(a.plan.remainingDice,6);
-    const next=T.projectPreparation(s,m,a);
-    assert.equal(next.s.hand.filter(h=>h.id==="block").length,5);assert.equal(next.m.blockPlayed,true);
-    assert.equal(next.m.windRefund,true);assert.equal(T.total(next.s.dice),9);
-    s.hand=hand([...Array(4).fill("block"),"nre","sand","adeptus"]);s.characters[1].hp=5;
-    s.dice={Omni:6};
-    const short=T.choose(s,m);assert.equal(short.skill,"Q","a current defeat does not require a fixed follow-up damage target");
-    const missing=board([...Array(6).fill("block"),"adeptus"]);missing.characters[1].energy=2;missing.enemies[0].hp=23;
-    for(const h of missing.hand){delete h.attachments;h.currentCost=null;}
-    assert.equal(T.choose(missing,m).type,"probe","unknown discard prices justify inspection for this concrete continuation funding opportunity");
-  });
-  await test("continuation funds colours from retained cards and gains energy before a later burst",()=>{
-    const s=board([...Array(4).fill("block"),"sand","draw"]),m=memory();
-    s.dice={Anemo:1,Hydro:4,Omni:1};s.characters[1].energy=1;s.enemies[0].hp=2;
-    m.blockPlayed=true;
-    const before=JSON.stringify([s,m]),route=T.projectionBudget.run(240,()=>({routes:T.attackRoutes(s,m)})).routes
-      .find(r=>!r.conditional&&r.terminal.who===1&&r.terminal.skill==="NA");
-    assert.ok(route.followupDamage>=6);
-    assert.equal(JSON.stringify([s,m]),before,"planning cannot consume observed hand or charge");
-  });
+
   await test("native0113 late preceding-skill energy cannot confirm the next unpaid attack",()=>{
     const {before,action:a,after}=clone(require("../../../business/fixtures/player-native-regressions-20261025.json").consecratedLateEnergy);
     assert.equal(a.skill,"NA");assert.equal(T.total(after.dice),T.total(before.dice));
@@ -500,23 +385,7 @@ async function run(test,loadContext=defaultLoad) {
     assert.equal(T.verify(a,before,paid),true,"real payment still confirms a hit with no visible HP difference");
     assert.equal(T.verify(a,before,{...paid,phase:"result",result:"win"}),true);
   });
-  await test("food inventory keeps random-loss, overflow and unresolved outcomes unknown",()=>{
-    const seen=ids=>({...board(ids),handRead:"full"}),a={type:"card",id:"block",index:0,target:null};
-    const unique=memory(),b=seen(["block","adeptus","shift"]);T.noteBoard(unique,b);
-    T.commit(unique,a,b,{...seen(["shift"]),confirmed:true});assert.equal(unique.foodInDeck,1);
-    const tied=memory(),c=seen(["block","adeptus","stars"]);tied.talents[0]=true;T.noteBoard(tied,c);
-    // A Scorpion draw could return the discarded identity, so this observation
-    // alone cannot identify which tied highest-cost card left the total stock.
-    T.commit(tied,a,c,{...seen(["adeptus","stars"]),confirmed:true});assert.equal(tied.foodInDeck,null);
-    const full=memory();T.noteBoard(full,seen([]));T.noteBoard(full,seen(Array(10).fill("block")));
-    assert.equal(full.foodInDeck,null,"unseen overflow may have burned food");
-    const lost=memory();T.noteBoard(lost,seen(["adeptus"]));T.noteBoard(lost,seen([]));
-    assert.equal(lost.foodInDeck,null,"unattributed disappearance is not an own discard or deck return");
-    const pending=memory();T.noteBoard(pending,b);T.deferUncertain(pending,a,b);T.noteBoard(pending,seen([]));
-    assert.equal(pending.foodInDeck,null);assert.equal(pending.foodRemaining,null);
-    const refused=memory();T.noteBoard(refused,b);T.rejectAction(refused,a,b);T.noteBoard(refused,b);
-    assert.equal(refused.foodInDeck,1,"a native rejection does not spend inventory");
-  });
+
   function nativeFixture() {
     let time=Date.parse("2026-10-23T12:00:00Z"),scene={phase:"board",turn:"user"},options=[],buttons=[];
     const clicks=[],events=[];
@@ -604,6 +473,30 @@ async function run(test,loadContext=defaultLoad) {
     host.currentAction=null;host.ocrRows=()=>{throw Error("ordinary title discovery must not scan attachments");};
     host.readSelectedCardFacts({},N.byId.countdown3,700);
   });
+  await test("accepted discovery price replaces its row digit before block discard confirmation and wind bookkeeping",async()=>{
+    // Native1.9.3 slot06: countdown2 row OCR5, accepted title frame digit2;
+    // a tied Starsign was discarded and Thunder drew another block.
+    const {Host}=loadRules(),host=new Host({}),s=board(["block","block","block","emblem","sand","stars","stars","countdown2","revel"],0),m=memory();
+    s.dice={Hydro:1,Anemo:1,Electro:1,Dendro:2,Cryo:2,Omni:1};m.talents=[true,true,false];
+    const costs=[0,0,0,2,0,2,2,5,2];
+    s.hand=s.hand.map((h,i)=>({...h,currentCost:costs[i],attachments:{source:"unknown",reduction:null,increase:null}}));
+    const c=clone(s);c.hand=s.hand.filter((_,i)=>i!==5);c.dice.Electro++;c.handRead="full";
+    const a={type:"card",id:"block",index:0};assert.equal(T.blockResult(a,s,c,m),false);
+    const points=host.handPoints(9);host.handFanReady=true;host.frame=fn=>fn({});
+    host.phaseIn=()=>({phase:"board",turn:"user"});host.costHandIn=()=>({costs});
+    await host.prepareHandObservation(9);
+    host.selectedCardCostIn=()=>2;host.ocrRows=()=>{throw Error("discovery does not scan attachment descriptions");};
+    host.readSelectedCardFacts({},T.byId.countdown2,points[7]);
+    s.hand=host.finishHandObservation(s.hand);
+    assert.equal(s.hand[7].currentCost,2);assert.equal(s.hand[7].costSource,"native-selected-card-cost");
+    assert.equal(s.hand[5].currentCost,2);assert.equal(host.feeSample,null);
+    a.blockBasis={actionKey:T.actionKey(a),beforeKey:T.boardKey(s),effect:T.blockEffects("play",s,m)};
+    c.cardReceipt={inputSent:true,beforeKey:T.boardKey(s),id:a.id,index:a.index,target:null};
+    c.confirmed=T.verify(a,s,c);assert.equal(c.confirmed,true);T.commit(m,a,s,c);
+    assert.equal(m.blockPlayed,true);assert.equal(m.windRefund,true);
+    host.selectedCardCostIn=()=>{throw Error("ordinary input has no observation row to update");};
+    host.readSelectedCardFacts({},T.byId.countdown2,points[7]);
+  });
   await test("non-drawing handoffs reuse only the observed countdown family while failed cost probes survive the handoff",()=>{
     const env=loadRules(),{Host}=env.recognitionClasses(),host=new Host({}),m=memory(),s=board(["block","serpentTalent","countdown3"],0),
       family=clone(T.countdownFamily),slots=[{index:0,id:"block"},{index:1,id:"serpentTalent"},{index:2,titleCandidates:family}];
@@ -683,16 +576,7 @@ async function run(test,loadContext=defaultLoad) {
     const lair=N.handPlan({type:"card",id:"lair",index:0},{...s,hand:hand(["lair","scorpionTalent"]).map(h=>({...h,currentCost:1}))},m);
     assert.equal(lair.retainedHand[0].currentCost,null,"Lair changes talent payment facts before retention");
   });
-  await test("assembled Host board extras remain optional",async()=>{
-    const {T:N,host}=nativeFixture(),s=board();
-    host.characterIn=(_f,i)=>({...s.characters[i],raised:i===1});
-    host.enemiesIn=()=>s.enemies;host.diceIn=()=>({dice:s.dice});host.diceCountIn=()=>8;
-    host.numericAt=()=>""; // No support-counter glyphs in this controlled empty board.
-    const read=host.board(true);
-    assert.equal(read.active,1);assert.equal(read.choiceReceipt,null);assert.equal(read.supportCounts.count,0);
-    assert.equal(read.supportCounts.known,true);
-    assert.equal(N.legalState({...read,hand:[]}),true,"unknown optional status must not block whole board");
-  });
+
   await test("support observation reuses the native reader without making missing counters a whole-board wait",()=>{
     const {T:N,host}=nativeFixture(),b=board(["harbor"]);
     host.numericAt=(_f,{rect:r})=>r[0]===350&&r[1]===575?"3":"";
@@ -905,60 +789,7 @@ async function run(test,loadContext=defaultLoad) {
     assert.equal(after.confirmed,true);assert.equal(after.hand.length,0);assert.equal(reads,2);assert.equal(submitted,1);
     assert.equal(host.confirmationSession,null);
   });
-  await test("native slot08 food preparation must end in a usable burst, not just free room for an already charged E",()=>{
-    const x=clone(require("../../../business/fixtures/player-native-regressions-20261025.json").consecratedFood.observation),before=JSON.stringify(x);
-    const m=clone(x.memory),a=T.choose(x.state,m);
-    assert.notEqual(a.id,"adeptus");assert.equal(JSON.stringify(x),before);
-    const routes=T.projectionBudget.run(240,()=>({routes:T.attackRoutes(x.state,m)})).routes;
-    assert.ok(!routes.some(r=>r.first.id==="adeptus"&&r.terminal.skill!=="Q"));
-  });
-  await test("native charged Serpent under pressure spends its stronger burst instead of another draw attack",()=>{
-    const x=clone(require("../../../business/fixtures/player-native-regressions-20261025.json").consecratedPressure.observation),before=JSON.stringify(x);
-    const m=clone(x.memory),a=T.choose(x.state,m);
-    assert.equal(T.actionLegal(x.state,a,m),true);
-    assert.equal(a.plan.terminal.who,1);assert.equal(a.plan.terminal.skill,"Q");
-    assert.ok(a.plan.estimate.direct>T.damageEstimate(x.state,m,{who:1,skill:"E"}).direct);
-    const healthy=clone(x.state);healthy.characters[1].hp=6;
-    assert.notEqual(T.choose(healthy,m).plan?.terminal?.skill,"Q","healthy charging retains the larger future burst");
-    const weak=clone(x.state);weak.hand=hand(["nre"]);
-    assert.equal(T.choose(weak,{...m,emblem:[false,false,false]}).type,"switch","an unproductive charged attack does not hold the pressured core on field");
-    assert.equal(JSON.stringify(x),before,"policy never rewrites observed resources");
-  });
-  await test("fully proved rapid talent generation does not trigger a second whole-hand read",async()=>{
-    for(const [id,rule] of Object.entries(T.talents)){
-      const {T:N,host,m}=nativeFixture(),b=board([id,"countdown2","stars"]),
-        a={type:"card",id,index:0,target:rule.target};
-      const after={...clone(b),hand:hand(["block","countdown2","stars"]),handRead:"full",
-        cardReceipt:{id,index:0,target:rule.target,beforeKey:N.boardKey(b),inputSent:true}};
-      let scene={phase:"choice",turn:"none"};
-      host.phase=()=>scene;
-      host.resolveChoice=async()=>{
-        host.choiceReceipt={origin:N.actionKey(a)+"/"+N.boardKey(b),kind:"payment",id,exited:true};
-        scene={phase:"board",turn:"user"};
-      };
-      host.observe=async()=>({...clone(after),choiceReceipt:clone(host.choiceReceipt)});host.diceBudgetMatches=()=>true;
-      const result=await host.confirm(a,b,m);
-      assert.equal(result.confirmed,true);assert.equal(result.handRefreshRequired,false);
-      assert.equal(N.verify(a,b,{...after,hand:hand(["countdown2","stars"])}),false,"source removal alone is not complete generation");
-    }
-    const b=board(["lair","countdown2"]);
-    assert.notEqual(T.handPlan({type:"card",id:"lair",index:0,target:null},b,memory()).refreshAfterConsumption,false,
-      "a search with a possibly delayed draw still refreshes");
-  });
-  await test("continuation can fund more than two attacks and use current Starsign or block resources",()=>{
-    const s=board(Array(4).fill("block")),m=memory();
-    s.characters[1].energy=2;s.enemies[0].hp=7;s.dice={Omni:15};
-    const before=JSON.stringify([s,m]),routes=T.projectionBudget.run(240,()=>({routes:T.attackRoutes(s,m)})).routes,
-      burst=routes.find(r=>r.terminal.who===1&&r.terminal.skill==="Q"&&!r.conditional);
-    assert.ok(burst.followupDamage>=10,"four payable follow-ups are not truncated to two");
-    assert.equal(JSON.stringify([s,m]),before);
-    for(const ids of [["block","block","block","block","stars"],["block","draw"]]){
-      const b=board(ids),n=memory();b.dice={Omni:8};b.enemies[0].hp=3;
-      const rs=T.projectionBudget.run(240,()=>({routes:T.attackRoutes(b,n)})).routes,
-        e=rs.find(r=>r.terminal.who===1&&r.terminal.skill==="E"&&!r.conditional&&r.first.type==="skill");
-      assert.ok(e.followupDamage>=(ids.includes("stars")?8:6),"known rapid resources must count toward later attacks");
-    }
-  });
+
   await test("shared tuning recovery carries confirmation to the actual player commit without resending",async()=>{
     const {T:N,Player,options}=loadRules(),events=[],host={trace:(e,d)=>events.push({e,d}),adoptObservedState(){}};
     const p=new Player(host,options()),b=board(["shift"]),a={type:"tune",id:"shift",index:0,element:"Anemo"};

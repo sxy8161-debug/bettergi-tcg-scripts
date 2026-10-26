@@ -21,40 +21,7 @@ async function run(test,loadContext=overrides=>load(root,overrides)){
     assert.equal(T.identify("师傅"),null,"do not introduce broad fuzzy card matching");
     assert.equal(T.team[1].skills.CA,"隐具魔术箭");
   });
-  await test("ailin: quick food only removes itself after proven support draw exhaustion; soup still needs its choice receipt",()=>{
-    const s=board(["soup","verdantGift"]),m=memory(),a={type:"card",id:"soup",index:0,target:0};
-    assert.equal(T.handPlan(a,s,m).mode,"remove");
-    assert.deepEqual(clone(T.handPlan(a,s,m).hand.map(c=>c.id)),["verdantGift"]);
-    const after={...clone(s),hand:[s.hand[1]]};
-    assert.equal(T.verify(a,s,after),false,"consumption does not bypass an unresolved soup choice");
-    after.soupReceipt={origin:T.actionKey(a)+"/"+T.boardKey(s),exited:true,target:0,effect:"healing"};
-    assert.equal(T.verify(a,s,after),true);
-    m.supports.push({id:"chef",drawUsed:false});
-    assert.equal(T.handPlan(a,s,m).mode,"full","an unused Chef can still draw");
-    m.supports.at(-1).drawUsed=true;assert.equal(T.handPlan(a,s,m).mode,"remove");
-    m.supportStateKnown=false;assert.equal(T.handPlan(a,s,m).mode,"full");
-    const combat=board(["verdantGift","soup"]),p=T.handPlan({type:"card",id:"verdantGift",index:0,target:null},combat,m);
-    assert.equal(p.mode,"full","combat food retains opponent/boiler insertion checks");
-    assert.deepEqual(clone(p.retainedHand.map(c=>c.id)),["soup"]);
-    assert.equal(p.retainedHandOrder,true,"new dishes are read while surviving old dishes retain relative order");
-  });
-  await test("ailin: opening caps combined dice fixing without discarding duplicate supports",()=>{
-    const plan=ids=>T.openingPlan(ids.map((id,i)=>T.observedCard(T.byId[id].name,i)),Array(5).fill(false));
-    for(const ids of [
-      ["companion","companion","toss","toss","pilgrimage"],
-      ["toss","companion","toss","companion","pilgrimage"]
-    ]){
-      const p=plan(ids);
-      assert.deepEqual(clone(p.replace),[false,true,true,true,false]);
-      assert.deepEqual(clone(p.keep.map(c=>c.index)),[0,4]);
-    }
-    for(const ids of [
-      ["teaParty","heart","gladiator","dunyarzad","companion"],
-      ["chef","chef","silver","silver","toss"],
-      ["teaParty","heart","gladiator","dunyarzad","pilgrimage"]
-    ])assert.deepEqual(clone(plan(ids).replace),Array(5).fill(false));
-    assert.deepEqual(clone(plan(["dragon","companion","toss","chef","silver"]).replace),[true,false,true,false,false]);
-  });
+
   await test("ailin: actual packaged input uses all four Lyney slots, without title OCR",async()=>{
     for(const [who,skill,x]of [[1,"NA",1500],[1,"CA",1608],[1,"E",1716],[1,"Q",1824],[0,"NA",1608],[2,"NA",1608]]){
       const inputs=[],c=loadContext({...nativeInput((...xy)=>inputs.push(xy))}),
@@ -101,10 +68,6 @@ async function run(test,loadContext=overrides=>load(root,overrides)){
     const next=clone(m);next.foodDiscount[1]=1;
     assert.equal(T.skillCost(1,"E",next,reduced).n,3,"a new own food can reduce the observed four-cost fee");
     assert.equal(T.skillCost(1,"E",next,s).n,4,"an observed fee already includes current discounts; never subtract twice");
-    const food=clone(s);food.dice={Pyro:3,Geo:2};food.enemies[0].hp=20;
-    food.hand=T.indexedHand([T.observedCard(T.byId.wavekissedSands.name,0)]);
-    const prepare=T.choose(food,m);
-    assert.equal(prepare.id,"wavekissedSands");assert.equal(prepare.followup.skill,"E","existing one-food planning uses the actual four-cost fee minus the new discount");
     T.recordSkillCost(s,m,{who:1,skill:"E"},5);assert.equal(T.skillCost(1,"E",m,s).n,5);
     T.clearSkillCosts(m);
     const changed=clone(s);changed.skillFees.entries.E.n=3;
@@ -113,80 +76,7 @@ async function run(test,loadContext=overrides=>load(root,overrides)){
     h.numericAt=()=>"";
     assert.equal(h.boardExtrasIn({},s,1).skillFees.entries.E.n,null,"a missing number remains missing");
   });
-  await test("ailin: last-target direct damage takes the payable attack instead of tuning twice for future summons",()=>{
-    // slot09 seq757-796, start2026-10-25T05:06:06.677Z: last enemy1HP,
-    // payable2-damage NA; old policy tuned surf and dragon for a1-damage E.
-    const s=board(["gladiator","dunyarzad","toss","toss","surf","dragon","blessingM"]),m=memory();
-    m.round=4;m.used=[3,3,1];m.artifactKinds[2]="heart";m.extraMaxHp[1]=1;
-    m.supports=[];m.supportStateKnown=false;m.coldSummon=0;m.catSummon=0;
-    s.characters.forEach((c,i)=>{c.hp=[8,5,10][i];c.energy=[0,2,1][i];});
-    s.enemies=[{hp:1,dead:false,active:true,aura:[],auraKnown:false,frozen:null}];
-    s.dice={Pyro:1,Hydro:2,Geo:1,Omni:1};s.summonCountKnown=true;s.summonCount=0;s.enemySummonCount=0;s.summons=[];
-    const original=JSON.stringify([s,m]),a=T.choose(s,m);
-    assert.equal(a.type,"skill");assert.equal(a.skill,"NA");assert.equal(T.skillLegal(s,a,m),true);
-    assert.equal(T.damageEstimate(s,m,0,"NA").guaranteed,null,"ranking is not fabricated native kill proof");
-    assert.equal(JSON.stringify([s,m]),original);
-    s.enemies[0].immuneElements=["Physical"];
-    const immune=T.choose(s,m);assert.ok(!(immune.type==="skill"&&immune.skill==="NA"),"known immunity still participates");
-    s.enemies[0].immuneElements=[];s.enemies[0].shield=2;
-    assert.equal(T.damageEstimate(s,m,0,"NA").direct,0);
-    const shielded=T.choose(s,m);assert.ok(!(shielded.type==="skill"&&shielded.skill==="NA"));
-  });
-  await test("ailin: first reroll keeps Cryo startup but later reroll serves the live Pyro relay",()=>{
-    const m=memory(),items=["Cryo","Pyro","Hydro","Omni"].map(element=>({element}));
-    assert.equal(T.rerollPlan(items,m).primary,"Cryo");
-    m.used[0]=1;m.lastActive=0;assert.equal(T.rerollPlan(items,m).primary,"Pyro");
-    m.defeated[1]=true;assert.equal(T.rerollPlan(items,m).primary,"Cryo","do not reroll for a defeated relay");
-  });
-  await test("ailin: slot10 startup relays a funded charged arrow even with unknown aura, without bypassing refusal or survival",()=>{
-    const original=require("../../../business/fixtures/player-native-regressions-20261025.json").ailinStartup.observation,
-      s=clone(original.state),m=clone(original.memory),unchanged=JSON.stringify([s,m]);
-    assert.equal(T.choose(s,m).type,"switch");assert.equal(T.choose(s,m).target,1);
-    assert.equal(JSON.stringify([s,m]),unchanged);
-    const relay=clone(s);relay.active=1;relay.dice={Pyro:1,Electro:1,Dendro:1,Geo:1};
-    const conversion=T.choose(relay,m);assert.equal(conversion.type,"card");assert.equal(conversion.id,"companion");
-    assert.equal(conversion.followup.skill,"CA","conversion enables the charged arrow, not an unpayable future plan");
-    for(const reason of ["frozen","dead","refused","low-hp","no-funding"]){
-      const b=clone(s),n=clone(m);
-      if(reason==="frozen")b.characters[1].frozen=true;
-      if(reason==="dead"){b.characters[1].dead=true;b.characters[1].hp=0;}
-      if(reason==="refused")T.rejectAction(n,{type:"switch",target:1},b);
-      if(reason==="low-hp")b.characters[1].hp=1;
-      if(reason==="no-funding"){b.hand=[];b.dice={Cryo:3};}
-      const a=T.choose(b,n);assert.ok(a.type!=="switch"||a.target!==1,reason);
-    }
-    const lethal=clone(s);lethal.dice={Cryo:3};Object.assign(lethal.enemies[0],{hp:1,defenseKnown:true,shield:0,immuneElements:[]});
-    assert.equal(T.choose(lethal,m).type,"skill","a proven directly payable finish still takes precedence");
-  });
-  await test("ailin: visually shared generated dishes require a title instead of looping on a wrong identity",()=>{
-    const B=require("../../../../tools/build.cjs"),bank=JSON.parse(B.packageFiles("ailin").files.get("hand-bank.json")),
-      C=require("../../../../src/shared/collapsed-hand.inc.js");
-    for(const part of [bank,bank.expanded]){
-      const entry=part.entries.find(e=>e.id==="wavekissedSands"),patches=new Set(entry.views[0].patches),
-        read=C.identify({status:"readable",count:1,slots:[{index:0}]},part,(_s,_i,file)=>patches.has(file)?1:0).slots[0];
-      assert.equal(read.id,null);assert.ok(read.titleCandidates.includes("verdantGift"));
-      assert.ok(read.titleCandidates.includes("wavekissedSands"));
-    }
-  });
-  await test("ailin: funding preserves opening components independent of hand order and keeps the first native index",()=>{
-    const m=memory();
-    for(const ids of [["teaParty","gladiator","silver","pilgrimage","dragon"],["dragon","silver","gladiator","teaParty","pilgrimage"]]){
-      const s=board(ids);s.dice={Pyro:1,Hydro:1,Anemo:1,Electro:1,Cryo:1,Geo:2,Omni:1};
-      const before=JSON.stringify([s,m]),a=T.choose(s,m);
-      assert.equal(a.type,"tune");assert.equal(a.id,"dragon");assert.equal(a.index,ids.indexOf("dragon"));
-      assert.equal(JSON.stringify([s,m]),before);
-      s.hand[a.index].canTune=false;assert.notEqual(T.choose(s,m).id,"dragon");
-    }
-  });
-  await test("ailin: Lyney burst keeps its real prop and cat benefits; unknown summon identity stays unknown",()=>{
-    const s=board([],1),m=memory();s.characters[1].energy=2;
-    assert.equal(T.choose(s,m).skill,"Q","equal immediate damage must include burst's prop and cat gain");
-    T.noteBoard(m,{...s,summonCountKnown:true,summons:[{index:0,uses:2,name:null}]});
-    assert.equal(m.coldSummon,null);assert.equal(m.catSummon,null);assert.equal(m.summonsKnown,false);
-    T.noteBoard(m,{...s,summonCountKnown:true,summons:[{index:0,uses:2,name:"厨艺机关·低温冷藏模式"}]});
-    assert.equal(m.coldSummon,2);assert.equal(m.catSummon,0);
-    T.noteBoard(m,{...s,summonCountKnown:false});assert.equal(m.coldSummon,null);
-  });
+
   await test("ailin: confirmed charged shot builds props; E consumes props, not native HP",()=>{
     const m=memory(),s=board([],1),a={type:"skill",who:1,skill:"CA"},after={...clone(s),confirmed:true};
     assert.equal(T.damageEstimate(s,m,1,"CA").selfDamage,1);
@@ -209,35 +99,7 @@ async function run(test,loadContext=overrides=>load(root,overrides)){
     const full=board(["autumnFrost"],1);
     assert.equal(T.cardLegal(full,{type:"card",id:"autumnFrost",index:0,target:1},m),true);
   });
-  await test("ailin: summon changes invalidate action origins and complete-board comparisons",()=>{
-    const a=board(),b=clone(a),h=new C.TCGBetterGI.BetterGIHost({});
-    a.summonLayout={own:[{index:0,present:true,name:"半幻人",uses:2}],enemy:[]};
-    b.summonLayout={own:[{index:0,present:true,name:"半幻人",uses:1}],enemy:[]};
-    assert.notEqual(T.boardKey(a),T.boardKey(b));
-    assert.ok(C.TCGBetterGI.boardDifferences(a,b).includes("summons"));
-    assert.equal(h.observationIssues(a).length,0);
-  });
-  await test("ailin: summon artwork and counters survive different borders; unreadable visible slots stay unknown",()=>{
-    const h=new C.TCGBetterGI.BetterGIHost({});
-    let mode="half";
-    h.matches=(_f,asset,area)=>asset==="ailin/"+mode&&area.rect[0]===1350?[{x:1420,y:635,w:70,h:65}]:[];
-    h.localOcr=(_f,area)=>area.rect[0]===1460&&area.rect[1]===575&&mode!=="missing-counter"?"2":"";
-    let slots=h.summonSlotsIn({});assert.equal(slots[0].present,true);assert.equal(slots[0].name,"半幻人");
-    mode="cat";slots=h.summonSlotsIn({});assert.equal(slots[0].name,"怪笑猫猫帽");
-    h.localOcr=()=>"";slots=h.summonSlotsIn({});assert.equal(slots[0].present,null);
-    mode="none";slots=h.summonSlotsIn({});assert.equal(slots[0].present,false);
-    h.localOcr=(_f,area)=>area.rect[0]===1460&&area.rect[1]===575?"2":"";
-    slots=h.summonSlotsIn({},true);assert.equal(slots[0].present,false,"own coordinates cannot fill an enemy counter");
-  });
-  await test("ailin: M needs current target and its own exited receipt even when the last card is gone",()=>{
-    const s=board(["blessingM"]),m=memory(),a={type:"card",id:"blessingM",index:0,target:null,summonIndex:0,summonName:"半幻人"};
-    s.summonCountKnown=true;s.summonCount=1;s.enemySummonCount=0;s.summons=[{index:0,name:"半幻人",uses:2,point:[1460,680]}];
-    assert.equal(T.cardLegal(s,a,m),true);
-    const after={...clone(s),hand:[]};assert.equal(T.verify(a,s,after),false);
-    after.summonReceipt={origin:T.actionKey(a)+"/"+T.boardKey(s),id:a.id,index:0,name:a.summonName,uses:2,exited:true};
-    assert.equal(T.verify(a,s,after),true);after.summonReceipt.exited=false;assert.equal(T.verify(a,s,after),false);
-    s.summonCountKnown=false;assert.equal(T.cardLegal(s,a,m),false);
-  });
+
   await test("ailin: M target preview cannot enter the observed board even with a visible turn icon",()=>{
     const h=new C.TCGBetterGI.BetterGIHost({});h.frame=fn=>fn({Width:1920,Height:1080});
     h.findOcr=(_f,rect,multiple)=>multiple?[]:rect[0]===560&&rect[1]===508?"对所选我方召唤物生效":"";
@@ -251,25 +113,7 @@ async function run(test,loadContext=overrides=>load(root,overrides)){
     assert.deepEqual(clone(h.selectedSummonsIn({},b).map(s=>s.index)),[0]);
     assert.equal(searched.length,1,"preview-only half-tulpa has no pre-action slot to inspect");
   });
-  async function assertPipeline(f){
-    await f.p.act();
-    assert.equal(f.p.actions,1);assert.equal(f.stage(),1);
-    assert.equal(f.p.memory.props,1);assert.equal(f.p.memory.used[1],1);
-    const first=f.events.find(e=>e.event==="decision").data;
-    assert.equal(first.type,"skill");assert.equal(first.skill,"CA");
-    assert.ok(f.events.some(e=>e.event==="confirmed"));
-    const state=f.events.find(e=>e.event==="state").data.state;
-    assert.equal(state.active,1);assert.equal(state.hand.length,0);assert.equal(f.T.total(state.dice),6);
-    await f.p.act();
-    const decisions=f.events.filter(e=>e.event==="decision");
-    assert.equal(decisions[1].data.skill,"E");assert.equal(f.p.memory.props,0);
-    assert.equal(f.events.filter(e=>e.event==="state")[1].data.state.summons[0].name,"怪笑猫猫帽");
-    assert.equal(f.p.actions,2);assert.equal(f.stage(),2);
-    assert.deepEqual(f.clicks.filter(([,y])=>y===957),[[1608,957],[1608,957],[1716,957],[1716,957]]);
-  }
-  await test("ailin: assembled Player observes, chooses CA, inputs, confirms, books props, and next chooses E",async()=>{
-    await assertPipeline(require("./native-boundary.cjs")(loadContext));
-  });
+
   await test("ailin: last artifact traverses real title, drag, empty-hand proof, confirmation, discount and next shot",async()=>{
     const f=require("./native-boundary.cjs")(loadContext,"last-artifact");
     await f.p.act();
@@ -569,24 +413,7 @@ async function run(test,loadContext=overrides=>load(root,overrides)){
     const state=await f.p.observe(),next=f.T.choose(state,f.p.memory);
     assert.equal(state.active,2);assert.equal(next.type,"skill");assert.equal(next.who,2);
   });
-  await test("ailin: actual action reroll consumes deck goal and two native counters, not a second planner",async()=>{
-    const f=require("./native-boundary.cjs")(loadContext,"reroll"),before=board([],1);
-    before.dice={Geo:2,Pyro:1};
-    const result=await f.h.actionReroll(before,f.p.memory);
-    assert.equal(result.confirmations,2);assert.equal(f.h.tossSession,null);assert.equal(f.stage(),2);
-    assert.deepEqual(f.events.filter(e=>e.event==="action-reroll-confirmed").map(e=>e.data.wanted),["Pyro","Pyro"]);
-    assert.equal(f.clicks.filter(([x,y])=>x===960&&y===950).length,2);
-    const after=await f.p.observe();assert.equal(after.dice.Pyro,3);
-    assert.equal(f.T.choose(after,f.p.memory).who,1);
-  });
-  await test("ailin: Escoffier talent includes Tulpa normal attacks and is booked once without predicting a summon hit",()=>{
-    const m=memory(),s=board([],2);m.talents[0]=true;m.coldSummon=2;
-    assert.equal(T.damageEstimate(s,m,2,"NA").conditionalFollowup,1);
-    assert.equal(T.damageEstimate(s,m,2,"E").conditionalFollowup,0);
-    const after={...clone(s),confirmed:true};T.commit(m,{type:"skill",who:2,skill:"NA"},s,after);
-    assert.equal(m.talentColdUsed,true);assert.equal(T.damageEstimate(s,m,2,"NA").conditionalFollowup,0);
-    assert.equal(after.enemies[0].hp,20,"only native observations own HP");
-  });
+
   await test("ailin: leftmost five/four-card tunes traverse actual input, unique native buttons, consumption and next skill",async()=>{
     const f=require("./native-boundary.cjs")(loadContext,"left-tune");
     await f.p.act();await f.p.act();

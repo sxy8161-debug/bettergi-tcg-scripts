@@ -537,7 +537,12 @@
       return {...retained,refreshAfterConsumption:c.id==="lair"||c.id==="nre",retainedHand:removed.hand.map(h=>
         (c.type==="talent"||c.id==="lair")&&byId[h.id]?.type==="talent"?
           {...h,currentCost:null,costSource:"unknown"}:h)};
-    if (["draw","legend"].includes(c.type) || c.id==="block")
+    // Ordinary draws add cards but do not remove the rest of the old hand.
+    // Keep that identity evidence; the shared reader still requires the
+    // complete current family count, so a newly drawn variant is not guessed.
+    if (c.type==="draw")
+      return {mode:"full",refreshAfterConsumption:true,retainedHand:removed.hand};
+    if (c.type==="legend" || c.id==="block")
       return {mode:"full",refreshAfterConsumption:true};
     if (c.type==="food" && (!m.supportStateKnown || m.supports.some(x=>x.id==="nre" && x.foodDrawUsed!==true)))
       return {mode:"full",refreshAfterConsumption:true};

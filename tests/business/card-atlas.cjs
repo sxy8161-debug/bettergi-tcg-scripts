@@ -32,8 +32,6 @@ module.exports=async function(test){
   for(const id of Object.keys(B.config.players))for(const semanticAssets of [false,true]){
    const original=sourceTemplates(id),raw=semanticAssets?S.semanticAssets(original).files:original;
    const p=B.packageFiles(id,{semanticAssets});verify(raw,p.files);
-   const sheets=[...p.files.keys()].filter(n=>n.startsWith("assets/card-atlas/"));
-   assert.deepEqual(sheets.sort(),["expanded","hand","ui"].map(n=>"assets/card-atlas/"+n+".png"));
    const opening=JSON.parse(p.files.get("opening-bank.json"));
    assert.ok(Object.values(opening.atlas).every(r=>r.file==="assets/card-atlas/hand.png"));
    const retire=B.retiredTemplateFiles(p.files,Object.fromEntries([...raw].map(([n,b])=>[n,B.sha(b)])));

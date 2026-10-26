@@ -340,6 +340,13 @@
             "assets/hand/流火焦灼-v01-p01.png",
             "assets/hand/流火焦灼-v01-p02.png"
           ]
+        },
+        {
+          "name": "runtime-8f7cc078e5",
+          "patches": [
+            "assets/hand/流火焦灼-v02-p01.png",
+            "assets/hand/流火焦灼-v02-p02.png"
+          ]
         }
       ]
     }
@@ -521,6 +528,13 @@
             "patches": [
               "assets/expanded/流火焦灼-v01-p01.png",
               "assets/expanded/流火焦灼-v01-p02.png"
+            ]
+          },
+          {
+            "name": "runtime-717c402f59",
+            "patches": [
+              "assets/expanded/流火焦灼-v02-p01.png",
+              "assets/expanded/流火焦灼-v02-p02.png"
             ]
           }
         ]

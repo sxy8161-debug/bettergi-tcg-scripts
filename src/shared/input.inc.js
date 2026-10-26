@@ -382,5 +382,8 @@ if (!Number.isInteger(action.target) || action.target < 0 || action.target > 2 |
 
 // @fragment bgi-host.endRoundInputBody
 await this.clickButton("回合结束", this.roi("viewport", [0, 0, 384, 1080]));
+      // Official RoundEnd waits 1000ms for the popup animation. clickButton
+      // already waited 200ms; confirm inside the native five-second window.
+      await sleep(800);
       if (this.phase().turn === "user") await this.clickButton("回合结束", this.roi("viewport", [0, 0, 384, 1080]));
 // @endfragment bgi-host.endRoundInputBody

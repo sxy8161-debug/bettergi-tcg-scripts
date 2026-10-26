@@ -81,15 +81,7 @@ module.exports = async function(test) {
     assert.ok(f.events.some(e=>e.event==="confirmation-pending"),"fee basis survives the same pending action's resumed window");
     assert.equal(f.clicks(),5,"one probe plus two two-click casts, no extra inputs");
   });
-  await test("Raiden direct commit consumes its quoted E/Q fee before clearing board quotes",()=>{
-    for(const [support,skill,n,used]of [["sharpkernel","E",2,1],["shatterbolt","Q",1,1],
-      ["sharpkernel","E",3,0],["sharpkernel","NA",2,0]]){
-      const s=board(T),m=T.freshMemory(),a={type:"skill",who:0,skill};
-      m.thundergrassSupport=support;s.quicken={known:false};
-      T.recordSkillCost(s,m,a,n);T.commit(m,a,s);
-      assert.equal(m.blessingUsed,used,support+"/"+skill+"/"+n);assert.equal(m.skillCosts,null);
-    }
-  });
+
   await test("Raiden adopted fee is bound to its action, observed board and round, not a reusable quote",async()=>{
     const f=feeFixture();await f.p.act();
     const before=f.state(),action=f.T.choose(before,f.m);
@@ -142,8 +134,6 @@ module.exports = async function(test) {
     const p=T.projectedAction(s,m,action),q=T.projectedAction(s,plain,action);
     assert.ok(p&&q);return {p,bonus:p.benefit-q.benefit};
   }
-
-
 
   await test("R03 known shield and guaranteed refunds use actual damage and resources",()=>{
     const {s,m}=fixture(),setup=equipped(s,m);

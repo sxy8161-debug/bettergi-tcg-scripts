@@ -187,6 +187,13 @@
             "assets/hand/亡水溢流-v01-p01.png",
             "assets/hand/亡水溢流-v01-p02.png"
           ]
+        },
+        {
+          "name": "runtime-2e6ca42dfa",
+          "patches": [
+            "assets/hand/亡水溢流-v02-p01.png",
+            "assets/hand/亡水溢流-v02-p02.png"
+          ]
         }
       ]
     },
@@ -290,6 +297,13 @@
           "patches": [
             "assets/hand/亡风啸卷-v01-p01.png",
             "assets/hand/亡风啸卷-v01-p02.png"
+          ]
+        },
+        {
+          "name": "runtime-2e6ca42dfa",
+          "patches": [
+            "assets/hand/亡风啸卷-v02-p01.png",
+            "assets/hand/亡风啸卷-v02-p02.png"
           ]
         }
       ]

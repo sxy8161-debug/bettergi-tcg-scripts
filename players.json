@@ -1,5 +1,5 @@
 {
-  "sharedRevision": "1.9.0",
+  "sharedRevision": "1.9.7",
   "players": {
     "raiden": {
       "title": "雷神柯莱刻晴",
@@ -80,7 +80,7 @@
       ]
     },
     "consecrated": {
-      "title": "圣骸兽（蝎蛇鳄）",
+      "title": "圣骸兽（特化对单）",
       "packageId": "ConsecratedBeastsPlayer",
       "publicSuite": true,
       "source": "repo/js/ConsecratedBeastsPlayer",

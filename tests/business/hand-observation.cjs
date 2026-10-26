@@ -2,18 +2,66 @@
 const assert=require("node:assert/strict"),{load,board}=require("./runtime.cjs");
 const copy=x=>JSON.parse(JSON.stringify(x));
 module.exports=async function(test){
-  await test("hand continuity: support entry without a draw consumes only its source; a live draw trigger stays explicit",()=>{
-    const {T}=load("ailin"),s=board(T,["wavekissedSands","chef"]),m=T.freshMemory(),
-      a={type:"card",id:"chef",index:1,target:null};
-    const plain=T.handPlan(a,s,m);
-    assert.equal(plain.mode,"remove");
-    assert.deepEqual(copy(plain.hand.map(h=>h.id)),["wavekissedSands"]);
-    m.supports.push({id:"dunyarzad",drawUsed:false});
-    const draw=T.handPlan(a,s,m);
-    assert.equal(draw.mode,"full");assert.equal(draw.refreshAfterConsumption,true);
-    m.supports[1].drawUsed=true;
-    assert.equal(T.handPlan(a,s,m).mode,"remove");
+  await test("hand continuity: ordinary draw retains countdown identity across complementary current views",()=>{
+    const {T,Host}=load("consecrated"),h=new Host({}),m=T.freshMemory({newGame:true});
+    h.trace=()=>{};
+    const before=board(T,["serpentTalent","serpentTalent","emblem","liben","sand","draw","countdown3"]),
+      action={type:"card",id:"draw",index:5},plan=T.handPlan(action,before,m),
+      ids=["block","crocodileTalent","serpentTalent","serpentTalent","emblem","liben","sand",null],
+      family=copy(T.countdownFamily),makeCards=()=>ids.map((id,i)=>id?T.observedCard(T.byId[id].name,i):null),
+      slots=ids.map((id,index)=>index===7?{index,titleCandidates:family}:{index,id:index===6?null:id});
+    assert.deepEqual(copy(plan.retainedHand.map(c=>c.id)),before.hand.filter((_,i)=>i!==5).map(c=>c.id));
+    assert.equal(plan.retainedVariantFamilies,undefined,"draw may introduce another countdown");
+    const cards=makeCards();
+    h.fillHandVariants(cards,slots,plan.retainedHand,plan.retainedVariantFamilies);
+    assert.equal(cards[7].id,"countdown3","Sand already read folded must not force another countdown title");
+    const missing=makeCards();missing[6]=null;
+    h.fillHandVariants(missing,slots,plan.retainedHand);
+    assert.equal(missing[7],null,"a genuinely unknown slot can hide another family member");
+    const added=makeCards();added[6]=null;
+    h.fillHandVariants(added,slots.map(s=>s.index===6?{index:6,titleCandidates:family}:s),plan.retainedHand);
+    assert.equal(added[6],null);assert.equal(added[7],null,"newly drawn family members still need their stage");
+    const spent=board(T,["countdown3","draw"]),spentPlan=T.handPlan({type:"card",id:"countdown3",index:0},spent,m),
+      fresh=[null];
+    h.fillHandVariants(fresh,[{index:0,titleCandidates:family}],spentPlan.retainedHand);
+    assert.equal(fresh[0],null,"consumed countdown cannot name a newly drawn one");
   });
+  await test("retained ordered hand uses native count through confirmation and late refresh; new or unknown cards still read",async()=>{
+    const {T,Host}=load("ailin"),h=new Host({}),s=board(T,["autumnFrost","teaParty","soup"]),
+      m=T.freshMemory(),a={type:"switch",target:1},plan=T.handPlan(a,s,m),events=[];
+    h.trace=(event,data)=>events.push({event,data});h.frame=fn=>fn({});
+    h.phaseIn=()=>({phase:"board",turn:"user"});h.handCountIn=()=>3;
+    h.readHand=async()=>{throw Error("unchanged retained hand must not expand or read titles");};
+    h.collapsedIn=()=>{throw Error("same ordered cards need no whole-row identity matching");};
+    assert.deepEqual(copy((await h.observedHand(plan)).map(c=>c.id)),s.hand.map(c=>c.id));
+    h.handContinuation=plan;h.handCache=null;
+    assert.deepEqual(copy((await h.observedHand()).map(c=>c.id)),s.hand.map(c=>c.id),"post-confirmation refresh keeps the same action guarantee");
+    h.handCountIn=()=>null;h.collapsedLayoutIn=()=>({status:"readable",count:3});
+    assert.equal((await h.observedHand(plan)).length,3,"a complete folded layout proves count without classifying identities");
+    let reads=0;h.readHand=async()=>{reads++;return [...s.hand,T.observedCard(T.byId.draw.name,3)];};
+    h.handCountIn=()=>4;assert.equal((await h.observedHand(plan)).length,4);assert.equal(reads,1);
+    h.handCountIn=()=>null;h.collapsedLayoutIn=()=>({status:"unreadable"});
+    await h.observedHand(plan);assert.equal(reads,2,"unknown count cannot declare the old list complete");
+    await h.observedHand({...plan,retainedHandOrder:false});assert.equal(reads,3,"unproven order still reads the actual row");
+    h.handCountIn=()=>3;h.handFanReady=true;h.handNeedsReset=true;
+    let resets=0;h.reset=async()=>{resets++;h.handFanReady=h.handNeedsReset=false;};
+    await h.observedHand(plan);assert.equal(resets,1,"retaining identities still closes a genuinely raised fan");
+    h.phaseIn=()=>({phase:"board",turn:"enemy"});
+    await assert.rejects(()=>h.observedHand(plan),e=>e.code==="TCG_OBSERVATION_INTERRUPTED");
+  });
+  await test("hand price: selected green digits recover at3x without reopening the card",()=>{
+    const {Host}=load("moonbloom"),h=new Host({}),marker={x:625,y:787,w:10,h:30};
+    h.handCostMarkersIn=()=>[marker];h.trace=()=>{};
+    h.clickAt=()=>{throw Error("price recovery cannot send input");};
+    for(const [first,second,expected] of [["","1",1],["0","",0],["2","1",2],["","",null],["","1费",null]]){
+      h.numericAt=(_f,area,scale)=>{
+        assert.deepEqual(copy(area.rect),[637,782,36,42]);
+        return scale===4?first:second;
+      };
+      assert.equal(h.selectedCardCostIn({},716),expected);
+    }
+  });
+
   await test("hand continuity: confirmed retained identities reach the next late-insertion observation, not a new round",async()=>{
     const f=load("consecrated"),h=new f.Host({}),p=new f.Player(h,{maxMinutes:15}),
       s=board(f.T,["block","countdown3"]),a={type:"skill",who:1,skill:"E"};
@@ -50,27 +98,7 @@ module.exports=async function(test){
     await h.execute(a,s,p.memory);
     assert.equal(h.handContinuation,null,"a new submitted action replaces the old retention contract");
   });
-  await test("hand input: current artwork replaces redundant title clicks, but conflicting slots and required details do not",async()=>{
-    for(const scene of ["known","unknown","wrong","moon-details","ailin-tune"]){
-      const id=scene==="moon-details"?"moonbloom":scene==="ailin-tune"?"ailin":"mozailu",
-        f=load(id),h=new f.Host({}),s=board(f.T,["draw","shift"].filter(x=>f.T.byId[x])),
-        a={type:scene==="ailin-tune"?"tune":"card",id:"draw",index:0,target:null};
-      let titles=0,drags=0;
-      h.frame=fn=>fn({});h.phase=h.phaseIn=()=>({phase:"board",turn:"user"});h.trace=()=>{};
-      h.expandedHandIn=()=>({slots:[{index:0,id:scene==="unknown"?null:scene==="wrong"?"companion":"draw"}]});
-      h.titleAt=async()=>{titles++;return f.T.byId.draw.name;};h.reset=async()=>{};h.drag=async()=>{drags++;};
-      if(scene==="wrong")await assert.rejects(()=>h.inspectHandCard(a,1120,s),e=>e.code==="TCG_HAND_REFRESH");
-      else await h.inspectHandCard(a,1120,s);
-      assert.equal(titles,["known","wrong","ailin-tune"].includes(scene)?0:1,scene);
-      assert.equal(drags,0);
-    }
-  });
-  await test("hand input: a stable wrong title exits to refresh instead of reading the same mismatch ten times",async()=>{
-    const f=fixture();let reads=0;
-    f.h.titleIn=()=>{reads++;return f.T.byId.draw.name;};
-    assert.equal(await f.h.titleAt(1120,945,false,false,"card","shift",true),f.T.byId.draw.name);
-    assert.equal(reads,2);
-  });
+
   await test("hand input: production artwork classification binds the drag to its current slot and submits once",async()=>{
     const {packageFiles}=require("../../tools/build.cjs"),bank=JSON.parse(packageFiles("mozailu").files.get("hand-bank.json")),
       entry=bank.expanded.entries.find(e=>e.id==="draw"),
@@ -129,86 +157,36 @@ module.exports=async function(test){
     bank.entries[1].titleCandidates=["b","c"];
     assert.equal(read({a:.99,b:.98,o:.3}).titleCandidates,undefined,"overlapping but unequal families remain ambiguous");
   });
-  await test("hand artwork: missing first fan layout gets one read-only follow-up, never an input or unbounded retry",async()=>{
-    for(const scenario of ["ready","moving","missing","input-change","phase-change"]){
-      const {Host}=load("ailin"),h=new Host({}),cards=[null],scan={};let reads=0;
-      h.trace=()=>{};h.frame=fn=>fn({});h.clickAt=h.moveTo=()=>{throw Error("Artwork follow-up must be read-only");};
-      h.expandedHandIn=()=>{
-        reads++;
-        if(scenario==="input-change"){h.inputRevision++;return null;}
-        if(scenario==="phase-change"&&reads>1)throw Object.assign(Error("choice"),{code:"TCG_OBSERVATION_INTERRUPTED"});
-        return scenario==="ready"||scenario==="moving"&&reads>1?{slots:[{index:0,id:"soup"}]}:null;
-      };
-      if(["input-change","phase-change"].includes(scenario)){
-        await assert.rejects(()=>h.fillHandArtwork(cards,scan),e=>["TCG_HAND_RETRY","TCG_OBSERVATION_INTERRUPTED"].includes(e.code));
-        assert.equal(cards[0],null);
-      }else{
-        await h.fillHandArtwork(cards,scan);
-        assert.equal(cards[0]?.id??null,scenario==="missing"?null:"soup");
+
+  await test("Ailin four dishes classify exactly and reach card/tune input without family or title expansion",async()=>{
+    const C=require("../../src/shared/collapsed-hand.inc.js"),{T,Host}=load("ailin"),
+      bank=JSON.parse(require("../../tools/build.cjs").packageFiles("ailin").files.get("hand-bank.json")),
+      dishes=["wavekissedSands","verdantGift","gildedHall","autumnFrost"];
+    for(const id of dishes){
+      for(const part of [bank,bank.expanded]){
+        const entry=part.entries.find(e=>e.id===id),files=new Set(entry.views.flatMap(v=>v.patches)),
+          read=C.identify({status:"readable",slots:[{index:0}]},part,(_s,_p,file)=>files.has(file)?.9726:.1).slots[0];
+        assert.equal(read.id,id,"a matching dish is an exact identity, not an unresolved family");
+        assert.equal(read.titleCandidates,undefined);
       }
-      assert.ok(reads<=(scenario==="ready"||scenario==="input-change"?1:2));
+      const h=new Host({}),s=board(T,["draw",id,"soup"]),
+        files=new Set(bank.expanded.entries.find(e=>e.id===id).views.flatMap(v=>v.patches));
+      h.trace=()=>{};h.frame=fn=>fn({});h.phaseIn=()=>({phase:"board",turn:"user"});
+      h.nativeHandCountIn=()=>3;
+      h.handCostLayoutIn=()=>({markers:[{x:616,y:820},{x:810,y:820},{x:1012,y:820}],points:[719,913,1115]});
+      h.artworkScore=(_frame,area,file)=>{
+        assert.ok(bank.expanded.patches.some(p=>area.rect[0]===810+p[0]),"classify only the actual input target");
+        return files.has(file)?.9726:.1;
+      };
+      h.titleAt=async()=>{throw Error("exact dish artwork must not open its title");};
+      for(const type of ["card","tune"])
+        assert.equal(await h.inspectHandCard({type,id,index:1,target:0},913,s),913);
+      // Low evidence still uses the existing title fallback, not an old hand ID.
+      h.artworkScore=()=>.1;
+      let titles=0;h.titleAt=async()=>{titles++;return T.byId[id].name;};
+      await h.inspectHandCard({type:"card",id,index:1,target:0},913,s);
+      assert.equal(titles,1);
     }
-  });
-  await test("Ailin hand retention: observed family count can reuse old food; new, mixed and incomplete rows cannot",()=>{
-    const {Host,T}=load("ailin"),h=new Host({}),s=board(T,["verdantGift","dragon"]),m=T.freshMemory(),
-      family=["wavekissedSands","verdantGift","gildedHall","autumnFrost"],
-      plan=T.handPlan({type:"card",id:"dragon",index:1,target:null},s,m);
-    assert.equal(plan.mode,"full");assert.deepEqual(copy(plan.retainedHand.map(c=>c.id)),["verdantGift"]);
-    assert.equal(T.handPlan({type:"switch",target:1},s,m).retainedHandOrder,true);
-    assert.equal(T.handPlan({type:"skill",who:0,skill:"E"},s,m).retainedHandOrder,true);
-    m.fastSwitch=true;
-    assert.deepEqual(copy(T.handPlan({type:"switch",target:1},s,m).retainedHand.map(c=>c.id)),["verdantGift","dragon"]);
-    h.trace=()=>{};
-    const retained=slots=>{const cards=slots.map(x=>x.id?T.observedCard(T.byId[x.id].name,x.index):null);
-      h.fillHandVariants(cards,slots,plan.retainedHand);return cards.map(c=>c?.id??null);};
-    assert.deepEqual(retained([{index:0,titleCandidates:family},{index:1,id:"dragon"}]),["verdantGift","dragon"]);
-    assert.deepEqual(retained([{index:0,titleCandidates:family},{index:1,titleCandidates:family}]),[null,null]);
-    assert.deepEqual(retained([{index:0,titleCandidates:family},{index:1}]),[null,null]);
-    plan.retainedHand.push(T.observedCard(T.byId.gildedHall.name,2));
-    assert.deepEqual(retained([{index:0,titleCandidates:family},{index:1,titleCandidates:family}]),[null,null]);
-  });
-  await test("Ailin mixed dishes keep observed relative identities through full confirmation and input, not new family members",async()=>{
-    const {T,Host,Player}=load("ailin"),h=new Host({}),p=new Player(h,{maxMinutes:30}),
-      s=board(T,["autumnFrost","verdantGift","draw"]),a={type:"skill",who:1,skill:"CA"},
-      family=["wavekissedSands","verdantGift","gildedHall","autumnFrost"];
-    s.active=1;s.dice={Pyro:4};p.memory.round=2;
-    let slots=[{index:0,titleCandidates:family,point:719},{index:1,titleCandidates:family,point:913},{index:2,id:"draw",point:1115}];
-    h.trace=()=>{};h.frame=fn=>fn({});h.phase=h.phaseIn=()=>({phase:"board",turn:"user"});
-    h.boardReady=true;h.removalEvidenceBeforeReset=async()=>null;
-    h.observe=async()=>({...copy(s),dice:{Pyro:1},handRead:"full"});
-    h.diceBudgetMatches=()=>true;h.executeInput=async()=>{};
-    p.observe=async()=>s;p.progress=()=>{};T.choose=()=>a;
-    await p.act();assert.equal(h.handContinuation.retainedHandOrder,true);
-    h.folded=async()=>({status:"readable",count:slots.length,nativeCount:slots.length,slots});
-    h.handPoints=()=>slots.map(x=>x.point);h.handCountIn=h.nativeHandCountIn=()=>slots.length;
-    h.fillHandArtwork=async()=>{};
-    h.titleAt=async()=>{throw Error("unchanged dishes must not read their titles again");};
-    const current=await h.observedHand({mode:"full",...h.handContinuation});
-    assert.deepEqual(copy(current.map(x=>x.id)),["autumnFrost","verdantGift","draw"]);
-    const bank=JSON.parse(require("../../tools/build.cjs").packageFiles("ailin").files.get("hand-bank.json")).expanded,
-      files=Object.fromEntries(["wavekissedSands","draw"].map(id=>{
-        const entry=bank.entries.find(e=>e.id===id);
-        return [id,new Set([...(entry.patches||[]),...(entry.views||[]).flatMap(v=>v.patches)])];
-      })),frames=new Set(),classified=new Set(),
-      markers=slots.map(s=>({x:s.point-103,y:820}));
-    h.handCostLayoutIn=()=>({markers,points:slots.map(s=>s.point)});
-    h.artworkScore=(frame,area,file)=>{
-      frames.add(frame);
-      const index=markers.findIndex(m=>bank.patches.some(p=>area.rect[0]===m.x+p[0]));
-      assert.ok(index>=0);classified.add(index);
-      return files[index===2?"draw":"wavekissedSands"].has(file)?.99:0;
-    };
-    assert.equal(await h.inspectHandCard({type:"tune",id:"verdantGift",index:1},913,{...s,hand:current}),913);
-    assert.equal(frames.size,1,"target identity and complete family count belong to the same native frame");
-    assert.deepEqual([...classified].sort(),[0,1,2]);
-    const cards=()=>slots.map(x=>x.id?T.observedCard(T.byId[x.id].name,x.index):null),fill=()=>{
-      const found=cards();h.fillHandVariants(found,slots,current,[],true);return found.map(x=>x?.id??null);};
-    slots=[{index:0,id:"soup"},...slots.map(x=>({...x,index:x.index+1}))];
-    assert.deepEqual(fill(),["soup","autumnFrost","verdantGift","draw"],"unrelated insertion relocates, not forgets, old dishes");
-    slots[0]={index:0,titleCandidates:family};
-    assert.deepEqual(fill(),[null,null,null,"draw"],"a newly inserted dish is not an old identity");
-    slots=[{index:0,id:"verdantGift"},{index:1,titleCandidates:family}];
-    assert.deepEqual(fill(),["verdantGift",null],"positive identity conflict defeats the old order");
   });
   await test("hand view: native expanded or folded layout outranks a stale toggle flag",async()=>{
     for(const scene of ["native-expanded","stale-expanded-flag","unknown","enemy"]){
@@ -311,40 +289,7 @@ module.exports=async function(test){
     h.folded=async()=>({count:2,nativeCount:null,status:"readable",slots:copy(slots)});
     return {...f,h,events,inputs,slots,now:()=>now};
   }
-  await test("hand observation: one reader owns folded/partial/fallback completion and one reset",async()=>{
-    for(const route of ["full","partial","fallback"]){
-      const f=fixture();let titles=0,prepares=0,finishes=0;
-      if(route==="partial")f.slots[1].id=null;
-      f.h.folded=async()=>route==="fallback"?null:{count:2,nativeCount:null,status:"readable",slots:copy(f.slots)};
-      f.h.handCount=async()=>{await f.h.expand(false);return 2;};
-      f.h.titleAt=async(_x,_y)=>{titles++;return route==="partial"?f.T.byId.shift.name:
-        f.T.byId[titles===1?"draw":"shift"].name;};
-      f.h.prepareHandObservation=async()=>{prepares++;};
-      f.h.finishHandObservation=hand=>{finishes++;return hand;};
-      const hand=await f.h.readHand();
-      assert.deepEqual(copy(hand.map(c=>c.id)),["draw","shift"]);
-      assert.equal(titles,route==="full"?0:route==="partial"?1:2);
-      assert.equal(prepares,1);assert.equal(finishes,1);assert.equal(f.h.handScanSerial,1);
-      assert.equal(f.h.handFanReady,false);assert.equal(f.h.handNeedsReset,false);
-      assert.equal(f.events.filter(e=>e.event==="hand-reset").length,route==="full"?0:1);
-      assert.equal(f.events.filter(e=>e.event==="hand-read-completed").length,1);
-    }
-    for(const scene of ["empty","late-card"]){
-      const f=fixture();let foldedReads=0,countReads=0;
-      f.h.folded=f.Host.prototype.folded;
-      const collapsed=f.h.collapsedIn.bind(f.h);
-      f.h.collapsedIn=frame=>{foldedReads++;return collapsed(frame);};
-      f.h.ocr=()=>"";f.h.ocrRows=()=>[];
-      f.h.handSample=()=>({count:++countReads>=3&&scene==="late-card"?1:null,source:"native-badge"});
-      f.h.titleAt=async()=>f.T.byId.draw.name;
-      const hand=await f.h.observedHand({mode:"full",expectedCount:null});
-      assert.equal(foldedReads,1,"no row enters native counting without exhausting folded retries");
-      assert.deepEqual(copy(hand.map(c=>c.id)),scene==="empty"?[]:["draw"],"a later insertion defeats empty-hand proof");
-      assert.deepEqual(f.inputs,scene==="empty"?[[967,1041]]:[[967,1041],[1190,545]],"only a nonempty fan needs folding");
-      assert.equal(f.h.boardReady,true);assert.equal(f.h.handNeedsReset,false);
-      if(scene==="empty")assert.ok(f.events.find(e=>e.event==="hand-count").data.stableMs>=600);
-    }
-  });
+
   await test("hand observation: retry retains known slots, conflicts discard them, interruption never folds a foreign page",async()=>{
     const f=fixture(),scan={titles:0};let folded=0,title=0,count=2;
     f.h.folded=async()=>{folded++;return null;};

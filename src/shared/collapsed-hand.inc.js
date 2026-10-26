@@ -70,9 +70,8 @@
           const scores=view.patches.map((file,k)=>file===null?NaN:score(slot,bank.patches[k],file));
           const rank={id:view.id,view:view.name,scores,scoreFloor:view.scoreFloor,titleCandidates:view.titleCandidates,
             score:scores.length===bank.patches.length&&scores.length>0&&scores.every(Number.isFinite)?Math.min(...scores):-1};
-          // Several real dishes share one explicitly declared artwork family.
-          // Their views compete as that same unresolved family, not as two
-          // exact identities which veto each other before a title is read.
+          // Explicit same-art variants (such as countdown stages) compete as
+          // one unresolved family. Distinct artwork competes by exact card ID.
           const identity=view.titleCandidates?"family:"+view.titleCandidates.slice().sort().join("/"):view.id;
           if(!identities.has(identity)||rank.score>identities.get(identity).score)identities.set(identity,rank);
       }

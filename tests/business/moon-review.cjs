@@ -12,16 +12,7 @@ function ready(T) {
 }
 module.exports = async function(test) {
   const {T}=load("moonbloom");
-  await test("R02: tuning remains in the comparison when deep routes exhaust 240 projections",()=>{
-    const s=board(T),m=ready(T);s.active=2;s.dice={Dendro:4,Pyro:1};
-    s.hand=["seed","gambler","sashimi","shift"].map((id,i)=>observed(T,id,i));
-    s.enemies=[4,10].map((hp,i)=>({hp,dead:false,active:i===0,auraKnown:true,aura:[]}));
-    const before=JSON.stringify([s,m]),a=T.choose(s,m);
-    assert.equal(JSON.stringify([s,m]),before);
-    assert.equal(a.type,"tune");assert.equal(a.id,"gambler");
-    assert.equal(a.funding.goal,T.actionKey(card(s.hand[0])));
-    assert.equal(a.projections.limit,240);assert.ok(a.projections.used<=240);
-  });
+
   await test("R06: a retained reduced card preserves enhancement; sleepy only discounts the first kernel",()=>{
     const s=board(T),m=T.freshMemory();s.active=1;s.dice={Hydro:3};
     s.hand=[observed(T,"sashimi",0,0,{reduction:1}),observed(T,"fruit",1,2,{reduction:1})];

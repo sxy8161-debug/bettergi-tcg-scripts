@@ -54,6 +54,7 @@
       if (!count) return;
       // Reuse the shared row readers, not a title click per card. This sample
       // belongs to this readHand transaction only; no cross-round fee cache.
+      const points=this.handPoints(count);
       this.feeSample=this.frame(f=>{
         this.requireHandObservation(this.phaseIn(f),"discard-cost-row");
         if (!this.handFanReady) {
@@ -63,6 +64,7 @@
         const sample=this.costHandIn(f,count);
         return sample?{...sample,source:"native-expanded-cost-markers"}:null;
       });
+      if (this.feeSample) this.feeSample.points=points;
     }
     finishHandObservation(hand,scan={}) {
       const observed=hand.map(h=>{
@@ -84,8 +86,18 @@
       return observed;
     }
     readSelectedCardFacts(f,card,x) {
-      // No extra OCR during ordinary identity discovery or card input. Only a
-      // dependency probe requests these facts from its accepted title frame.
+      // An accepted discovery title already exposes this card's clear digit.
+      // Bind it to the same readHand row instead of keeping its earlier broad
+      // row OCR. Card input has no feeSample and does not add a price read.
+      const sample=this.feeSample,index=sample?.points.indexOf(x)??-1;
+      if (index>=0) {
+        const cost=this.selectedCardCostIn(f,x);
+        if (cost!==null) {
+          sample.costs[index]=cost;
+          (sample.costSources??=[])[index]="native-selected-card-cost";
+        }
+        return;
+      }
       if (this.currentAction?.type!=="probe" || this.currentAction.scope!=="card") return;
       const cost=this.selectedCardCostIn(f,x),attachments=card.type!=="talent" && cost!==null ?
         {source:"unknown",reduction:null,increase:null} : discardFacts(
@@ -96,7 +108,8 @@
     cardWithFacts(h,x) {
       const detail=this.discardDetail,valid=detail?.x===x&&detail.id===h.id&&detail.revision===this.inputRevision,
         cost=valid?detail.cost:this.feeSample?.costs?.[h.index]??null;
-      return {...h,currentCost:cost,costSource:cost===null?"unknown":valid?"native-selected-card-cost":this.feeSample.source,
+      return {...h,currentCost:cost,costSource:cost===null?"unknown":valid?"native-selected-card-cost":
+        this.feeSample.costSources?.[h.index]??this.feeSample.source,
         attachments:valid?detail.attachments:{source:"unknown",reduction:null,increase:null}};
     }
     async probeCard(a,before,m) {
