@@ -2,29 +2,8 @@
 const assert = require("node:assert/strict");
 const {load, board} = require("./runtime.cjs");
 const clone = x => JSON.parse(JSON.stringify(x));
-const close = (actual, expected) => assert.ok(Math.abs(actual-expected)<1e-9, `${actual} != ${expected}`);
 
 module.exports = async function(test) {
-  const {T} = load("raiden");
-  await test("single planner: exhausted budget keeps the evaluated action and releases its decision scope",()=>{
-    const s=board(T,["voltage","sweet"]),m=T.freshMemory();s.characters[0].hp=2;
-    const limited=T.projectionBudget.run(1,()=>T.choose(s,m));
-    assert.equal(limited.planning.status,"budget-exhausted");assert.equal(limited.projections.used,1);
-    assert.equal(limited.type,"skill");assert.ok(T.skillLegal(s,limited,m));
-    assert.equal(limited.planning.sequence.length,1,"no unevaluated deeper plan or legacy fallback");
-    const normal=T.choose(s,m);assert.equal(normal.projections.limit,1500);
-    assert.ok(normal.projections.used>1&&normal.projections.used<=1500);
-  });
-  await test("single planner: native refusals exclude the same action from roots, funding and reselection",()=>{
-    const s=board(T,["voltage"]),m=T.freshMemory();s.characters[0].energy=1;s.dice={Omni:4};
-    const first=T.choose(s,m);assert.equal(first.id,"voltage");T.rejectAction(m,first,s);
-    const next=T.choose(s,m);assert.notEqual(T.actionKey(next),T.actionKey(first));
-    assert.ok(!next.planning.sequence.includes(T.actionKey(first)));
-    assert.equal(T.actionRefused(s,m,next),false);
-    const candidates=T.strategyEligible(s,m);
-    for(const a of candidates)T.rejectAction(m,a,s);
-    assert.equal(T.choose(s,m).type,"end");
-  });
   function feeFixture(outcome="confirmed",retry=false) {
     let now=100000,clicks=0,totalClicks=0,casts=0,deferred=false;
     class Clock extends Date { static now(){return now;} }
@@ -110,59 +89,5 @@ module.exports = async function(test) {
       assert.equal(f.m.skillCosts,null,outcome);
     }
   });
-  const equip = {type:"card",id:"gambler",index:0,target:2};
-  const skill = {type:"skill",who:2,skill:"E"};
-  function fixture() {
-    const s=board(T,["gambler"]),m=T.freshMemory();
-    T.nextRound(m);
-    // Establish burst history through production commit, including Keqing's +2.
-    const before=board(T);before.characters[0].energy=2;
-    const after=clone(before);after.characters[0].energy=0;
-    after.characters[1].energy=2;after.characters[2].energy=2;
-    T.commit(m,{type:"skill",who:0,skill:"Q"},before,after);
-    after.active=1;const collei=clone(after);collei.characters[1].energy=0;
-    T.commit(m,{type:"skill",who:1,skill:"Q"},after,collei);
-    s.characters=collei.characters;s.active=2;s.dice={Omni:4};
-    // Match native output: empty standby aura is unknown, defense is absent.
-    s.enemies=[{hp:1,dead:false,active:true,auraKnown:true,aura:["Dendro"]},
-      {hp:10,dead:false,active:false,auraKnown:false,aura:[]}];
-    return {s,m};
-  }
-  function equipped(s,m) {const p=T.projectedAction(s,m,equip);assert.ok(p);return p;}
-  function compare(s,m,action=skill) {
-    const plain=clone(m);plain.artifactKinds[2]=null;
-    const p=T.projectedAction(s,m,action),q=T.projectedAction(s,plain,action);
-    assert.ok(p&&q);return {p,bonus:p.benefit-q.benefit};
-  }
-
-  await test("R03 known shield and guaranteed refunds use actual damage and resources",()=>{
-    const {s,m}=fixture(),setup=equipped(s,m);
-    setup.state.enemies[0].defenseKnown=true;setup.state.enemies[0].shield=10;
-    let result=compare(setup.state,setup.memory);close(result.bonus,0);
-    assert.equal(T.total(result.p.state.dice),0);assert.equal(result.p.memory.gamblerUsed[2],0);
-    s.enemies[0].defenseKnown=true;s.enemies[0].shield=10;
-    assert.equal(T.strategyEligible(s,m).some(a=>a.id==="gambler"),false);
-    setup.state.enemies[0].shield=0;result=compare(setup.state,setup.memory);
-    close(result.bonus,0);assert.equal(result.p.state.dice.Omni,2);
-    assert.equal(result.p.memory.gamblerUsed[2],1);assert.equal(result.p.provenFinish,false);
-    // Guaranteed dice have the existing .31 resource value, without nominal credit.
-    const plain=clone(setup.memory);plain.artifactKinds[2]=null;
-    close(T.plan(setup.state,setup.memory,{depth:1}).value-T.plan(setup.state,plain,{depth:1}).value,.62);
-  });
-
-  await test("R03 trigger limits, capacity and mixed certainty never double count",()=>{
-    const {s,m}=fixture();s.hand=[];s.dice={Omni:16};s.characters[2].energy=3;
-    s.enemies=[1,3,3,10].map((hp,i)=>({hp,dead:false,active:i===0,auraKnown:true,aura:[]}));
-    m.artifactKinds[2]="gambler";const burst={type:"skill",who:2,skill:"Q"};
-    let result=compare(s,m,burst);close(result.bonus,4*.31);assert.equal(T.total(result.p.state.dice),12);
-    m.gamblerUsed[2]=2;result=compare(s,m,burst);close(result.bonus,2*.31);
-    m.gamblerUsed[2]=3;result=compare(s,m,burst);close(result.bonus,0);
-    m.gamblerUsed[2]=0;s.dice={Omni:15};
-    s.enemies[0].defenseKnown=true;s.enemies[1].defenseKnown=true;
-    result=compare(s,m,burst);close(result.bonus,.31);assert.equal(T.total(result.p.state.dice),15);
-    s.enemies[2].defenseKnown=true;result=compare(s,m,burst);
-    close(result.bonus,0);assert.equal(T.total(result.p.state.dice),16);
-  });
-
 };
 

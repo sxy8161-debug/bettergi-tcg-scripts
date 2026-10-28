@@ -179,6 +179,13 @@
         const route={first:head||action,terminal:action,steps:steps+tunes+1,drawRoom:10-funded.hand.length,
           spent:spent+T.size(T.skillCost(who,skill,policy,funded)),hit,conditional,
           remainingDice:T.total(remaining),followupDamage:0};
+        // Include known quick charging and the actual switch fee in the same
+        // startup budget. Optional supports must not split a funded charge/retreat.
+        if (who===1 && skill!=="Q" && funded.characters[1].energy>=1 && !conditional) {
+          const helper=tank(funded,policy),retreat=helper===undefined?null:
+            T.switchBudget({...funded,dice:remaining},helper,policy);
+          if (retreat) route.chargeRetreatCost=route.spent+retreat.cost;
+        }
         routes.push(route);
         if(hit.reachesTarget)finishes.push({route,state:funded,memory:policy,remaining,action});
       }
@@ -288,6 +295,7 @@
     return Number(a.conditional)-Number(b.conditional) || a.spent-b.spent || a.steps-b.steps ||
       Number(b.hit.provenTargetDefeat)-Number(a.hit.provenTargetDefeat);
   }
+  const routeEffort=r=>1+Number(r.conditional)+.25*Math.max(0,r.steps-1-Number(r.conditional));
   function routeAction(route,reason) {
     return {...route.first,reason,plan:{steps:route.steps,spent:route.spent,terminal:route.terminal,
       estimate:route.hit,remainingDice:route.remainingDice,followupDamage:route.followupDamage,
@@ -403,13 +411,13 @@
     return T.projectionBudget.run(240,()=>{
       if (!T.legalState(s) || T.enemyCount(s)===null || !target(s)) return {type:"stop",reason:"当前局面不完整，不能选择动作"};
       // A switch hands the opponent an action before the target can attack.
-      // Do not buy a conditional route by exposing an even weaker pressured
-      // attacker while the current character can still act.
-      const routes=attackRoutes(s,m).filter(r=>!r.conditional||!pressure(s,r.terminal.who)||
+      // Keep current defeat routes in the comparison even for a low-HP relay.
+      // Ordinary development still avoids exposing a weaker pressured actor.
+      const routes=attackRoutes(s,m).filter(r=>r.hit.reachesTarget||!r.conditional||!pressure(s,r.terminal.who)||
         s.characters[r.terminal.who].hp>=s.characters[s.active].hp),afterBurst=m.bursts[1]>0;
       // A payable direct finish avoids an extra enemy handoff. Compare the
       // health of attackers only among routes with the same handoff count.
-      const survivalRisk=r=>Number(s.characters.filter(T.alive).length<=2&&pressure(s,r.terminal.who));
+      const survivalRisk=r=>Number(pressure(s,r.terminal.who));
       const finish=routes.filter(r=>r.hit.reachesTarget).sort((a,b)=>Number(a.conditional)-Number(b.conditional)||
         survivalRisk(a)-survivalRisk(b)||b.followupDamage-a.followupDamage||a.spent-b.spent||routeOrder(a,b));
       // Inspect missing discard facts only when a surplus block can fund two
@@ -434,7 +442,7 @@
         // Compare at most one conditional trap trigger, never all future uses
         // as immediate damage or as proof of killing the current opponent.
         const value=r=>(r.hit.direct+r.hit.splash+(!alive&&r.hit.conditionalTrap?1:0))/
-          (1+Number(r.conditional)+.25*Math.max(0,r.steps-1-Number(r.conditional)));
+          routeEffort(r);
         attacks.sort((a,b)=>value(b)-value(a)||Number(a.conditional)-Number(b.conditional)||
           survivalRisk(a)-survivalRisk(b)||routeOrder(a,b));
         if (attacks.length) return routeAction(attacks[0],!alive?"飞蛇阵亡，转现有辅助技能与陷阱收尾":"已知最后回合，比较当前可兑现伤害");
@@ -447,13 +455,12 @@
         (s.characters[1].hp<T.team[1].maxHp || !needCharge)) ?
         s.characters.map((c,who)=>({c,who})).filter(({c,who})=>who!==s.active&&T.alive(c)&&
           (s.characters[s.active].frozen || c.hp>s.characters[s.active].hp)).sort((a,b)=>b.c.hp-a.c.hp)[0]?.who:undefined;
-      const canRelay=endTarget!==undefined&&T.actionLegal(s,{type:"switch",target:endTarget},m);
       if (afterBurst && attacks.length) {
         // Fast funding is not another enemy handoff. Two tunes that buy E's
         // extra damage/draw should not lose to a switch plus a weaker NA.
         const value=r=>(Math.min(r.hit.direct,target(s).hp)+r.hit.splash+
           (r.terminal.who===1&&r.terminal.skill==="E"&&r.drawRoom>0?.5:0))/
-          (1+Number(r.conditional)+.25*Math.max(0,r.steps-1-Number(r.conditional)));
+          routeEffort(r);
         const follow=attacks.filter(r=>r.hit.direct>0&&!pressure(s,r.terminal.who)).sort((a,b)=>
           value(b)-value(a)||Number(a.conditional)-Number(b.conditional)||
           survivalRisk(a)-survivalRisk(b)||routeOrder(a,b));
@@ -464,14 +471,18 @@
         // energy draw attacks. Low HP must not strand a large usable burst.
         const burst=routes.filter(r=>r.terminal.who===1&&r.terminal.skill==="Q").sort((a,b)=>b.hit.direct-a.hit.direct||routeOrder(a,b));
         const ordinary=Math.max(0,...routes.filter(r=>r.terminal.who===1&&r.terminal.skill!=="Q").map(r=>r.hit.direct));
-        if (burst.length && (helper===undefined||!canRelay&&(s.characters[1].hp<=2||pressed&&burst[0].hit.direct>ordinary)))
-          return routeAction(burst[0],"飞蛇已受压且无可支付撤回，先兑现现有爆发伤害");
+        if (burst.length && (helper===undefined||pressed&&burst[0].hit.direct>ordinary))
+          return routeAction(burst[0],"飞蛇已受压，先兑现强于普通攻击的现有爆发，再补能或交给队友接力");
       }
       // Once useful output is unavailable, hand the remaining enemy actions
       // to a healthier teammate before declaring end. Reserve only the switch
-      // fee from optional development; attack/finisher routes above stay first.
+      // fee and any fully funded charge/retreat from optional development;
+      // attack/finisher routes above stay first.
+      const chargeReserve=needCharge&&s.active===1?
+        Math.min(...routes.flatMap(r=>r.chargeRetreatCost===undefined?[]:[r.chargeRetreatCost])):Infinity;
       const reserve=Math.max(needCharge&&s.active===1?Math.min(3,T.total(s.dice)):0,
-        endTarget!==undefined?Math.min(T.switchCost(m).any,T.total(s.dice)):0);
+        endTarget!==undefined?Math.min(T.switchCost(m).any,T.total(s.dice)):0,
+        Number.isFinite(chargeReserve)?chargeReserve:0);
       // A confirmed Shift has already paid for a retreat. Finish that relay
       // before optional paid supports, then use the actual remaining dice.
       // Do not spend them all assuming the native switch must be free.
@@ -504,7 +515,9 @@
         // reason to switch it back into combat before the burst is ready.
         const draw=routes.filter(r=>!r.conditional&&r.terminal.who===1&&r.terminal.skill==="E"&&r.drawRoom>0&&!pressed).sort(routeOrder);
         const burst=routes.filter(r=>r.terminal.who===1&&r.terminal.skill==="Q")
-          .sort((a,b)=>b.hit.direct/(b.steps+.5)-a.hit.direct/(a.steps+.5)||routeOrder(a,b));
+          // Fast preparation uses the same operation cost as post-burst
+          // output. A zero-fee Cleanup is not another whole combat action.
+          .sort((a,b)=>b.hit.direct/routeEffort(b)-a.hit.direct/routeEffort(a)||routeOrder(a,b));
         const ordinary=Math.max(0,...routes.filter(r=>r.terminal.who===1&&r.terminal.skill!=="Q").map(r=>r.hit.direct));
         if (burst.length && burst[0].hit.direct>ordinary && (s.characters[0].dead===true || s.hand.length===10&&!draw.length))
           return routeAction(burst[0],"现有爆发强于普通攻击，供块中断或满手无法补牌，先开大再补能续攻");

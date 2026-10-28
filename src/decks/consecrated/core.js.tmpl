@@ -140,6 +140,7 @@
     if (c.type==="support" && !supportRoom(s)) return false;
     if (c.type==="legend" && m.legendUsed!==false) return false;
     if (a.id==="stars" && !(s.characters?.[s.active]?.energy<team[s.active].maxEnergy)) return false;
+    if (a.id==="shift" && !s.characters.some((c,who)=>who!==s.active&&alive(c))) return false;
     if (a.id==="block" && (m.blockPlayed!==false || !blockDiscards(s.hand,a.index).known)) return false;
     return !!payment(s.dice,cardCost(s,a,m),team[s.active].element);
   }
@@ -163,12 +164,12 @@
   // it proves their ranking without proving any other attachment property.
   function discardCost(h) {
     const c=byId[h?.id], a=h?.attachments;
-    if (!c) return null;
-    if (["native","private-rules"].includes(a?.source) && known(a.reduction) && known(a.increase))
+    if (c && ["native","private-rules"].includes(a?.source) && known(a.reduction) && known(a.increase))
       return Math.max(0,size(c.cost)-a.reduction+a.increase);
-    if (c.type!=="talent" && known(h.currentCost) &&
+    if (c?.type!=="talent" && known(h?.currentCost) &&
       ["native-folded-cost-markers","native-expanded-cost-markers","native-selected-card-cost"].includes(h.costSource)
       ) return h.currentCost;
+    if (!c) return null;
     // Every generated block is the same zero-cost card. This fixed deck has
     // no effect that changes its cost; a positive native modifier above still
     // wins. A missing price digit is not a reason to inspect each copy.
@@ -507,14 +508,16 @@
   }
   function handPlan(action,before,m) {
     if (action.type==="probe") return {mode:"unchanged",hand:before.hand};
-    // These actions cannot introduce a new countdown stage into the hand.
-    // Still read current costs and the whole row; only a matching native
-    // family count can reuse its already-read stage, via the shared reader.
-    const retained={mode:"full",retainedHand:before.hand,retainedVariantFamilies:[countdownFamily]};
+    // Surviving old cards keep their relative order. Prices are refreshed by
+    // the host independently; only new/changed identities need another scan.
+    const retained={mode:"full",retainedHand:before.hand,retainedHandOrder:true,retainedVariantFamilies:[countdownFamily]};
+    // Crocodile E bottoms a highest-cost card before generating a block. An
+    // equal final count cannot establish retention of the original whole hand.
+    if (action.type==="skill"&&action.who===2&&action.skill==="E")return {mode:"full"};
     if (action.type==="switch" || action.type==="skill" && !(action.who===1&&action.skill==="E"))
       return action.type==="skill"&&action.skill==="Q"?
         {...retained,retainedHand:before.hand.filter(h=>h.id!=="block")}:retained;
-    if (action.type==="skill") return {mode:"full",retainedHand:before.hand};
+    if (action.type==="skill") return {mode:"full",retainedHand:before.hand,retainedHandOrder:true};
     if (action.type==="end") return {mode:"full"};
     if (!["card","tune"].includes(action.type) || before.hand?.[action.index]?.id!==action.id)
       return {mode:"full"};
@@ -524,14 +527,14 @@
     const c=byId[action.id];
     // Talent verify proves the exact old-card bag plus its generated block.
     // That complete result has no delayed draw left to scan a second time.
-    if (c.id==="block"&&blockEffects("play",before,m)?.draw===0) {
-      const discarded=blockDiscards(before.hand,action.index);
+    if (c.id==="block") {
+      const discarded=blockDiscards(before.hand,action.index),draws=blockEffects("play",before,m)?.draw!==0;
       // Random highest-cost discard may remove any tied candidate. Only the
       // other cards have a retention guarantee; do not carry discarded facts.
-      return discarded.known?{...retained,
+      return discarded.known?{...retained,refreshAfterConsumption:draws,
         retainedHand:before.hand.filter((_,i)=>i!==action.index&&!discarded.indices.includes(i)),
-        retainedVariantFamilies:discarded.indices.some(i=>countdownFamily.includes(before.hand[i].id))?[]:[countdownFamily]}:
-        {mode:"full"};
+        retainedVariantFamilies:draws||discarded.indices.some(i=>countdownFamily.includes(before.hand[i].id))?[]:[countdownFamily]}:
+        {mode:"full",refreshAfterConsumption:draws};
     }
     if (c.type==="talent" || ["lair","nre"].includes(c.id))
       return {...retained,refreshAfterConsumption:c.id==="lair"||c.id==="nre",retainedHand:removed.hand.map(h=>
@@ -541,11 +544,11 @@
     // Keep that identity evidence; the shared reader still requires the
     // complete current family count, so a newly drawn variant is not guessed.
     if (c.type==="draw")
-      return {mode:"full",refreshAfterConsumption:true,retainedHand:removed.hand};
-    if (c.type==="legend" || c.id==="block")
+      return {mode:"full",refreshAfterConsumption:true,retainedHand:removed.hand,retainedHandOrder:true};
+    if (c.type==="legend")
       return {mode:"full",refreshAfterConsumption:true};
     if (c.type==="food" && (!m.supportStateKnown || m.supports.some(x=>x.id==="nre" && x.foodDrawUsed!==true)))
-      return {mode:"full",refreshAfterConsumption:true};
+      return {mode:"full",refreshAfterConsumption:true,retainedHand:removed.hand,retainedHandOrder:true};
     return removed;
   }
   function rerollPlan(items,m) {

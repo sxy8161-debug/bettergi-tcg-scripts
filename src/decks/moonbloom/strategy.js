@@ -3,6 +3,7 @@
   const skill = (who,name) => ({type:"skill",who,skill:name});
   const switchFee=m=>m.freeSwitch||m.fanSwitch?0:1;
   const switchEffort=m=>switchFee(m)?14:4;
+  const riskyRelay=(s,m,who)=>!m.fastSwitch&&s.characters[who].hp<=3;
   /* @include src/shared/strategy.inc.js#tcg-strategy.freeSwitchPreparation */
   function card(s,h,target=null) {return {type:"card",id:h.id,index:h.index,target};}
   function blocked(s,m,a) {return T.actionRefused(s,m,a);}
@@ -45,13 +46,14 @@
     const hit=p.hit,damage=hit?Math.min(hit.direct,hit.target?.hp??hit.direct):0,
       defeats=hit?.target&&hit.direct>=hit.target.hp&&hit.direct>0?1:0,
       terminal=defeats&&T.enemyCount(s)===1,
+      relayRisk=a.type==="switch"?riskyRelay(s,m,a.target):!!node.relayRisk,
       exposure=p.combat&&s.characters[s.active].hp<=3&&!defeats?15:0,
       health=p.state.characters.reduce((n,c,i)=>n+Math.max(0,c.hp-s.characters[i].hp)*6,0);
     return {...p,sequence:node.sequence.concat(a),
       ledger:node.ledger.concat({action:T.actionKey(a),paid:p.paid,remaining:p.state.dice,
         energy:p.state.characters.map(c=>c.energy),seeds:T.seeds(p.state).map(h=>T.currentCost(h)),
         damage,boundary:p.boundary,randomDice:p.refund||0}),
-      damageValue:node.damageValue+damage*10*Math.pow(.9,node.turns),defeats:node.defeats+defeats,
+      damageValue:node.damageValue+damage*10*Math.pow(.9,node.turns),defeats:node.defeats+(relayRisk?0:defeats),relayRisk,
       // Preserve paid-relay caution. A proved free switch must not carry the
       // same friction; its extra combat turn is still discounted below.
       paid:node.paid+p.paid,effort:node.effort+(p.combat?0:a.type==="switch"?switchEffort(m):4)+exposure,
@@ -59,7 +61,7 @@
       refunds:node.refunds+(p.refund||0)*4,casts:node.casts+(p.combat?1:0),
       boundaryValue:a.type==="skill"&&a.who===T.role("菈乌玛")&&a.skill==="Q"?burstResources(s,m).value:0,
       turns:node.turns+(p.combat||a.type==="switch"&&!m.fastSwitch?1:0),
-      nominalTerminal:terminal,terminal:terminal&&hit.guaranteedDirect>=hit.target.hp};
+      nominalTerminal:terminal,terminal:terminal&&!relayRisk&&hit.guaranteedDirect>=hit.target.hp};
   }
   function scoreRoute(s,m,node) {
     // A route ending the duel has no future charge, discount or refund payoff.
@@ -334,10 +336,22 @@
           discount=follow&&T.alive(s.characters[nefer])&&!s.characters[nefer].frozen?
             Math.max(0,...T.seeds(follow).filter(h=>T.cardLegal(follow,card(follow,h),plan.memory))
               .map(h=>Math.min(2,T.currentCost(s.hand[h.index>=a.index?h.index+1:h.index])||0))):0;
-        value=discount>0&&m.sleepy===0&&s.hand.length<=8?40+Math.max(0,discount-paid)*6:0;
+        value=discount>0&&m.sleepy===0?40+Math.max(0,discount-paid)*6:0;
         // Play bloom before granting the one-shot noninitial discount when affordable.
         if(value&&s.hand.some(x=>x.id==="overgrow"&&T.cardLegal(s,card(s,x),m))&&!m.supports.includes("overgrow")&&budget>=2)value=30;
         if(!seeds.length&&m.sleepy===0&&s.hand.length<=8&&budget>=3)value=24;
+        // Compare the same old kernel after the known discount. The generated
+        // choice supplies no predicted card/resources; only this next hit counts.
+        if(discount>0&&m.sleepy===0){
+          const hit=Math.max(0,...T.seeds(follow).filter(h=>T.cardLegal(follow,card(follow,h),plan.memory)&&
+            !blocked(follow,plan.memory,card(follow,h))).map(h=>{
+              const damage=T.damageEstimate(follow,plan.memory,nefer,"NA",true),
+                conditionalDefeat=s.active!==nefer&&riskyRelay(s,m,nefer)&&damage.target&&damage.direct>=damage.target.hp;
+              return hitScore(follow,plan.memory,nefer,"NA",h)-T.size(T.cardCost(follow,card(follow,h),plan.memory))*2-
+                (conditionalDefeat?100:0);
+            }));
+          value=Math.max(value,hit-4-(s.active===nefer?0:switchEffort(m)+switchFee(m)*2));
+        }
         break;
       }
       case "canopy":value=m.canopyPoints.length<2&&s.hand.some(x=>T.byId[x.id]&&T.nonInitial(T.byId[x.id])&&T.currentCost(x)>=1)?44:drawUseful(s)&&m.canopyPoints.length<2?20:0;break;
@@ -432,11 +446,28 @@
         reason:"补读「"+T.byId[owner.id].name+"」所需的手牌事实"});
       return true;
     };
-    for(const owner of s.hand.filter(h=>["research","cleaning","seedbox","lens"].includes(h.id))){
+    for(const owner of s.hand.filter(h=>["research","cleaning","seedbox","lens","meditation"].includes(h.id))){
       const a=card(s,owner);
       if(blocked(s,m,a)||m.probeKeys.includes(T.cardProbeKey(s,owner))||T.cardContextError(s,a,m)!==null||
         owner.id==="research"&&m.researchRemaining!==0||owner.id==="cleaning"&&T.total(s.dice)>=16)continue;
       const remaining=s.hand.filter(h=>h.index!==owner.index);
+      if(owner.id==="meditation"){
+        const nefer=T.role("奈芙尔");
+        if(m.sleepy!==0||!T.alive(s.characters[nefer])||s.characters[nefer].frozen||!T.cardLegal(s,a,m))continue;
+        const plan=T.projectResources(s,m,a),change=plan&&T.payment(plan.state.dice,
+          {any:s.active===nefer?0:switchFee(m)},"Dendro"),
+          follow=change&&{...plan.state,active:nefer,dice:change.remaining};
+        if(!follow||T.seeds(follow).some(h=>T.cardLegal(follow,card(follow,h),plan.memory)&&
+          !blocked(follow,plan.memory,card(follow,h))))continue;
+        // The discounted kernel can be affordable only through its unread
+        // empowerment. Inspect that existing card before spending the window
+        // on optional support; do not require Nefer to take the field first.
+        T.seeds(follow).filter(h=>typeof h.attachments?.empowered!=="boolean"&&
+          T.currentCost(h)!==null&&T.payment(follow.dice,{any:T.currentCost(h)})&&
+          !blocked(follow,plan.memory,card(follow,h)))
+          .some(h=>add(s.hand[h.index>=owner.index?h.index+1:h.index],"payment",owner));
+        continue;
+      }
       if(owner.id==="cleaning"&&T.knownAttachmentKinds(remaining)===0){
         const requirement="empowerment-row",key=T.cardProbeKey(s,owner,requirement);
         if(!m.probeKeys.includes(key)){
@@ -512,6 +543,10 @@
     const fee=switchFee(m),active=s.characters[s.active];
     const safeTargets=s.characters.map((ch,i)=>({ch,i})).filter(({ch,i})=>i!==s.active&&T.alive(ch)&&!ch.frozen);
     const safest=safeTargets.sort((a,b)=>b.ch.hp-a.ch.hp||a.i-b.i)[0];
+    // Without a funded attack this is tanking, not an offensive relay. Keep
+    // Nefer's prepared kernels/weapon behind a viable helper instead.
+    const tank=safeTargets.filter(({ch})=>active.frozen||active.hp<=3&&ch.hp>=active.hp+2)
+      .sort((a,b)=>Number(a.i===T.role("奈芙尔"))-Number(b.i===T.role("奈芙尔"))||b.ch.hp-a.ch.hp||a.i-b.i)[0];
     const finishRank=hit=>hit.target&&hit.direct>0&&hit.direct>=hit.target.hp?
       hit.guaranteedDirect>=hit.target.hp?2:1:0;
     const activeFinish=Math.max(0,...out.filter(a=>a.type==="skill"||a.type==="card"&&a.id==="seed")
@@ -527,11 +562,15 @@
       const followHits=attackCandidates(next,m),attacks=followHits.map(a=>({score:a.score,finish:finishRank(T.damageEstimate(next,m,who,a.skill))}));
       if(T.team[who].name==="奈芙尔")for(const h of T.seeds(next))if(T.cardLegal(next,card(next,h),m)&&!blocked(next,m,card(next,h)))
         attacks.push({score:hitScore(next,m,who,"NA",h)-T.size(T.cardCost(next,card(next,h),m))*2,finish:finishRank(T.damageEstimate(next,m,who,"NA",true))});
-      const retreat=safest?.i===who&&(active.frozen||active.hp<=3&&safest.ch.hp>=active.hp+2);
+      const shelter=attacks.length?safest:tank,
+        retreat=shelter?.i===who&&(active.frozen||active.hp<=3&&shelter.ch.hp>=active.hp+2);
       // Rank the payable next hit against current actions, not a difference of scores
       // against the same current actions a second time (which trapped the first role).
       const sameFinish=T.enemyCount(s)===1&&activeFinish>0&&activeFinish>=Math.max(0,...attacks.map(a=>a.finish));
-      const follow=attacks.length?Math.max(...attacks.map(a=>a.score)):0;
+      // A low-HP attacker may lose this hit during a non-fast relay. Keep its
+      // damage candidate, but award its defeat only after that relay.
+      const relayRisk=riskyRelay(s,m,who),
+        follow=attacks.length?Math.max(...attacks.map(a=>a.score-(relayRisk&&a.finish?100:0))):0;
       let score=follow?follow-switchEffort(m)-fee*2:0;
       // Movement friction ranks alternatives, but must not turn a funded
       // positive hit/energy gain into an empty end-turn. Once switched, the
@@ -660,7 +699,7 @@
         if(p.combat&&child.score>0)routes.push(child);
         if(p.boundary||child.nominalTerminal||
           p.combat&&T.enemyCount(p.state)>0&&p.state.characters[p.state.active].hp<=3||T.enemyCount(p.state)===0)continue;
-        const key=T.boardKey(p.state)+JSON.stringify({...p.memory,played:p.memory.played.slice().sort()})+child.casts;
+        const key=T.boardKey(p.state)+JSON.stringify({...p.memory,played:p.memory.played.slice().sort()})+child.casts+Number(child.relayRisk);
         const previous=seen.get(key);
         if(previous&&previous.score>=child.score&&previous.depth<=child.sequence.length)continue;
         seen.set(key,{score:child.score,depth:child.sequence.length});

@@ -262,7 +262,8 @@ async recoverBeforeConfirmation(error, action, state, previousBudget) {
         this.notice("resync", "[调整] 牌面发生变化，重新同步后继续。");
           let refreshed;
           try { refreshed = await host.observe(true, error.code === "TCG_HAND_REFRESH"
-            ? { mode: "full", ...host.handContinuation } : { mode: "unchanged", hand: state.hand });
+            ? { mode: "full", ...host.handContinuation, handIdentity: error.handIdentity }
+            : { mode: "unchanged", hand: state.hand });
           } catch (e) {
             await this.defer(e, [...BOARD_RETRIES, "TCG_HAND_RETRY"], "execution-resync-deferred", "牌桌重新同步超时（60秒）");
             return;

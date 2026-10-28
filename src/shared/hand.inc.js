@@ -443,14 +443,16 @@ recordHandLayout(count) {
 // @endfragment bgi-host.recordHandLayout
 
 // @fragment bgi-host.refreshHandBeforeInput
-async refreshHandBeforeInput(reason) {
+async refreshHandBeforeInput(reason, identity = null) {
       // No card was submitted: a delayed insertion changes positions, not the
       // preceding action's guarantee that its old cards stayed in the hand.
-      this.invalidateHand(reason, this.handContinuation);
+      // Quantity changes can retain old cards; a contradicted identity cannot.
+      this.invalidateHand(reason, identity ? null : this.handContinuation);
       this.requireHandObservation(this.phase(), "before-cache-refresh-reset");
       await this.reset();
       const error = new Error(reason);
       error.code = "TCG_HAND_REFRESH";
+      if (identity) error.handIdentity = identity;
       throw error;
     }
 // @endfragment bgi-host.refreshHandBeforeInput
@@ -828,6 +830,20 @@ async readHand(expected = this.handCountHint, evidence = null, scan = { titles: 
         if (scan.cards && scan.cards.length !== n) scan.titleCandidates = null;
         const hand = scan.cards?.length === n ? scan.cards : Array(n).fill(null);
         scan.cards = hand;
+        // The input check already read this slot. Apply it once to the current
+        // row, not through the old retention contract or a fresh false artwork hit.
+        const identity = scan.handIdentity;
+        scan.handIdentity = null;
+        if (identity?.card && identity.count === n)
+          hand[identity.card.index] = identity.card;
+        // A folded count can be unavailable until handCount opens the fan.
+        // Use that newly measured count too, not another round of title reads.
+        // Keep any current slot facts; a positive identity conflict still scans.
+        if (n > 0 && scan.retainedHandOrder === true && scan.retainedHand?.length === n &&
+            hand.every((card, i) => !card || card.id === scan.retainedHand[i].id)) {
+          for (let i = 0; i < n; i++) if (!hand[i]) hand[i] = { ...scan.retainedHand[i], index: i };
+          scan.route = "retained-order-native-count";
+        }
         // Establish the expanded fan once. Selecting a card only raises that
         // card; it does not require resetting/re-expanding the whole hand.
         if (n > 0 && !hand.every(Boolean) && !this.handFanReady) {
@@ -950,7 +966,9 @@ async inspectHandCard(action, x, before = null) {
         }
         if (slot?.id) {
           if (slot.id !== action.id)
-            await this.refreshHandBeforeInput("目标槽牌面已变化，重新核对手牌");
+            await this.refreshHandBeforeInput("目标槽牌面已变化，重新核对手牌", {
+              count: before.hand.length, card: TCG.observedCard(TCG.byId[slot.id].name, action.index),
+            });
           this.trace("hand-input-artwork", { id:action.id,index:action.index,additionalInputs:0 });
           return slot.point;
         }
@@ -959,10 +977,15 @@ async inspectHandCard(action, x, before = null) {
       if (!raw) {
         // The target may have left after a delayed effect. A board-only
         // refresh would keep selecting the same cached, nonexistent card.
-        await this.refreshHandBeforeInput("目标手牌标题为空，重新读取当前手牌");
+        await this.refreshHandBeforeInput("目标手牌标题为空，重新读取当前手牌", {
+          count: before?.hand.length ?? null, card: null,
+        });
       }
-      if (TCG.observedCard(raw, action.index)?.id !== action.id)
-        await this.refreshHandBeforeInput("目标手牌卡名校验失败，重新核对手牌");
+      const card = TCG.observedCard(raw, action.index);
+      if (card?.id !== action.id)
+        await this.refreshHandBeforeInput("目标手牌卡名校验失败，重新核对手牌", {
+          count: before?.hand.length ?? null, card,
+        });
     }
 // @endfragment bgi-host.inspectHandCard
 
@@ -987,7 +1010,7 @@ takePreparedHandInput(action, before) {
       // A new direct target may keep the fan only with a definite current
       // native count. Missing count falls back to the full board/input path.
       if (!sameSlot && !inspecting && count !== before.hand.length) return null;
-      const viewOnly = inspecting || !sameSlot;
+      const viewOnly = prepared.viewOnly === true || inspecting || !sameSlot;
       this.trace("hand-input-inspection-reused", { id:action.id, index:action.index,
         viewOnly, additionalInputs:0 });
       // View authority carries no selected position, identity, price or count

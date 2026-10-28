@@ -1,5 +1,5 @@
 {
-  "sharedRevision": "2.0.0",
+  "sharedRevision": "2.0.16",
   "package": {
     "packageId": "TCGPlayerSuite",
     "title": "七圣召唤全自动打牌（实时计算临场变招）",

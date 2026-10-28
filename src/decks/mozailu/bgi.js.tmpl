@@ -34,6 +34,8 @@
       const wearer=a.type==="switch"?a.target:b.active;
       this.gamblerBudget=m.artifactKinds[wearer]==="gambler"?
         {owner:wearer,remaining:TCG.gamblerRemaining(m,wearer),enemies:TCG.enemyCount(b)}:null;
+      if(a.type==="skill")a.skillCostBasis={actionKey:TCG.actionKey(a),beforeKey:TCG.boardKey(b),cost,
+        gambler:this.gamblerBudget&&{...this.gamblerBudget}};
       m.fastSwitch=b.active===0&&!m.monaFastUsed;
       this.boardReady=false;
       if(a.type==="card"||a.type==="tune")await this.inputHand(a,b,m);

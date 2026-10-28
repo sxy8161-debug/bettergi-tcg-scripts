@@ -40,6 +40,9 @@
     const order=living(s).length>1?[1,2,0]:[2,1,0];
     return order.find(i=>T.alive(s.characters[i])&&!s.characters[i].frozen)??s.active;
   }
+  function wolfInvestment(s,m,who) {
+    return (who===carry(s,m)?2.5:1.1)*s.characters[who].hp/10;
+  }
   function artifactValue(s,m,who) {
     const id=m.artifactKinds[who];
     if(id==="gilded")return 1;
@@ -228,7 +231,7 @@
       }
       // Only the future investment credit scales with remaining HP. Damage from
       // an immediately affordable equipped attack is still counted in full.
-      if(a.id==="wolf")value+=(a.target===focus?2.5:1.1)*s.characters[a.target].hp/10;
+      if(a.id==="wolf")value+=wolfInvestment(s,m,a.target);
       if(a.id==="gilded") {
         const output=s.active===0&&m.used[0]===0?0:focus;
         const useful=e=>e==="Omni"||e===T.team[output].element;
@@ -264,6 +267,16 @@
     // Value the change in equipment, not each equip event. Removing an artifact
     // loses its value; a neutral Lyre/re-equip cycle cannot farm that bonus.
     if(c?.type==="artifact"||a.id==="lyre")value+=artifactValue(s,v,a.target)-artifactValue(s,m,a.target);
+    if(cast) {
+      // Value one already-funded basic follow-up, not just the first hit.
+      // It is conditional output capacity: no future reaction, charge, refund
+      // or extra search branch, and this projection still stops at this cast.
+      const fundedBase=Math.max(0,...["NA","E"].filter(skill=>
+        T.skillLegal(n,{who:cast.who,skill},v)&&!T.actionRefused(n,v,{type:"skill",who:cast.who,skill}))
+        .map(skill=>damageEstimate(n,v,cast.who,skill).base));
+      estimate.fundedFollowup=Math.min(fundedBase,Math.max(0,living(s).reduce((hp,e)=>hp+e.hp,0)-estimate.total))*.55;
+      value+=estimate.fundedFollowup;
+    }
     if(stop)value+=reserveValue(n,v);
     // Random cards have investment value, not spendable attack resources.
     // Only flag a definite loss of funds: even perfect colour tuning could not
@@ -291,7 +304,13 @@
         a.type==="switch"&&!(node.state.active===0&&!node.memory.monaFastUsed);
       const paymentUncertain=!!node.paymentUncertain||p.conditionalPayment,
         terminal=p.terminal&&!opponentReply&&!paymentUncertain,
-        score=node.value+p.value-(p.terminal&&!terminal?100:0)-
+        // A development route may credit future equipment. A route ending in
+        // an attack must not use another character's unused weapon credit to
+        // outbid output. Equipping then attacking with its wearer keeps it.
+        caster=p.estimate?(a.type==="skill"?a.who:T.byId[a.id].combatSkill.who):null,
+        unusedInvestment=p.estimate?sequence.filter(x=>x.type==="card"&&x.id==="wolf"&&x.target!==caster)
+          .reduce((v,x)=>v+wolfInvestment(s,m,x.target),0):0,
+        score=node.value+p.value-unusedInvestment-(p.terminal&&!terminal?100:0)-
           (opponentReply&&p.estimate?Math.max(0,p.value-(p.terminal?100:0))*.25:0);
       const candidate={action:sequence[0],score,sequence,estimate:p.estimate,terminal,paymentUncertain,
         attackReserveLost:p.attackReserveLost};
@@ -408,11 +427,15 @@
         return {...d,planning:{sequence:[T.actionKey(d)],terminal:false,reason:"partner-before-retrieval"},
           projections:{used,limit:320,exhausted:used>=320}};
     }
-    // A skill whose estimated discount is insufficient gets one existing read-only probe.
-    if(best.action.type==="end")for(const skill of ["E","Q"]) {
-      const a={type:"probe",who:s.active,skill};
-      if(!s.characters[s.active].frozen&&(skill!=="Q"||s.characters[s.active].energy===T.team[s.active].maxEnergy)&&
-        T.total(s.dice)>0&&!T.skillProbeAttempted(s,m,a)&&!T.actionRefused(s,m,a))return a;
+    // Only uncertain backstage Troupe stacks can improve this deck's rule
+    // price. Probe E only if its best possible discount is fundable now.
+    if(best.action.type==="end"&&m.artifactKinds[s.active]==="troupe"&&(m.troupe[s.active]||0)<2) {
+      const a={type:"probe",who:s.active,skill:"E"},element=T.team[s.active].element,
+        minimum=Math.max(0,1-(s.active===2&&m.talents[2]&&[1,2].includes(m.dilucE)?1:0)),
+        good=(s.dice[element]||0)+(s.dice.Omni||0),
+        tunes=Math.min(3,s.hand.filter(h=>h.canTune!==false&&!h.attachments?.noTuning).length,T.total(s.dice)-good);
+      if(!s.characters[s.active].frozen&&good+tunes>=minimum&&
+        !T.skillProbeAttempted(s,m,a)&&!T.actionRefused(s,m,a))return a;
     }
     return {...best.action,planning:{score:best.score,sequence:best.sequence.map(T.actionKey),terminal:!!best.terminal,
       estimate:best.estimate,conditionalPayment:!!best.paymentUncertain,...(best.reason?{reason:best.reason}:{})},

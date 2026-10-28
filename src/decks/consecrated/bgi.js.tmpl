@@ -66,6 +66,17 @@
       });
       if (this.feeSample) this.feeSample.points=points;
     }
+    refreshHandFacts(hand) {
+      if (!hand.length) return hand;
+      // Reusing identities does not reuse their prices. Read the current
+      // folded digits through the same fact assembler as a full hand read.
+      this.feeSample=this.frame(f=>{
+        this.requireHandObservation(this.phaseIn(f),"retained-discard-cost-row");
+        const layout=this.collapsedLayoutIn(f);
+        return layout.status==="readable"&&layout.count===hand.length?this.foldedHandCostsIn(f,layout):null;
+      });
+      return this.finishHandObservation(hand,{retainedHand:hand});
+    }
     finishHandObservation(hand,scan={}) {
       const observed=hand.map(h=>{
         const current=this.cardWithFacts(h,null),prior=(scan.retainedHand||[]).filter(c=>c.id===h.id);

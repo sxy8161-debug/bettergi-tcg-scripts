@@ -25,6 +25,8 @@
     if(!bank||!Number.isFinite(bank.scoreFloor)||bank.scoreFloor<=0||bank.scoreFloor>1||
       bank.runnerUpGap!==.20||!Array.isArray(bank.entries))
       throw Error("手牌识别库格式不正确");
+    if(bank.searchPadding!==undefined&&(!Number.isInteger(bank.searchPadding)||bank.searchPadding<0||bank.searchPadding>8))
+      throw Error("牌面搜索边距不正确");
     for(const entry of bank.entries){
       if(!entry.name||!T.byId[entry.id]||T.norm(entry.name)!==T.norm(T.byId[entry.id].name))
         throw Error("手牌识别库与牌组身份不匹配："+entry.id);
@@ -115,7 +117,7 @@
         return this.memoFrame(f,"collapsed/identities",()=>{
           const read=C.identify(this.collapsedLayoutIn(f),bank,(slot,p,filename)=>{
           const [dx,dy,w,h]=p;
-          return score(this,env,f,slot.marker.x+dx,slot.marker.y+dy,w,h,filename,2);
+          return score(this,env,f,slot.marker.x+dx,slot.marker.y+dy,w,h,filename,bank.searchPadding??2);
           });
           // Report native rejection once per row; external diagnostics own images.
           const missing=read.slots.filter(s=>!s.id&&!s.titleCandidates);
@@ -151,7 +153,7 @@
         const slots=layout.markers.map((marker,index)=>({index,marker,point:layout.points[index]}));
         const read=C.identify({status:"readable",count,slots:targetIndex===null?slots:slots.filter(s=>s.index===targetIndex)},
           bank.expanded,(slot,p,filename)=>score(this,env,f,Math.round(slot.marker.x)+p[0],
-            Math.round(slot.marker.y)+p[1],p[2],p[3],filename,2,
+            Math.round(slot.marker.y)+p[1],p[2],p[3],filename,bank.expanded.searchPadding??2,
             this.observedRoi("handExpanded",[Math.round(slot.marker.x)+p[0],Math.round(slot.marker.y)+p[1],p[2],p[3]])));
         if(read.slots.every(s=>!s.id)&&!this.diagnosticKeys.has("expanded-art-miss")){
           this.diagnosticKeys.add("expanded-art-miss");
@@ -199,6 +201,32 @@
         // Equal counts plus a unique identity or an explicit relative-order
         // contract resolve old members; new family members still need titles.
         if(!retainedHand)return;
+        // Bind surviving identities to this row, not their old slot numbers.
+        // New cards may be inserted anywhere. Reuse a missing identity only
+        // when every order-preserving placement of the survivors agrees.
+        if(retainedOrder&&retainedHand.length&&cards.some(c=>!c)){
+          const placements=[];
+          const place=(old,from,indices)=>{
+            if(old===retainedHand.length){placements.push(indices);return;}
+            for(let i=from;i<=cards.length-(retainedHand.length-old);i++){
+              const id=cards[i]?.id||slots[i].id,candidates=slots[i].titleCandidates,want=retainedHand[old].id;
+              if(id?id!==want:candidates&&!candidates.includes(want))continue;
+              place(old+1,i+1,indices.concat(i));
+            }
+          };
+          place(0,0,[]);
+          const reused=[];
+          for(let i=0;i<cards.length&&placements.length;i++)if(!cards[i]){
+            const ids=new Set(placements.map(indices=>{
+              const old=indices.indexOf(i);return old<0?null:retainedHand[old].id;
+            }));
+            if(ids.size!==1||ids.has(null))continue;
+            const id=ids.values().next().value;
+            cards[i]=T.observedCard(T.byId[id].name,i);reused.push(i);
+          }
+          if(reused.length)this.trace("hand-retained-reused",{count:reused.length,handCount:cards.length,indices:reused,
+            proof:"retained-order-and-unambiguous-current-row",titleInputs:0});
+        }
         // Folded and expanded readers fill the same observation. An identity
         // already read in the folded row is not lost when its expanded art
         // misses; use the combined current evidence for family counting.

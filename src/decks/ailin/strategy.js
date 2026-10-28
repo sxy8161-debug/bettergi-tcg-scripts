@@ -24,7 +24,7 @@
     if(a.who===0&&a.skill==="E")value+=m.coldSummon===0?2.2:.2;
     if(a.who===1&&["CA","Q"].includes(a.skill))value+=(T.known(m.catSummon)&&m.catSummon<2?1:0)+(T.known(m.props)&&m.props<3?.4:0);
     if(a.who===1&&a.skill==="E"&&T.known(m.props))value+=Math.min(m.props,Math.max(0,10+m.extraMaxHp[1]-s.characters[1].hp))*.6;
-    if(a.who===0&&a.skill==="Q")value+=s.characters.reduce((n,c,i)=>n+Math.min(2,Math.max(0,T.team[i].maxHp+m.extraMaxHp[i]-c.hp))*.55,0);
+    if(a.who===0&&a.skill==="Q")value+=s.characters.reduce((n,c,i)=>n+(T.alive(c)?Math.min(2,Math.max(0,T.team[i].maxHp+m.extraMaxHp[i]-c.hp))*.55:0),0);
     if(a.skill==="Q")value-=.15;
     return value-.05;
   }
@@ -34,7 +34,7 @@
       if(m.artifactKinds[a.target]===id)return -Infinity;
       // Gladiator's discount earns priority with an actually funded followup,
       // not a fixed bonus for putting it on an off-field Lyney near the finish.
-      return id==="heart"?(a.target===s.active?1.25:.1):id==="gladiator"?.1:
+      return id==="heart"?(a.target===s.active?1.25:.1):id==="gladiator"?-Infinity:
         a.target===s.active&&T.enemyCount(s)>1&&s.enemies.some(e=>T.alive(e)&&e.hp<=5)?1.3:.05;
     }
     if(id==="teaParty")return skillValue(s,m,{who:0,skill:"E"})+(m.talents[0]?-.8:1.5);

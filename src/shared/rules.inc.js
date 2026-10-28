@@ -205,21 +205,23 @@ function handInstanceFacts(h) {
     return [h.currentCost ?? null, ...["empowered", "noTuning", "effectless", "reduction", "increase"]
       .map(k => h.attachments?.[k] ?? null)];
   }
-// Quotes and failed attempts belong to one observed board, not a whole round.
+// Quotes and failed attempts share one fee context. Decks without a narrower
+// rule-defined context retain the complete observed-board key.
 // Card-fact probeKeys are independent and are never cleared here.
 function skillQuoteKey(a) { return [a.who,a.skill,a.technique ?? null].join("/"); }
+function skillCostKey(s,m) { return root.TCG.skillCostStateKey?.(s,m) ?? boardKey(s); }
 function skillQuote(s,m,a) {
-    return m.skillCosts?.key === boardKey(s) ? m.skillCosts.entries[skillQuoteKey(a)] : undefined;
+    return m.skillCosts?.key === skillCostKey(s,m) ? m.skillCosts.entries[skillQuoteKey(a)] : undefined;
   }
 function skillProbeAttempted(s,m,a) { return skillQuote(s,m,a) !== undefined; }
 function recordSkillCost(s,m,a,n,source="native-skill-preview") {
-    const key=boardKey(s);
+    const key=skillCostKey(s,m);
     if(m.skillCosts?.key!==key)m.skillCosts={key,entries:{}};
     m.skillCosts.entries[skillQuoteKey(a)]={n,source};
   }
 function clearSkillCosts(m) { m.skillCosts=null; }
 function refreshSkillCosts(m,s) {
-    if(m?.skillCosts&&m.skillCosts.key!==boardKey(s))clearSkillCosts(m);
+    if(m?.skillCosts&&m.skillCosts.key!==skillCostKey(s,m))clearSkillCosts(m);
   }
 function drawConsumptionProven(a,b,s) {
     const r=s?.drawConsumption,h=b?.hand?.[a?.index];

@@ -16,6 +16,7 @@
   ],
   "scoreFloor": 0.95,
   "runnerUpGap": 0.2,
+  "searchPadding": 4,
   "entries": [
     {
       "id": "calx",
@@ -43,7 +44,7 @@
           ]
         }
       ],
-      "scoreFloor": 0.93
+      "scoreFloor": 0.9
     },
     {
       "id": "draw",
@@ -102,6 +103,7 @@
     {
       "id": "fruit",
       "name": "盈满之实",
+      "scoreFloor": 0.93,
       "views": [
         {
           "name": "native-8c692ed44b-0",
@@ -163,6 +165,7 @@
     {
       "id": "research",
       "name": "科研的动力",
+      "scoreFloor": 0.93,
       "views": [
         {
           "name": "native-672279c3ca-0",
@@ -203,6 +206,7 @@
     {
       "id": "upgrade",
       "name": "天才的改造法",
+      "scoreFloor": 0.9,
       "views": [
         {
           "name": "native-abf67121f8-0",
@@ -648,6 +652,7 @@
   "expanded": {
     "scoreFloor": 0.95,
     "runnerUpGap": 0.2,
+    "searchPadding": 4,
     "patches": [
       [
         34,
@@ -666,6 +671,7 @@
       {
         "id": "calx",
         "name": "白垩之术",
+        "scoreFloor": 0.9,
         "views": [
           {
             "name": "fdb127fc1ef0",
@@ -733,6 +739,7 @@
       {
         "id": "research",
         "name": "科研的动力",
+        "scoreFloor": 0.93,
         "views": [
           {
             "name": "8bc7ebb0683b",
@@ -780,6 +787,7 @@
       {
         "id": "upgrade",
         "name": "天才的改造法",
+        "scoreFloor": 0.9,
         "views": [
           {
             "name": "ebd63eaaf8a2",

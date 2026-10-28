@@ -92,6 +92,9 @@
         alive(c)&&typeof c.frozen==="boolean"&&known(c.energy)&&c.energy<=team[i].maxEnergy));
   }
   function switchCost(m){return {any:m.freeSwitch?0:1};}
+  function skillCostStateKey(s,m) {
+    return JSON.stringify([m.round,s.active,m.artifactKinds,m.troupe,m.talents,m.dilucE]);
+  }
   function skillCost(who,skill,m,s=null) {
     const base=skill==="NA"?{element:team[who].element,n:1,any:2}:{element:team[who].element,n:who===2&&skill==="Q"?4:3};
     if(skill==="E")base.n=Math.max(0,base.n-(m.troupe[who]||0)-(who===2&&m.talents[2]&&[1,2].includes(m.dilucE)?1:0));
@@ -265,9 +268,24 @@
     if(!a||!b||!c)return false;if(c.result)return true;
     if(a.type==="end")return c.turn==="enemy"||["roll","settlement"].includes(c.phase);
     if(a.type==="switch")return c.active===a.target&&b.active!==a.target;
-    if(a.type==="skill")return transition||c.turn==="enemy"||!!c.dice&&(total(c.dice)<total(b.dice)||
-      known(c.characters?.[a.who]?.energy)&&c.characters[a.who].energy!==b.characters[a.who].energy||
-      enemyCount(c)!==null&&JSON.stringify(c.enemies.map(e=>e.hp))!==JSON.stringify(b.enemies.map(e=>e.hp)));
+    if(a.type==="skill") {
+      const paid=b.diceKnown===true&&c.diceKnown===true&&total(c.dice)<total(b.dice),basis=a.skillCostBasis,
+        bound=basis?.actionKey===actionKey(a)&&basis.beforeKey===boardKey(b);
+      if(paid)return true;
+      if(bound&&basis.cost>0) {
+        // A previous kick/charge/turn change is not this cast's payment. Only
+        // an equipped Gambler's observed defeats can explain no net dice loss.
+        const g=basis.gambler,count=enemyCount(c),defeats=g&&count!==null?Math.max(0,g.enemies-count):0;
+        return b.diceKnown===true&&c.diceKnown===true&&g?.owner===c.active&&
+          Array.from({length:Math.min(g?.remaining||0,defeats)},(_,i)=>
+            Math.min(16,total(b.dice)-basis.cost+2*(i+1))).includes(total(c.dice));
+      }
+      const old=b.characters?.[a.who],now=c.characters?.[a.who],
+        charged=alive(now)&&known(old?.energy)&&known(now.energy)&&
+          (a.skill==="Q"?now.energy<old.energy:now.energy>old.energy);
+      return charged||bound&&basis.cost===0&&(transition||c.turn==="enemy"||
+        enemyCount(c)!==null&&JSON.stringify(c.enemies.map(e=>e.hp))!==JSON.stringify(b.enemies.map(e=>e.hp)));
+    }
     if(a.type==="tune")return c.turn==="user"&&removedOne(b.hand,c.hand,a.id)&&total(c.dice)===total(b.dice)&&(c.dice[a.element]||0)===(b.dice[a.element]||0)+1;
     if(a.type!=="card"||!c.hand)return false;
     if(drawConsumptionProven(a,b,c))return true;
@@ -331,7 +349,7 @@
   root.TCG={team,cards,byId,norm,identify,observedCard,handCardKnown,indexedHand,reconcileHand,actionRefused,blockAction,
     skillQuote,skillProbeAttempted,recordSkillCost,clearSkillCosts,refreshSkillCosts,drawConsumptionProven,characterName,diceOrder,
     known,alive,total,size,payment,boardKey,actionKey,freshMemory,nextRound,OpeningFlow,legalState,freshActionBoard,
-    switchCost,skillCost,skillLegal,cardPrice,cardCost,cardLegal,cardRefund,generateDice,enemyCount,elementReaction,damageAgainst,handVariantProof,
+    switchCost,skillCostStateKey,skillCost,skillLegal,cardPrice,cardCost,cardLegal,cardRefund,generateDice,enemyCount,elementReaction,damageAgainst,handVariantProof,
     gamblerRemaining,noteBoard,commit,deferUncertain,rejectAction,handPlan,verify,verifyResynchronized:(a,b,c,t)=>legalState(c)&&verify(a,b,c,t),
     emptyHandEffect,removalEffect:()=>false,openingSetting,openingContext,keepOpening,openingPlan,rerollPlan,rerollCounter,
     drawPayment:(s,a,m)=>byId[a.id]?.type==="draw"||byId[a.id]?.type==="support"&&handPlan(a,s,m).mode==="full"

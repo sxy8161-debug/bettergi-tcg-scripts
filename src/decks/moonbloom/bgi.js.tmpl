@@ -93,17 +93,24 @@
       const cost=selected?detail.cost:this.feeSample?.costs?.[h.index]??null;
       const attachments=selected?detail.attachments:{source:"unknown",empowered:null},
         badge=!selected&&this.feeSample?.empowered?.[h.index]===true;
-      return {...h,currentCost:cost,costSource:cost===null?"unknown":selected?"native-selected-card-cost":this.feeSample?.source||"native-expanded-cost-markers",
+      return {...h,currentCost:cost,costSource:cost===null?"unknown":selected?detail.costSource||"native-selected-card-cost":this.feeSample?.source||"native-expanded-cost-markers",
         attachments:badge?{...attachments,source:"native",empowered:true}:attachments,canTune:selected&&detail.canTune};
     }
     readSelectedCardFacts(f,card,x){
-      const cost=this.selectedCardCostIn(f,x),a=this.currentAction,
+      const selectedCost=this.selectedCardCostIn(f,x),a=this.currentAction,
         prior=a?.id===card.id?this.handCache?.[a.index]:null,
-        retain=prior?.id===card.id&&Math.abs(this.handPoints(this.handCache.length)[a.index]-x)<=8&&
+        sameSlot=prior?.id===card.id&&Math.abs(this.handPoints(this.handCache.length)[a.index]-x)<=8,
+        // Selecting this same card changes only the view. A missing digit does
+        // not revoke its current native quote; a newly read price still wins.
+        quoted=sameSlot&&T.known(prior.currentCost)&&
+          ["native-folded-cost-markers","native-expanded-cost-markers","native-selected-card-cost"].includes(prior.costSource),
+        cost=selectedCost??(quoted?prior.currentCost:null),
+        costSource=selectedCost!==null?"native-selected-card-cost":quoted?prior.costSource:"unknown",
+        retain=sameSlot&&
           prior.currentCost===cost&&T.cardFactsKnown(prior,a.type==="tune"?"tuning":a.requirement),
         attachments=retain?prior.attachments:attachmentFacts(
           this.ocrRows(f,this.roi("details", [270,165,510,700])),cost,card,this.ocrRows(f,this.roi("details", [680,100,355,620])));
-      this.cardDetails.set(x,{id:card.id,cost,attachments,
+      this.cardDetails.set(x,{id:card.id,cost,costSource,attachments,
         canTune:attachments.source==="native"&&typeof attachments.empowered==="boolean"&&attachments.noTuning===false&&
           !["branch","choice-option"].includes(card.type)&&card.id!=="bloom"});
     }
@@ -136,13 +143,21 @@
     }
     async probeCard(a,before,memory,prepared=null){
       const markerOnly=a.requirement==="empowerment-row";
-      let sourceCount=prepared&&!prepared.viewOnly?prepared.sourceCount:
-        await this.prepareHandInput(before.hand.length,markerOnly?null:a.index,!markerOnly),
-        points=this.handPoints(before.hand.length);
       const after={...before,hand:before.hand.slice(),probed:true,confirmed:false};
       if(markerOnly){
-        await this.prepareHandObservation(before.hand.length);
-        after.hand=this.finishHandObservation(after.hand,{retainedHand:before.hand});
+        const empowered=this.frame(f=>{
+          this.requireHandObservation(this.phaseIn(f),"hand-attachment-markers");
+          const layout=this.handFanReady?this.handCostLayoutIn(f,before.hand.length):this.collapsedLayoutIn(f),
+            markers=this.handFanReady?layout?.markers:
+              layout?.status==="readable"&&layout.count===before.hand.length?layout.slots.map(s=>s.marker):null;
+          return markers?this.handEmpowermentIn(f,markers):[];
+        });
+        // This is a marker read, not another hand/price transaction. Preserve
+        // every existing quote and attachment except a positively seen badge.
+        after.hand=after.hand.map(h=>empowered[h.index]===true?
+          {...h,attachments:{...h.attachments,source:"native",empowered:true},
+            canTune:h.attachments?.noTuning===false&&!!T.byId[h.id]&&
+              !["branch","choice-option"].includes(T.byId[h.id].type)&&h.id!=="bloom"}:h);
         for(const key of [a.key,T.cardProbeKey(after,after.hand[a.index],a.requirement)])
           if(!memory.probeKeys.includes(key))memory.probeKeys.push(key);
         // Like checkCardInput, publish observed hand facts to this read-only
@@ -150,11 +165,15 @@
         before.hand=after.hand;
         this.acceptHand(after.hand,"hand-attachment-markers");
         this.trace("hand-attachment-markers",{empowered:after.hand.filter(h=>h.attachments?.empowered===true).map(h=>h.index),
-          count:after.hand.length,detailInputs:0});
-        await this.reset();await this.requireUnchangedBoard(before);
-        this.trace("card-probe-completed",{reads:0,markerRow:true,fanRetained:false});
+          count:after.hand.length,detailInputs:0,view:this.handFanReady?"expanded":"folded"});
+        if(prepared)this.preparedHandInput={viewOnly:true,beforeKey:T.boardKey(after),
+          revision:this.inputRevision,at:Date.now()};
+        this.trace("card-probe-completed",{reads:0,markerRow:true,fanRetained:!!this.preparedHandInput});
         return after;
       }
+      let sourceCount=prepared&&!prepared.viewOnly?prepared.sourceCount:
+        await this.prepareHandInput(before.hand.length,a.index,true),
+        points=this.handPoints(before.hand.length);
       let request=a,observed,x,inspected=false,reads=0;
       do {
         // Reuse the fan, not the previous slot's preselection price proof.
@@ -180,10 +199,10 @@
           attachments:observed.attachments,dependency:request.dependency,batchRead:reads});
         request=a.dependency!==undefined?T.dependencyProbes(after,memory).find(p=>p.dependency===a.dependency):null;
       }while(request);
-      if(inspected&&sourceCount){
-        // Inspection changes no game resources. Any next known card target may
-        // keep the fan; only the same slot may keep its selected identity.
-        this.preparedHandInput={id:observed.id,index:observed.index,x,sourceCount,
+      if(sourceCount){
+        // A price-only result still leaves the same fan open. Carry its view,
+        // but only an inspected slot can carry a selected card identity.
+        this.preparedHandInput={id:observed.id,index:observed.index,x,sourceCount,viewOnly:!inspected,
           beforeKey:T.boardKey(after),revision:this.inputRevision,at:Date.now()};
       }else{await this.reset();await this.requireUnchangedBoard(before);}
       this.trace("card-probe-completed",{reads,fanRetained:!!this.preparedHandInput});
@@ -277,7 +296,18 @@
       return super.inputSkill(a,before);
     }
     adoptObservedState(state,reason){super.adoptObservedState(state,reason);this.expectedDice=null;this.gamblerBudget=null;}
-    async confirm(a,before,m){return super.confirm(combatConfirmation(a,before),before,m);}
+    async confirm(a,before,m=T.freshMemory()){
+      const after=await super.confirm(combatConfirmation(a,before),before,m),
+        lumenDraw=m.supports.includes("lumen")&&!m.lumenUsed&&m.lumenCards===2,
+        replaced=["sand","upgrade","meditation","razor"].includes(a.id)&&after.hand?.length>=before.hand.length,
+        enemyOnly=a.id==="sand"&&after.choiceReceipt?.kind==="sand"&&after.choiceReceipt.id==="disperse";
+      // These effects replace the source with a completed one-card result (or
+      // leave only its removal). Unlike draw-two/kernel effects, an equal native
+      // count is already the finished hand, not grounds to scan it once more.
+      if(after.confirmed&&after.handRead==="full"&&!lumenDraw&&(replaced||enemyOnly))
+        return {...after,handRefreshRequired:false};
+      return after;
+    }
     async forcedActionProof(a,before){return super.forcedActionProof(combatConfirmation(a,before),before);}
   }
   root.TCGBetterGI={...root.TCGBetterGI,BetterGIHost:MoonHost};

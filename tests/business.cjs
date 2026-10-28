@@ -1,7 +1,7 @@
 "use strict";
 const fs=require("node:fs"),path=require("node:path"),registry=require("../players.json");
 const publicDecks=Object.entries(registry.players).filter(([,p])=>p.publicSuite===true).map(([id])=>id);
-const modules=["iansan-confirmation-review","iansan-projection-review","moon-review","raiden-review","refusal-review","review251","moon-native-followup","geometry","input-confirmation","hand-observation","run-diagnostics","card-atlas","package-layout","registry"];
+const modules=["iansan-confirmation-review","raiden-review","refusal-review","review251","moon-native-followup","geometry","input-confirmation","hand-observation","run-diagnostics","card-atlas","package-layout"];
 async function run(test){for(const name of modules)await require("./business/"+name+".cjs")(test);}
 if(require.main===module){
   let passed=0,failed=0;

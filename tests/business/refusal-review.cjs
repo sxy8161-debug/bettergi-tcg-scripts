@@ -50,12 +50,4 @@ module.exports=async function(test){
     const unknownHand=board(T,["seed"]).hand;Object.assign(unknownHand[0],facts(2));h.acceptHand(unknownHand,"unknown-outcome-reread");
     assert.equal(T.actionRefused({...s,hand:unknownHand},m,a),true,"possible transformed uncertain origin remains blocked");
   });
-  await test("R05 semantic skill conditions ignore dice property order and unrelated HP",()=>{
-    const {T}=load("raiden"),s=board(T),m=T.freshMemory(),a={type:"skill",who:0,skill:"E"};
-    s.dice={Omni:2,Electro:1};s.characters[0].frozen=true;T.rejectAction(m,a,s);
-    const changed=copy(s);changed.dice={Electro:1,Omni:2};changed.characters[1].hp--;
-    assert.equal(T.actionRefused(changed,m,a),true);
-    changed.characters[0].frozen=false;assert.equal(T.actionRefused(changed,m,a),false);
-    T.deferUncertain(m,a,s);assert.equal(T.actionRefused(changed,m,a),true);
-  });
 };

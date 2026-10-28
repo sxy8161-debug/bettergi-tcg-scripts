@@ -364,10 +364,13 @@ async requireUnchangedBoard(before, action = null) {
 if (!Number.isInteger(action.target) || action.target < 0 || action.target > 2 ||
           action.target === before.active || before.characters[action.target].dead !== false)
         throw new Error("切换目标非法");
-      // Opening details verifies the target before the payment overlay.
-      const raw = await this.titleAt(charX[action.target], 720, false, false, "character", action.target, true);
+      // The observed own-character layout already identifies this fixed slot.
+      // Select it directly; a missing detail title must not block switching.
+      this.clickAt(...this.point("board",charX[action.target],720));
+      this.handNeedsReset = true;
+      this.handFanReady = false;
+      await sleep(120);
       this.requireHandObservation(this.phase(), "before-switch-payment");
-      if (TCG.characterName(raw) !== action.target) throw new Error("切换目标角色标题未核实");
       this.clickAt(...this.point("bottom",1820,958));
       await sleep(120);
       const preview = await this.requireSwitchPreview(action, memory);
@@ -381,9 +384,31 @@ if (!Number.isInteger(action.target) || action.target < 0 || action.target > 2 |
 // @endfragment bgi-host.switchInputBody
 
 // @fragment bgi-host.endRoundInputBody
-await this.clickButton("回合结束", this.roi("viewport", [0, 0, 384, 1080]));
-      // Official RoundEnd waits 1000ms for the popup animation. clickButton
-      // already waited 200ms; confirm inside the native five-second window.
-      await sleep(800);
-      if (this.phase().turn === "user") await this.clickButton("回合结束", this.roi("viewport", [0, 0, 384, 1080]));
+let button;
+      const phase = this.phase((f, p) => {
+        if (p.phase === "board" && p.turn === "user")
+          button = this.matches(f, "core/回合结束", this.roi("viewport", [0, 0, 384, 1080]))[0];
+      });
+      if (!button) {
+        this.autoRisk = true;
+        const error = new Error("结束回合入口已变化，重新观察当前页面");
+        error.code = phase.phase === "board" && phase.turn === "user"
+          ? "TCG_STATE_REFRESH" : "TCG_OBSERVATION_INTERRUPTED";
+        error.phase = phase;
+        throw error;
+      }
+      const point = [button.x + button.w / 2, button.y + button.h / 2];
+      this.clickAt(...point);
+      this.trace("button-clicked", { asset: "回合结束", point });
+      // Official RoundEnd reuses the opener position after its 1000ms popup.
+      // The turn icon can outlive confirmation; it does not prove a miss.
+      await sleep(1000);
+      const next = this.phase();
+      if (next.phase === "board" && next.turn === "user") {
+        this.clickAt(...point);
+        this.trace("button-clicked", { asset: "回合结束", point });
+        await sleep(200);
+      }
+      // A submitted click now belongs to confirmPending, including a delayed
+      // handoff or defeat pick. Do not resubmit because the old icon remains.
 // @endfragment bgi-host.endRoundInputBody

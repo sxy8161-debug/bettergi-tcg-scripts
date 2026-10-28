@@ -9,7 +9,7 @@ async observe(pendingAction = false, plan = null) {
       if (p && (p.phase !== "board" || p.turn !== "user")) return { ...p, hand: null };
       let hand = null;
       const scanBefore = this.handScanSerial;
-      const handScan = { titles: 0 };
+      const handScan = { titles: 0, handIdentity: plan?.handIdentity };
       // One recovery budget per pending action, not per 45-second poll.
       const recovery = this.confirmationSession
         ? (this.confirmationSession.handRecovery ||= { failures:0 })
