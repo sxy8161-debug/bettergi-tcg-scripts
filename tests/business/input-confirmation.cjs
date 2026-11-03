@@ -68,7 +68,7 @@ module.exports=async function(test){
         diceKnown:true,dice:{Omni:5},hand:[],characters:T.team.map(t=>({hp:t.maxHp,energy:0,dead:false,frozen:false})),
         enemies:[{hp:10,dead:false,active:true,aura:[],auraKnown:false}]};
     h.frame=fn=>fn({});h.board=()=>clone(state);h.boardReady=true;h.phase=()=>clone(scene);
-    // Interrupt before either restored OCR preview can authorize confirmation.
+    // Interrupt after role selection or after opening payment.
     h.phaseIn=()=>{if(scene.phase==="unknown"&&++previews===1&&interrupt==="preview")scene={phase:"choice",turn:"none"};return clone(scene);};
     h.warnings=()=>({lack:false,text:""});h.matches=()=>[];
     h.ocr=(_,{rect: roi})=>roi[0]===311?T.team[2].name:roi[0]===700?"将所选角色切换为出战角色":roi[0]===1720?"切换角色":"";
@@ -86,22 +86,28 @@ module.exports=async function(test){
       assert.deepEqual(f.inputs,point==="selection"?[[1175,720]]:[[1175,720],[1820,958]]);
     }
   });
-  await test(id+": fixed-slot switch needs no character title and confirms payment once",async()=>{
-    const f=fixture(),ocr=f.h.ocr;
-    f.h.titleAt=()=>{throw Error("Fixed-slot switching must not inspect a character title");};
-    f.h.ocr=(frame,area)=>{if(area.rect[0]===311)throw Error("Switching must not OCR the character title region");return ocr(frame,area);};
-    await f.h.execute({type:"switch",target:2},f.state,f.T.freshMemory());
-    assert.deepEqual(f.inputs,[[1175,720],[1820,958],[1820,958]]);
-    assert.equal(f.inputs.length,3);
+  await test(id+": fixed-slot switch submits with blank OCR and either a visible or hidden turn icon",async()=>{
+    for(const phase of [{phase:"board",turn:"user"},{phase:"unknown",turn:"none"}]){
+      const f=fixture();
+      f.h.titleAt=()=>{throw Error("Fixed-slot switching must not inspect a character title");};
+      f.h.ocr=()=>"";f.h.phaseIn=()=>phase;
+      await f.h.execute({type:"switch",target:2},f.state,f.T.freshMemory());
+      assert.deepEqual(f.inputs,[[1175,720],[1820,958],[1820,958]]);
+      assert.ok(f.inputTimes[2]-f.inputTimes[1]>=800,"let the switch payment animation open before confirmation");
+    }
   });
-  await test(id+": switch payment not opened during handoff returns to observation without submission",async()=>{
-    const f=fixture(),events=[];f.h.phaseIn=()=>({phase:"board",turn:"user"});
-    f.h.ocr=(_f,{rect:r})=>r[0]===311?f.T.team[2].name:"";
+  await test(id+": submitted switching still needs a real active-character change",async()=>{
+    const f=fixture(),events=[],action={type:"switch",target:2},m=f.T.freshMemory();
+    f.h.phaseIn=()=>({phase:"board",turn:"user"});f.h.ocr=()=>"";
     f.h.trace=(event,data)=>events.push({event,data});
-    await assert.rejects(()=>f.h.execute({type:"switch",target:2},f.state,f.T.freshMemory()),e=>e.code==="TCG_STATE_REFRESH");
-    assert.deepEqual(f.inputs,[[1175,720],[1820,958]],"no final payment click or blind replay");
-    assert.equal(f.h.autoRisk,true);
-    assert.equal(events.some(e=>e.event==="input-submitted"),false);
+    await f.h.execute(action,f.state,m);
+    f.h.phase=()=>({phase:"board",turn:"user"});f.h.handNeedsReset=false;
+    f.h.observe=async()=>clone(f.state);f.h.observedResourceProof=async()=>({revision:f.h.inputRevision});
+    const after=await f.h.confirm(action,f.state,m);
+    assert.equal(after.confirmed,false);
+    assert.equal(f.T.verify(action,f.state,{...f.state,active:2}),true);
+    assert.deepEqual(f.inputs,[[1175,720],[1820,958],[1820,958]],"confirmation never replays a submitted switch");
+    assert.equal(events.filter(e=>e.event==="input-submitted").length,1);
   });
   await test(id+": long first-slot tuning drag holds down before moving, settles at destination and always releases",async()=>{
     for(const failHold of [false,true]){

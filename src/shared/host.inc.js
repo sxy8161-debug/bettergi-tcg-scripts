@@ -304,7 +304,6 @@
     /* @include src/shared/input.inc.js#bgi-host.waitForSample */
     /* @include src/shared/input.inc.js#bgi-host.cardTargetPreviewIn */
     /* @include src/shared/input.inc.js#tcg-ui.requireNoWarning */
-    /* @include src/shared/input.inc.js#bgi-host.requireSwitchPreview */
     
     /* @include src/shared/observation.inc.js#bgi-host.boardsMatch */
     /* @include src/shared/input.inc.js#tcg-ui.requireUnchangedBoard */
