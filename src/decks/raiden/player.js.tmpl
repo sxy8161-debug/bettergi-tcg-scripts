@@ -22,6 +22,7 @@
     lotus: "为下一次受伤提供减伤",
     smoked: "为下一次普通攻击减费",
     mint: "为本回合普通攻击减费",
+    edict: "恢复目标角色生命，保留后续接力输出",
   };
 
   const OPENING_DEFAULT = "全部保留";
@@ -115,7 +116,7 @@
 
   // Formatter adapted from Iansan/Gaming/Sayu 0.1.9. Estimates are labelled;
   // observed facts, selected intentions and successful effects stay separate.
-  function actionCommentary(action, state, memory) {
+  function actionDescription(action, state, memory) {
     const who = T.team[action.who]?.name || "角色",
       target = T.team[action.target]?.name || "角色";
     const skill = { NA: "普通攻击", E: "元素战技", Q: "元素爆发" }[action.skill] || "技能";
@@ -195,16 +196,11 @@
             "。"
           );
         if (["shift", "fast"].includes(action.id)) {
-          const nextSwitch = sequence.slice(1).some((a) => a.type === "switch");
           return (
             "准备使用「" +
             card +
             "」" +
-            (nextSwitch
-              ? action.id === "shift"
-                ? "，为接下来的切换减费"
-                : "，准备快速切换"
-              : "") +
+            (action.id === "shift" ? "，为接下来的切换减费" : "，准备快速切换") +
             finish +
             "。"
           );
@@ -276,5 +272,6 @@
     /* @include src/shared/lifecycle.inc.js#lifecycle.act */
     /* @include src/shared/lifecycle.inc.js#lifecycle.run */
   }
+  /* @include src/shared/commentary.inc.js#commentary.actionCommentary */
   root.TCGPlayer = { Player, playerOptions, actionCommentary };
 })(globalThis);

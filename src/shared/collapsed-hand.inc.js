@@ -59,17 +59,16 @@
     if(layout.status!=="readable")return layout;
     const views=bank.entries.flatMap(entry=>(entry.views??[{name:"original",patches:entry.patches}]).map(view=>({
       id:entry.id,name:view.name??"original",scoreFloor:scoreFloor(entry,bank),titleCandidates:entry.titleCandidates,
-      patches:Array.isArray(view.patches)&&view.patches.length===bank.patches.length
-        ?Array.from(view.patches,file=>typeof file==="string"?file:null):[]
+      patches:view.patches
     })));
     return {...layout,slots:layout.slots.map(slot=>{
       // A view owns a complete pair. Never splice the best individual patches
       // of different views; runner-up is another identity, not the same card.
       const identities=new Map();
       for(const view of views){
-          const scores=view.patches.map((file,k)=>file===null?NaN:score(slot,bank.patches[k],file));
+          const scores=view.patches.map((file,k)=>score(slot,bank.patches[k],file));
           const rank={id:view.id,view:view.name,scores,scoreFloor:view.scoreFloor,titleCandidates:view.titleCandidates,
-            score:scores.length===bank.patches.length&&scores.length>0&&scores.every(Number.isFinite)?Math.min(...scores):-1};
+            score:scores.every(Number.isFinite)?Math.min(...scores):-1};
           // Explicit same-art variants (such as countdown stages) compete as
           // one unresolved family. Distinct artwork competes by exact card ID.
           const identity=view.titleCandidates?"family:"+view.titleCandidates.slice().sort().join("/"):view.id;

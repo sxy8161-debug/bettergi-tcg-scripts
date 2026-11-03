@@ -211,6 +211,7 @@
       }
     }
     async executeInput(action, before, memory) {
+      if(action.type==="switch")this.requireSwitchTarget(action,before);
       if(action.type==="card") {
         const reason=TCG.cardInputError(before,action,memory);
         if(reason)throw new Error(reason);

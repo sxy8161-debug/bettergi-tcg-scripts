@@ -188,7 +188,7 @@
       return e.guaranteed!==null&&e.guaranteed>=activeEnemy(s)?.hp||
         T.enemyCount(s)===1&&e.direct>=activeEnemy(s)?.hp;
     });
-    if(finish)return finish;
+    if(finish)return {...finish,intent:"当前输出足够补刀，省下额外的装备和调和步骤"};
     const list=direct.concat(attackPreparations(s,m,direct),fundedAttacks(s,m)).sort((a,b)=>b.value-a.value),actor=s.active;
     let best=list[0];
     // Optional development must not spend the last payable attack. Compare
@@ -210,13 +210,13 @@
           const cost=goal.type==="skill"?T.skillCost(c.who,c.skill,memory,next):T.cardCost(goal.id,goal.target,memory);
           return remaining>=T.size(cost);
         });
-        if(!canStillFund)best=output;
+        if(!canStillFund)best={...output,intent:"把骰子留给这一轮的攻击，付费过牌和铺场先缓一缓"};
       }
     }
     // Use the opening the guide describes only while it can still be paid.
     if(actor===0&&m.used[0]===0){
       const setup=list.find(a=>{const goal=a.followup||a;return goal.type==="card"&&goal.id==="teaParty"||goal.type==="skill"&&goal.skill==="E";});
-      if(setup)return setup;
+      if(setup)return {...setup,intent:"先铺好冰召唤物，再让后续普攻与火伤接上"};
     }
     // The guide's startup is E -> Lyney charged arrow, not repeated physical
     // attacks while the cold summon ticks away. A one-hit ranking charges the
@@ -230,12 +230,13 @@
       if(paid){
         const relay={...s,active:1,dice:paid.remaining},available=candidates(relay,m),
           plans=available.concat(attackPreparations(relay,m,available),fundedAttacks(relay,m));
-        if(plans.some(a=>{const goal=a.followup||a;return a.value>0&&goal.type==="skill"&&goal.skill==="CA";}))
-          return {type:"switch",target:1};
+        const relayPlan=plans.find(a=>{const goal=a.followup||a;return a.value>0&&goal.type==="skill"&&goal.skill==="CA";});
+        if(relayPlan)return {type:"switch",target:1,followup:relayPlan,intent:"冰召唤物已经铺好，骰子也够林尼接重击，换他上来衔接火伤"};
       }
     }
     const next=carryPlan(s,m);
-    if(next.who!==actor&&(!best||best.value-standingRisk(s,actor)<next.value))return {type:"switch",target:next.who};
+    if(next.who!==actor&&(!best||best.value-standingRisk(s,actor)<next.value))return {type:"switch",target:next.who,
+      intent:s.characters[actor].hp<=3?"当前角色血线受压，把进攻交给队友，保留后续接力":"把出战位交给当前输出更合适的队友，接着组织进攻"};
     if(best&&best.value>0)return best;
     return {type:"end",reason:"当前资源没有可兑现的行动"};
   }

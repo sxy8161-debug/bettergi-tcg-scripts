@@ -66,6 +66,18 @@ async function run(test,loadContext=overrides=>load(root,overrides)){
     const full=board(["autumnFrost"],1);
     assert.equal(T.cardLegal(full,{type:"card",id:"autumnFrost",index:0,target:1},m),true);
   });
+  await test("ailin: Gambler uses persist across rounds and renew only with a new equipment instance",()=>{
+    const m=memory();m.artifactKinds[1]="gambler";m.gamblerUsed[1]=3;
+    T.nextRound(m);assert.equal(T.gamblerRemaining(m,1),0);
+    const s=board(["heart","gambler"],1),after={...clone(s),confirmed:true};
+    T.commit(m,{type:"card",id:"heart",index:0,target:1},s,after);
+    assert.equal(m.gamblerUsed[1],3);
+    T.commit(m,{type:"card",id:"gambler",index:1,target:1},s,after);
+    assert.equal(T.gamblerRemaining(m,1),3);
+    m.enemyAliveCount=2;after.enemies=[{hp:4,dead:false,active:true}];
+    T.noteBoard(m,after,1);assert.equal(T.gamblerRemaining(m,1),2);
+    T.nextRound(m);assert.equal(T.gamblerRemaining(m,1),2);
+  });
 
 
   await test("ailin: new combat/summon/team-food payment scopes use the shared unique central control",async()=>{

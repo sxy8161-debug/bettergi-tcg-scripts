@@ -444,24 +444,7 @@ enemiesIn(f) {
         for (let i = 0; i < row.count; i++) {
           const c = row.cards[i], x = row.xs[i];
           if (!(TCG.alive(c) || c.dead === true) || best.xs.some(bx => Math.abs(bx - x) <= 12)) continue;
-          // A candidate HP crop can cross an admitted card's aura strip.
-          // Native Cryo was read as8 inside the four-slot layout while the
-          // complete one-slot layout correctly read44. Attribute a matched
-          // elemental glyph to that card, not to an extra enemy. Real outer
-          // HP and death markers still prevent shrinking a partial team.
-          const y = c.active ? 212 : 170;
-          const hpArea = this.roi("board", this.precisionBoard ? [x,y-6,62,52] : [x+8,y,44,40]).rect;
-          const overlaps = (a,b) => a[0]<b[0]+b[2] && b[0]<a[0]+a[2] &&
-            a[1]<b[1]+b[3] && b[1]<a[1]+a[3];
-          const auraDigit = c.dead !== true && best.cards.some((card,j) => {
-            if (card.dead === true) return false;
-            const area = this.roi("board", [best.xs[j]+60,(card.active?212:170)-70,95,62]);
-            if (!overlaps(hpArea,area.rect)) return false;
-            return ["Cryo","Hydro","Pyro","Electro","Dendro"].some(element =>
-              this.matches(f,"state/State"+element,area,0.8,true).some(g =>
-                overlaps(hpArea,[g.x,g.y,g.w,g.h])));
-          });
-          if (!auraDigit) return unknown();
+          if (!this.enemyHpIsAura(f, x, c, best)) return unknown();
         }
       return best.cards.map((c, i) => {
         // Freeze, like aura, does not select a layout. Read only admitted slots
@@ -470,6 +453,22 @@ enemiesIn(f) {
         const frozen = c.dead !== true &&
           this.has(f, "state/StateFreeze", this.roi("board", [best.xs[i] + 17, 105, 167, 382]), 0.9);
         return { ...c, aura, auraKnown: aura.length > 0 && aura.length <= 2, frozen: frozen ? true : null };
+      });
+    }
+    enemyHpIsAura(f, x, candidate, layout) {
+      if (candidate.dead === true) return false;
+      // Only an overlapping native elemental glyph can explain an extra HP digit.
+      const y = candidate.active ? 212 : 170;
+      const hpArea = this.roi("board", this.precisionBoard ? [x,y-6,62,52] : [x+8,y,44,40]).rect;
+      const overlaps = (a,b) => a[0]<b[0]+b[2] && b[0]<a[0]+a[2] &&
+        a[1]<b[1]+b[3] && b[1]<a[1]+a[3];
+      return layout.cards.some((card,j) => {
+        if (card.dead === true) return false;
+        const area = this.roi("board", [layout.xs[j]+60,(card.active?212:170)-70,95,62]);
+        if (!overlaps(hpArea,area.rect)) return false;
+        return ["Cryo","Hydro","Pyro","Electro","Dendro"].some(element =>
+          this.matches(f,"state/State"+element,area,0.8,true).some(g =>
+            overlaps(hpArea,[g.x,g.y,g.w,g.h])));
       });
     }
 // @endfragment tcg-ui.enemiesIn

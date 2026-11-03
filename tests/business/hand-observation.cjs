@@ -2,6 +2,45 @@
 const assert=require("node:assert/strict"),{load,board}=require("./runtime.cjs");
 const copy=x=>JSON.parse(JSON.stringify(x));
 module.exports=async function(test){
+  await test("a complete folded row outranks an incidental raised-card marker when expanding",async()=>{
+    const {Host}=load("mozailu"),h=new Host({});let clicks=0;
+    h.trace=()=>{};h.frame=fn=>fn({});h.phaseIn=()=>({phase:"board",turn:"user"});
+    h.raisedHandIn=()=>true;h.collapsedLayoutIn=()=>({status:"readable"});
+    h.clickAt=()=>{clicks++;};h.moveTo=()=>{};h.boardReady=true;
+    await h.expand(false);
+    assert.equal(clicks,1,"the native folded row needs the actual expand input");
+    h.handFanReady=h.handNeedsReset=false;h.boardReady=true;
+    h.collapsedLayoutIn=()=>({status:"unavailable"});
+    await h.expand(false);
+    assert.equal(clicks,1,"an actual raised view must stay open");
+    assert.equal(h.handFanReady,true);
+  });
+  await test("whole expanded artwork miss returns to the folded bank and reads only the remaining titles",async()=>{
+    // Native run-slot-04, 2026-11-03: eight titles after a round draw,
+    // although the folded bank covers all eight cards.
+    for(const mode of ["full","partial","family"]){
+      const {T,Host}=load(mode==="family"?"mozailu":"iansan"),h=new Host({}),missing=mode==="partial"?7:null,
+        ids=mode==="family"?["countdown3","countdown2"]:
+          ["skivingNewAndImproved","skivingNewAndImproved","wolf","gilded","heart","garden","lyre","soup"],n=ids.length;
+      let folds=0,titles=0,reads=0;
+      h.memory=T.freshMemory();h.trace=()=>{};h.frame=fn=>fn({});
+      h.phase=h.phaseIn=()=>({phase:"board",turn:"user"});
+      h.folded=async()=>++reads===1?null:{status:"readable",count:n,nativeCount:n,
+        slots:ids.map((id,index)=>({index,id:index===missing?null:id}))};
+      h.expand=async()=>{h.handFanReady=true;h.handNeedsReset=true;h.boardReady=false;};
+      h.reset=async()=>{folds++;h.handFanReady=false;h.handNeedsReset=false;h.boardReady=true;};
+      h.handCount=async()=>{await h.expand();return n;};
+      h.fillHandArtwork=async(_cards,scan)=>{
+        if(mode==="family")scan.titleCandidates=ids.map(()=>["countdown3","countdown2","countdown1","show"]);
+      };
+      h.titleAt=async x=>{titles++;return T.byId[ids[h.handPoints(n).indexOf(x)]].name;};
+      const hand=await h.readHand();
+      assert.deepEqual(copy(hand.map(c=>c.id)),ids);
+      assert.equal(titles,mode==="family"?2:mode==="partial"?1:0,"known folded identities must not trigger title clicks");
+      assert.equal(folds,mode==="partial"?2:1,"recognized variant families go directly to their necessary titles");
+      assert.equal(h.handFanReady,false);
+    }
+  });
   await test("moonbloom keeps surviving identities across native insertions without assigning ambiguous new slots",()=>{
     const {T,Host}=load("moonbloom"),h=new Host({}),s=board(T,["fruit","sand","gleam","razor","razor"]),
       plan=T.handPlan({type:"skill",who:0,skill:"E"},s,T.freshMemory());
@@ -31,6 +70,7 @@ module.exports=async function(test){
       // Like slot08, the collapsed view cannot establish quantity. The
       // existing count reader opens the fan and obtains a native badge.
       h.handCount=async()=>{h.handFanReady=true;return ids.length;};
+      h.expand=async()=>{h.handFanReady=h.handNeedsReset=true;};
       h.handPoints=n=>Array.from({length:n},(_,i)=>i);
       h.prepareHandObservation=n=>{prepared=n;};
       h.expandedHandIn=()=>null;
@@ -40,7 +80,8 @@ module.exports=async function(test){
       const hand=await h.observedHand({...plan,retainedHandOrder:scene!=="unordered"},scan);
       assert.deepEqual(copy(hand.map(c=>c.id)),ids);
       assert.equal(prepared,ids.length,"current per-deck hand facts still refresh");
-      assert.equal(resets,1,"the opened fan is closed once");
+      assert.equal(resets,["added","unordered"].includes(scene)?2:1,
+        "an entirely unknown fan gets one folded recheck before the final title-view cleanup");
       if(scene==="same")assert.equal(titles,0,"six proven identities need no second six-title pass");
       else assert.ok(titles>0,"new cards, unproven order and a positive conflict cannot inherit a whole old row");
     }
@@ -172,17 +213,19 @@ module.exports=async function(test){
     f.h.titleAt=async()=>++title===1?f.T.byId.draw.name:title===2?"":f.T.byId.shift.name;
     await assert.rejects(()=>f.h.readHand(null,null,scan),e=>e.code==="TCG_HAND_RETRY");
     assert.equal(scan.cards[0].id,"draw");assert.equal(f.h.handNeedsReset,true);
-    assert.equal(f.events.filter(e=>e.event==="hand-reset").length,0);
+    assert.equal(f.events.filter(e=>e.event==="hand-reset").length,1,"the folded recheck precedes title input; failure adds no cleanup click");
     await f.h.readHand(null,null,scan);
-    assert.equal(title,3);assert.equal(folded,1);
+    assert.equal(title,3);assert.equal(folded,2,"the title retry must not repeat the folded recheck");
     // A new measured count invalidates the scratch identities, not merely its price.
     count=1;const next=await f.h.readHand(null,null,scan);
     assert.deepEqual(copy(next.map(c=>c.id)),["shift"]);
     const g=fixture();g.slots[0].id=null;g.slots[1].id=null;
     g.h.folded=async()=>({count:2,nativeCount:null,status:"readable",slots:g.slots});
-    g.h.titleAt=async()=>{g.h.phase=()=>({phase:"choice",turn:"none"});return g.T.byId.draw.name;};
+    let resetsBeforeChoice;
+    g.h.titleAt=async()=>{resetsBeforeChoice=g.events.filter(e=>e.event==="hand-reset").length;
+      g.h.phase=()=>({phase:"choice",turn:"none"});return g.T.byId.draw.name;};
     await assert.rejects(()=>g.h.readHand(),e=>e.code==="TCG_OBSERVATION_INTERRUPTED");
-    assert.equal(g.events.filter(e=>e.event==="hand-reset").length,0);
+    assert.equal(g.events.filter(e=>e.event==="hand-reset").length,resetsBeforeChoice,"the foreign page must not receive a cleanup click");
     assert.equal(g.h.handNeedsReset,true);
   });
   await test("confirmation: phase change inside removal sampling interrupts before reset and preserves the pending action",async()=>{

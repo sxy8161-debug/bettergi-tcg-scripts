@@ -243,6 +243,7 @@
       return {...state,choiceReceipt:this.choiceReceipt};
     }
     async executeInput(a,before,memory){
+      if(a.type==="switch")this.requireSwitchTarget(a,before);
       let prepared=this.takePreparedHandInput(a,before);
       if(!prepared||prepared.viewOnly&&!this.handFanReady){
         prepared=null;await this.requireUnchangedBoard(before);

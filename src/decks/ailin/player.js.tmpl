@@ -7,18 +7,51 @@
   const OPENING_DEFAULT="优先装备与启动牌";
   /* @include src/shared/lifecycle.inc.js#lifecycle.playerOptions */
   /* @include src/shared/lifecycle.inc.js#lifecycle.ELEMENT_NAMES */
-  function actionCommentary(a,s,m) {
+  const CARD_PURPOSES={
+    teaParty:"装备爱可菲天赋并发动低温烹饪，铺好后台冰伤与普攻联动",
+    gambler:"准备击倒后的返骰，接着打输出",heart:"准备出战受伤后的过牌",
+    gladiator:"为少手牌时的普攻减费",chef:"让后续料理接上补骰与过牌",
+    dunyarzad:"为后续伙伴减费并检索伙伴",silver:"通过元素伤害积累后续过牌资源",
+    pilgrimage:"布置生之火，积累后续资源",companion:"将杂色骰转为万能骰，补齐输出费用",
+    toss:"重投不合用的骰子，寻找输出所需元素",draw:"补充手牌，寻找下一步的输出组件",
+    boar:"准备替换圣遗物时返骰",surf:"利用场上的召唤物集中打伤害",
+    dragon:"增加召唤物，为后续追加伤害铺垫",blessingM:"弃置目标召唤物，换取返骰与治疗",
+    soup:"挑选适合当前血线与输出的料理效果",gildedHall:"提高下一次攻击的伤害",
+    autumnFrost:"提高生命上限并恢复生命，保留后续接力",
+    wavekissedSands:"为全队接下来的技能减费",verdantGift:"提高全队下一次攻击的伤害"
+  };
+  const SKILL_PURPOSES=[
+    {NA:"用普攻压低血线",E:"挂冰并铺设低温冷藏机关，准备后台冰伤",Q:"补冰伤并治疗我方角色，为后续接力续航"},
+    {NA:"用普攻补伤害",CA:"挂火并积累隐具余数，准备战技与猫猫帽输出",E:"消耗隐具余数集中输出，并恢复林尼生命",Q:"集中打出火伤，补充隐具余数与猫猫帽"},
+    {NA:"挂水补伤害，为后续反应铺垫",E:"打水伤并带动召唤物追加输出",Q:"集中打出水伤，带动场上的召唤物继续输出"}
+  ];
+  function attackPurpose(s,m,who,skill){
+    const hit=T.damageEstimate(s,m,who,skill),enemy=s.enemies.find(e=>e.active&&T.alive(e)),
+      reasons=[SKILL_PURPOSES[who][skill]],reaction={vaporize:"蒸发",melt:"融化",freeze:"冻结"}[hit.reaction.name];
+    if(enemy&&hit.direct>=enemy.hp)return "对手只剩"+enemy.hp+"点生命，优先用这次攻击补刀";
+    if(reaction)reasons.push("借当前附着打"+reaction);
+    if(who===1&&skill==="E"&&m.props>0)reasons.push("兑现"+m.props+"层隐具余数");
+    if(skill!=="Q"&&s.characters[who].energy<T.team[who].maxEnergy)
+      reasons.push(s.characters[who].energy===T.team[who].maxEnergy-1?"用这次攻击补齐充能，准备接大招":"积累充能，为大招做准备");
+    return reasons.join("，");
+  }
+  function actionDescription(a,s,m) {
     let text;
     if(a.type==="skill") {
       text=T.team[a.who].name+"使用「"+T.team[a.who].skills[a.skill]+"」";
-      const purpose={"0:E":"挂冰并铺设低温冷藏机关", "1:CA":"积累隐具余数，为战技做准备", "1:E":"释放积攒的隐具余数，集中打伤害"}[a.who+":"+a.skill];
-      if(purpose)text+="，"+purpose;
-    }else if(a.type==="switch")text="切换"+T.team[a.target].name+"接力";
-    else if(a.type==="card")text="使用「"+T.byId[a.id].name+"」"+(a.target!=null?"，目标"+T.team[a.target].name:"");
+      text+="，"+attackPurpose(s,m,a.who,a.skill);
+    }else if(a.type==="switch"){
+      text="切换"+T.team[a.target].name+"，"+["接手冰伤与治疗，维持接力","接手火伤，衔接反应输出","接手水伤与召唤物联动"][a.target];
+      if(a.target===1&&m.coldSummon>0)text+="，冷藏机关已经铺好，接上冰火配合";
+      if(s.characters[s.active].hp<=3)text+="，让"+T.team[s.active].name+"退到后台，保留后续接力";
+    }
+    else if(a.type==="card"){
+      text="使用「"+T.byId[a.id].name+"」"+(a.target!=null?"，目标"+T.team[a.target].name:"")+"，"+CARD_PURPOSES[a.id];
+      if(a.id==="blessingM")text+="，选择第"+(a.summonIndex+1)+"个「"+a.summonName+"」";
+    }
     else if(a.type==="tune")text="调和「"+(T.byId[a.id]?.name||s.hand[a.index].name)+"」，补充"+(ELEMENT_NAMES[a.element]||"当前角色所需元素")+"骰";
     else if(a.type==="probe")return a.scope==="card"?"查看「"+T.byId[a.id].name+"」的费用与效果，安排接下来的出牌。":"查看技能费用，安排接下来的输出。";
     else return "结束回合，准备下一轮。";
-    if(a.followup?.type==="skill")text+="。接下来准备让"+T.team[a.followup.who].name+"使用「"+T.team[a.followup.who].skills[a.followup.skill]+"」";
     return text+"。";
   }
   // One owner for lifecycle/progress. Host owns native evidence and input;
@@ -53,5 +86,6 @@
     /* @include src/shared/lifecycle.inc.js#lifecycle.act */
     /* @include src/shared/lifecycle.inc.js#lifecycle.run */
   }
+  /* @include src/shared/commentary.inc.js#commentary.actionCommentary */
   root.TCGPlayer = { Player, playerOptions, actionCommentary };
 })(globalThis);

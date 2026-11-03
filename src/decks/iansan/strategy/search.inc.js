@@ -1,9 +1,6 @@
   function terminalFinisher(s, m) {
     if (!T.legalState(s) || !(T.enemyCount(s) > 0)) return null;
-    if (!s.enemies.filter(T.alive).every(e => e.defenseKnown === true && e.auraKnown === true)) return null;
-    // Only currently legal immediate damage, including the native return
-    // after a paid/fast Gaming switch. Prepared/end-phase estimates cannot
-    // prove a terminal state; simulate never applies those delayed hits.
+    // Compare immediate projected damage; prepared/end-phase hits stay delayed.
     const order = (a) => (a.type === "skill" ? ["NA", "E", "Q"].indexOf(a.skill) : 3);
     const candidates = enumerate(s, m).filter(
         (a) => a.type === "skill" || (a.type === "switch" && a.target === 1 && m.gamingReturn),
@@ -290,8 +287,7 @@
           ),
         );
     const consider = (node) => {
-      const terminal = T.enemyCount(s) > 0 && T.enemyCount(node.state) === 0 &&
-        s.enemies.filter(T.alive).every(e => e.defenseKnown === true && e.auraKnown === true);
+      const terminal = T.enemyCount(s) > 0 && T.enemyCount(node.state) === 0;
       // Keep unfinished relay prefixes in the beam, but never select them as
       // payoff. Bare NA must actually reach E/Q, finish a target, add damage,
       // or unlock output that the former active role could not afford.

@@ -23,7 +23,7 @@
   }
   function checkedBank(T,bank){
     if(!bank||!Number.isFinite(bank.scoreFloor)||bank.scoreFloor<=0||bank.scoreFloor>1||
-      bank.runnerUpGap!==.20||!Array.isArray(bank.entries))
+      bank.runnerUpGap!==.20||!Array.isArray(bank.entries)||!Array.isArray(bank.patches))
       throw Error("手牌识别库格式不正确");
     if(bank.searchPadding!==undefined&&(!Number.isInteger(bank.searchPadding)||bank.searchPadding<0||bank.searchPadding>8))
       throw Error("牌面搜索边距不正确");
@@ -39,7 +39,7 @@
       if(entry.animated!==undefined&&typeof entry.animated!=="boolean")
         throw Error("动态牌面标记不正确："+entry.id);
       const views=entry.views??[{patches:entry.patches}];
-      if(!views.length||views.some(view=>!Array.isArray(view.patches)||
+      if(!views.length||views.some(view=>!Array.isArray(view.patches)||!view.patches.length||
         view.patches.length!==bank.patches.length||view.patches.some(file=>typeof file!=="string")))
         throw Error("牌面完整视图不正确："+entry.id);
     }

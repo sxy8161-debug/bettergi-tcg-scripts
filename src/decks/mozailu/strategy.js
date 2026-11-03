@@ -250,7 +250,7 @@
       const all=living(s);
       terminal=all.length>0&&all.every(e=>{
         const d=e===estimate.target?estimate:estimate.splash.find(x=>s.enemies[x.index]===e);
-        return d?.guaranteed!==null&&d?.guaranteed>=e.hp;
+        return d?.direct>=e.hp;
       });
       if(estimate.direct>=estimate.target?.hp)value+=1.2;
       if(terminal)value+=100;
@@ -314,7 +314,15 @@
           (opponentReply&&p.estimate?Math.max(0,p.value-(p.terminal?100:0))*.25:0);
       const candidate={action:sequence[0],score,sequence,estimate:p.estimate,terminal,paymentUncertain,
         attackReserveLost:p.attackReserveLost};
-      if((p.stop||sequence.length===5)&&(!best||score>best.score))best=candidate;
+      if(p.stop||sequence.length===5){
+        let better=!best;
+        if(best){
+          if(terminal!==best.terminal)better=terminal;
+          else if(terminal&&sequence.length!==best.sequence.length)better=sequence.length<best.sequence.length;
+          else better=score>best.score;
+        }
+        if(better)best=candidate;
+      }
       if(p.estimate&&!opponentReply&&(!combat||score>combat.score))combat=candidate;
       if(p.estimate?.hydroSetup&&!sequence.some(x=>x.type==="switch")&&(!setup||score>setup.score))setup=candidate;
       // Slot10 delayed a payable Timaeus until round3, though playing it in

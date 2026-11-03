@@ -124,8 +124,6 @@ async clickButton(asset, roi) {
 moveTo(x, y) {
       const point = mousePoint(x, y, this.captureGeometry?.frameSize);
       this.requireMatchTime();
-      // Recheck actual geometry even if the last OCR frame has the same size.
-      // This also guards each interpolation step of a held drag, without OCR.
       this.checkInputGeometry();
       this.requireMatchTime();
       GameCaptureRegion.GameRegion1080PPosMove(point[0], point[1]);
@@ -189,10 +187,7 @@ async requireSwitchPreview(action, memory) {
 
 // @fragment bgi-host.inputSkill
 async inputSkill(action, before) {
-      // executeInput already verified the current actor, board and resources.
-      // Fixed role + fixed slot identifies the skill; no title/type OCR.
       const x = this.skillX(action);
-      if (action.who !== before.active) throw new Error("技能槽位或当前出战角色不符");
       this.clickAt(...this.point("bottom",x,957));
       await sleep(1200);
       const preview = this.frame(f => ({ phase:this.phaseIn(f), warning:this.warnings(f) }));
@@ -361,9 +356,6 @@ async requireUnchangedBoard(before, action = null) {
 // @endfragment tcg-ui.requireUnchangedBoard
 
 // @fragment bgi-host.switchInputBody
-if (!Number.isInteger(action.target) || action.target < 0 || action.target > 2 ||
-          action.target === before.active || before.characters[action.target].dead !== false)
-        throw new Error("切换目标非法");
       // The observed own-character layout already identifies this fixed slot.
       // Select it directly; a missing detail title must not block switching.
       this.clickAt(...this.point("board",charX[action.target],720));
@@ -382,6 +374,14 @@ if (!Number.isInteger(action.target) || action.target < 0 || action.target > 2 |
         predictedFast: memory.fastSwitch,
       });
 // @endfragment bgi-host.switchInputBody
+
+// @fragment bgi-host.requireSwitchTarget
+requireSwitchTarget(action, before) {
+      if (!Number.isInteger(action.target) || action.target < 0 || action.target > 2 ||
+          action.target === before.active || before.characters[action.target].dead !== false)
+        throw new Error("切换目标非法");
+    }
+// @endfragment bgi-host.requireSwitchTarget
 
 // @fragment bgi-host.endRoundInputBody
 let button;

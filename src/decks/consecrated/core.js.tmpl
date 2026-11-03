@@ -98,7 +98,7 @@
   }
   function skillLegal(s,a,m=null) {
     const c=s.characters?.[a.who];
-    return a.who===s.active && alive(c) && c.frozen===false &&
+    return a.who===s.active && !!team[a.who]?.skills[a.skill] && alive(c) && c.frozen===false &&
       (a.skill!=="Q" || c.energy>=team[a.who].maxEnergy) &&
       !!payment(s.dice,skillCost(a.who,a.skill,m,s));
   }
@@ -304,7 +304,7 @@
     return alive(s.characters?.[0]) ? {pileBlocks:{count:2,placement:"top-10"},handBlocks:0} : null;
   }
   function switchBudget(s,target,m) {
-    if (target===s.active || !alive(s.characters?.[target])) return null;
+    if (!Number.isInteger(target) || target<0 || target>2 || target===s.active || !alive(s.characters?.[target])) return null;
     const paid=payment(s.dice,switchCost(m),team[target].element);
     if (!paid) return null; // A post-switch refund cannot fund this switch.
     return {cost:m.freeSwitch===true?0:1,remaining:paid.remaining,fast:false,

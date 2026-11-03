@@ -160,6 +160,7 @@
       const e=Error("召唤物目标或确认控件仍待核实");e.code="TCG_CHOICE_RETRY";throw e;
     }
     async executeInput(a,b,m){
+      if(a.type==="switch")this.requireSwitchTarget(a,b);
       this.soupReceipt=null;this.summonReceipt=null;
       if(a.type==="skill"&&!TCG.skillLegal(b,a,m))throw Error("技能资源/充能预检失败");
       if(a.type==="card"&&!TCG.cardLegal(b,a,m))throw Error("卡牌目标、费用或前置条件不合法");

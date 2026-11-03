@@ -37,9 +37,12 @@
     if(remaining>0)await env.sleep(remaining);
     const second=sample();return second?second.map(slot=>slot.id):null;
   }
-  async function opening(host,T,sleep,ids){
+  async function opening(host,T,sleep,ids=Array(5).fill(null)){
+    if(T.openingSetting(host.options.mulligan)==="全部保留")
+      return host.confirmOpening({policy:"confirm-current",reason:"keep-setting",selectedByScript:[]});
     const original=await host.openingSelections(xs);
-    let selected=original.slice(),pendingInspection=null;
+    let selected=original.slice();
+    const fromArtwork=ids.some(Boolean);
     const cards=ids.map((id,index)=>id&&T.byId[id]?T.observedCard(T.byId[id].name,index):null);
     const recordInput=(index,purpose,actual)=>{
       const verified=!!actual&&actual.every((v,i)=>v===(i===index?!selected[i]:selected[i]));
@@ -49,8 +52,8 @@
     const verify=async(index,purpose)=>{
       let actual;
       try{actual=await host.openingSelections(xs);}
-      catch(error){recordInput(index,purpose,null);pendingInspection=null;throw error;}
-      const verified=recordInput(index,purpose,actual);pendingInspection=null;
+      catch(error){recordInput(index,purpose,null);throw error;}
+      const verified=recordInput(index,purpose,actual);
       if(!verified)
         throw Error("起手置换标记未证实，不重复点击第"+(index+1)+"张牌");
       selected=actual;
@@ -59,23 +62,14 @@
       if(host.phase().phase!=="opening")throw Error("起手置换前页面已改变");
       host.clickAt(...host.point("opening",xs[index]+70,540));await sleep(350);await verify(index,purpose);
     };
-    try{
-      for(let i=0;i<cards.length;i++)if(!cards[i]){
-        if(host.phase().phase!=="opening")throw Error("起手补读前页面已改变");
-        pendingInspection=i;
-        const raw=await host.titleAt(xs[i]+70,540,true,false);
-        await verify(i,"inspect-unknown");cards[i]=T.observedCard(raw,i);
-        if(!cards[i])throw Error("第"+(i+1)+"张初始牌标题未读清，不自动确认开局");
-        host.trace("opening-title-method",{index:i,method:"unknown-only",selectionChanged:true});
-      }
-    }catch(error){
-      let actual;
-      try{actual=await host.openingSelections(xs);}
-      catch(failure){if(pendingInspection!==null)recordInput(pendingInspection,"inspect-unknown",null);throw failure;}
-      if(pendingInspection!==null)recordInput(pendingInspection,"inspect-unknown",actual);
-      selected=actual;
-      for(let i=0;i<5;i++)if(selected[i]!==original[i])await toggle(i,"rollback");
-      throw error;
+    // Inspection toggles replacement too. Failed reads leave the native page
+    // intact and propagate the error; cancellation must not trigger rollback input.
+    for(let i=0;i<cards.length;i++)if(!cards[i]){
+      if(host.phase().phase!=="opening")throw Error("起手补读前页面已改变");
+      const raw=await host.titleAt(xs[i]+70,540,true,false);
+      await verify(i,"inspect-unknown");cards[i]=T.observedCard(raw,i);
+      if(!cards[i])throw Error("第"+(i+1)+"张初始牌标题未读清，不自动确认开局");
+      host.trace("opening-title-method",{index:i,method:fromArtwork?"unknown-only":"click",selectionChanged:true});
     }
     const context=T.openingContext({}),plan=T.openingPlan(cards,original,context);
     host.openingCards=plan.keep;
@@ -88,7 +82,7 @@
     for(let i=0;i<5;i++)if(selected[i]&&!plan.replace[i])await toggle(i,"reconcile");
     for(let i=0;i<5;i++)if(!selected[i]&&plan.replace[i])await toggle(i,"reconcile");
     host.trace("opening-selection-verified",{original,selected,proof:"two-stable-native-replace-labels-per-input"});
-    return host.confirmOpening({policy:"known-priority",recognition:"direct-art-unknown-title-fallback",
+    return host.confirmOpening({policy:"known-priority",recognition:fromArtwork?"direct-art-unknown-title-fallback":"title-only",
       selectedByScript:selected.flatMap((v,i)=>v?[i]:[])});
   }
   root.TCGOpeningHand={xs,artXs,rank,read,opening};

@@ -24,6 +24,7 @@
     }
     /* @include src/shared/equipment-input.inc.js */
     async executeInput(a,b,m) {
+      if(a.type==="switch")this.requireSwitchTarget(a,b);
       if(a.type==="card"&&!TCG.cardLegal(b,a,m))throw new Error("卡牌费用、目标或前置条件不合法");
       if(a.type==="skill"&&!TCG.skillLegal(b,a,m))throw new Error("技能资源或充能不足");
       await this.requireUnchangedBoard(b);

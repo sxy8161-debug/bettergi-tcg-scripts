@@ -441,7 +441,7 @@ async run() {
 
 // @fragment lifecycle.observe
 async observe() {
-      const host = this.host, start = Date.now(), metrics = host.metricSnapshot?.(),
+      const host = this.host, start = Date.now(), metrics = host.metricSnapshot(),
         reused = !!this.readyState;
       host.runStage = "observation";
       let state, outcome = "failed", failure = null, readError = null;
@@ -475,7 +475,7 @@ async observe() {
         try {
           host.trace("observation-timing", { ms: Date.now() - start, reused, outcome,
             handRead: state?.handRead, code: readError?.code, missing: readError?.missing,
-            recognition: host.metricDelta?.(metrics) });
+            recognition: host.metricDelta(metrics) });
         } catch (e) { if (!failure) throw e; } // Secondary diagnostic failure must not replace the original error.
       }
     }
@@ -493,7 +493,7 @@ async execute(action, state) {
 async act() {
       const state = await this.observe();
       if (!state) return;
-      const host = this.host, memory = this.memory, started = Date.now(), metrics = host.metricSnapshot?.();
+      const host = this.host, memory = this.memory, started = Date.now(), metrics = host.metricSnapshot();
       let action, inputAt = null, confirmationAt = null, postActionAt = null,
         outcome = "failed", confirmed = false, failure = null;
       host.runStage = "planning";
@@ -554,7 +554,7 @@ async act() {
             inputMs: (confirmationAt ?? ended) - (inputAt ?? ended),
             settlementMs: (postActionAt ?? ended) - (confirmationAt ?? ended),
             postActionMs: ended - (postActionAt ?? ended), totalMs: ended - started,
-            recognition: host.metricDelta?.(metrics), scope: "actual-runtime-not-offline-estimate" });
+            recognition: host.metricDelta(metrics), scope: "actual-runtime-not-offline-estimate" });
         } catch (e) { if (!failure) throw e; } // Keep cancellation/program errors intact.
       }
     }

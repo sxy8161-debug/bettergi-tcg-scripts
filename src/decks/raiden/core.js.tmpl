@@ -158,7 +158,7 @@
   }
   function skillLegal(s, action, m) {
     const who = action.who;
-    if (s.active !== who || !alive(s.characters[who]) || s.characters[who].frozen !== false) return false;
+    if (s.active !== who || !team[who]?.skills[action.skill] || !alive(s.characters[who]) || s.characters[who].frozen !== false) return false;
     if (action.skill === "Q" && (!known(s.characters[who].energy) || s.characters[who].energy < team[who].maxEnergy)) return false;
     return !!payment(s.dice, skillCost(who, action.skill, m,s), team[who].element);
   }

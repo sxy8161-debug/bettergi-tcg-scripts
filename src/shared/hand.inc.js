@@ -171,9 +171,8 @@ async expand(resetFirst = true) {
       // The native control is a toggle. Card selection does not close the fan;
       // never click that control again while the same layout remains ready.
       const readView = f => {
-        if (!this.raisedHandIn) return null;
-        if (this.raisedHandIn(f)) return "expanded";
-        return this.collapsedLayoutIn(f).status === "readable" ? "folded" : null;
+        if (this.collapsedLayoutIn(f).status === "readable") return "folded";
+        return this.raisedHandIn(f) ? "expanded" : null;
       };
       let needsReset;
       let view = this.frame(f => {
@@ -597,7 +596,7 @@ async observedHand(plan = null, scan = { titles: 0 }) {
           this.requireHandObservation(this.phaseIn(f), "before-retained-hand-reuse");
           const native = this.handCountIn(f);
           if (native !== null || this.handFanReady || this.handNeedsReset) return native;
-          const row = this.collapsedLayoutIn?.(f);
+          const row = this.collapsedLayoutIn(f);
           if (row?.status !== "readable") return null;
           this.lastHandCountSource = "full-folded-layout";
           return row.count;
@@ -709,7 +708,7 @@ async observedHand(plan = null, scan = { titles: 0 }) {
         const {count,row}=this.frame(f=>({count:this.handCountIn(f),
           row:!plan&&this.handContinuation&&!(this.handContinuation.retainedHandOrder===true&&
             this.handContinuation.retainedHand?.length===cached.length)&&!this.handFanReady&&!this.handNeedsReset
-            ?this.collapsedIn?.(f):null}));
+            ?this.collapsedIn(f):null}));
         const changed=row?.status==="readable"&&(row.count!==cached.length||
           row.slots.some(s=>s.id&&s.id!==cached[s.index]?.id));
         if (!changed && (count === null || count === cached.length)) {
@@ -819,7 +818,7 @@ async readHand(expected = this.handCountHint, evidence = null, scan = { titles: 
       try {
         // One owner for the read transaction. The artwork adapter only seeds
         // identities/count; it cannot finish a second title/reset lifecycle.
-        if (!scan.cards && this.readFoldedHand)
+        if (!scan.cards)
           evidence = await this.readFoldedHand(expected, evidence, scan);
         // Evidence passed here was obtained in this very observation, not an
         // estimated count or the previous action's projected hand.
@@ -844,19 +843,31 @@ async readHand(expected = this.handCountHint, evidence = null, scan = { titles: 
           for (let i = 0; i < n; i++) if (!hand[i]) hand[i] = { ...scan.retainedHand[i], index: i };
           scan.route = "retained-order-native-count";
         }
-        // Establish the expanded fan once. Selecting a card only raises that
-        // card; it does not require resetting/re-expanding the whole hand.
+        // Unknown identities need the fan; the folded recovery below may finish
+        // them without any title clicks.
         if (n > 0 && !hand.every(Boolean) && !this.handFanReady) {
           await this.expand();
         }
         this.handScanSerial++;
-        // Copy all positions before the first title click invalidates the proof.
-        // Selection raises one card but does not reorder the rest of this fan.
-        const points = this.handPoints(n);
-        await this.prepareHandObservation?.(n);
         if (!scan.route) scan.route = "expanded-artwork-fallback";
         this.trace("hand-scan", { count: n, expected, reusedCount: !!evidence, route: scan.route });
-        await this.fillHandArtwork?.(hand, scan);
+        await this.fillHandArtwork(hand, scan);
+        if (n > 1 && hand.every(card => !card) && !scan.titleCandidates?.some(Boolean) &&
+            this.handFanReady && !scan.foldedAfterExpanded) {
+          scan.foldedAfterExpanded = true;
+          this.requireHandObservation(this.phase(), "before-folded-hand-recheck");
+          await this.reset();
+          const foldedScan = { ...scan, cards: null };
+          await this.readFoldedHand(null, null, foldedScan);
+          if (foldedScan.cards?.length === n) {
+            hand.splice(0, n, ...foldedScan.cards);
+            Object.assign(scan, foldedScan, { cards: hand });
+          }
+          if (!hand.every(Boolean)) await this.expand();
+        }
+        // Bind positions and card facts to the view used for the remaining titles.
+        const points = this.handPoints(n);
+        await this.prepareHandObservation?.(n);
         await this.readHandTitles(hand, points, scan);
         observed = this.finishHandObservation ? this.finishHandObservation(hand, scan) : hand;
         if (this.handFanReady || this.handNeedsReset) {
@@ -946,7 +957,7 @@ titleIn(f, roi, kind = "card", names = null) {
 async inspectHandCard(action, x, before = null) {
       // A fresh native artwork identity is sufficient for ordinary input.
       // Details are only opened for unknown identities or actual deck facts.
-      if (before && !this.needsCardDetails?.(action, before) && this.expandedHandIn) {
+      if (before && !this.needsCardDetails?.(action, before)) {
         let slot;
         try {
           slot=this.frame(f => {

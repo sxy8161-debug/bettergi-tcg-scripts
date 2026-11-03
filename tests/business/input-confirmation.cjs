@@ -123,7 +123,8 @@ module.exports=async function(test){
     }
   });
   await test(id+": fixed actor and slot submit once without skill-name, type or preview-image recognition",async()=>{
-    for(const [deck,who,skill,x] of [["raiden",0,"NA",1608],["iansan",0,"E",1716],["moonbloom",0,"E",1716],["mozailu",2,"Q",1824]]){
+    for(const [deck,who,skill,x] of [["raiden",0,"NA",1608],["iansan",0,"E",1716],["moonbloom",0,"E",1716],
+      ["mozailu",2,"Q",1824],["ailin",1,"NA",1500],["ailin",1,"CA",1608],["consecrated",1,"Q",1824]]){
       const f=fixture(undefined,deck),events=[];f.state.active=who;
       f.state.characters[who].energy=f.T.team[who].maxEnergy;
       f.h.trace=(event,data)=>events.push({event,data});
@@ -133,6 +134,19 @@ module.exports=async function(test){
       assert.deepEqual(f.inputs,[[x,957],[x,957]],deck);
       assert.equal(events.filter(e=>e.event==="input-submitted").length,1,deck);
       assert.ok(f.inputTimes[1]-f.inputTimes[0]>=1200,"allow the first click's animation to open");
+    }
+  });
+  await test(id+": action admission rejects wrong actors, unknown skills and invalid switch targets before input",async()=>{
+    for(const deck of Object.keys(require("../../players.json").players)){
+      const f=fixture(undefined,deck),m=f.T.freshMemory();
+      f.state.characters[2]={...f.state.characters[2],dead:true,hp:0};
+      for(const action of [{type:"skill",who:0,skill:"E"},{type:"skill",who:1,skill:"missing"},
+        ...[1,2,-1,3,"0"].map(target=>({type:"switch",target}))]){
+        await assert.rejects(()=>f.h.execute(action,f.state,m),undefined,deck+" "+JSON.stringify(action));
+        assert.equal(f.inputs.length,0,deck);
+      }
+      await assert.rejects(()=>f.h.execute({type:"probe",who:0,skill:"E"},f.state,m));
+      assert.equal(f.inputs.length,0,deck);
     }
   });
   await test(id+": vanished warning and unchanged resources are not a successful cast or permission to repeat",async()=>{

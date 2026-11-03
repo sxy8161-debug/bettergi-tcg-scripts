@@ -21,6 +21,13 @@
   /* @include src/shared/geometry.inc.js#tcg-ui.layoutRegions */
   /* @include src/shared/geometry.inc.js#tcg-ui.mousePoint */
   /* @include src/shared/board.inc.js#tcg-ui.boardDifferences */
+  const skillOrders = TCG.team.map(actor => {
+    const order = actor.skillOrder || ["NA", "E", "Q"];
+    if (![3,4].includes(order.length) || new Set(order).size !== order.length ||
+        order.some(skill => !actor.skills[skill]))
+      throw new Error("角色技能槽位配置不正确：" + actor.name);
+    return order;
+  });
   class BetterGIHost {
     constructor(options) {
       this.options = options;
@@ -159,17 +166,15 @@
     /* @include src/shared/opening.inc.js#bgi-host.actionReroll */
     
     skillX(action) {
-      const actor=TCG.team[action.who],order=actor?.skillOrder||["NA","E","Q"],index=order.indexOf(action.skill);
-      if(!actor||![3,4].includes(order.length)||new Set(order).size!==order.length||
-        order.some(skill=>!actor.skills[skill])||index<0)
-        throw new Error("技能槽位或当前出战角色不符");
+      const order=skillOrders[action.who],index=order.indexOf(action.skill);
       // Skills stay right-aligned. Lyney's second normal attack adds one slot
       // on the left; E/Q retain the existing calibrated positions.
       return 1824-108*(order.length-1-index);
     }
     async probeSkill(action,before,memory) {
+      if(action.who!==before.active||!TCG.team[action.who]?.skills[action.skill])
+        throw new Error("费用检视只能用于当前角色的固定技能槽");
       const x=this.skillX(action);
-      if(action.who!==before.active)throw new Error("费用检视只能用于当前角色的固定技能槽");
       this.clickAt(...this.point("bottom",x,957));await sleep(1200);
       let fee=null,last=null,stable=0;
       for(let i=0;i<4;i++){
@@ -267,13 +272,12 @@
     /* @include src/shared/opening.inc.js#tcg-ui.pickForced */
     /* @include src/shared/opening.inc.js#tcg-ui.roll */
     async drag(x, y, toX, toY) {
-      // Validate BOTH endpoints before any movement or button press.
+      this.checkInputGeometry();
       const size = this.captureGeometry?.frameSize;
       const start = mousePoint(x, y, size), end = mousePoint(toX, toY, size);
-      this.moveTo(start[0], start[1]);
+      GameCaptureRegion.GameRegion1080PPosMove(start[0], start[1]);
       await sleep(60);
       this.requireMatchTime();
-      this.checkInputGeometry();
       leftButtonDown();
       this.inputRevision++;
       this.handPositionProof = null;
@@ -282,7 +286,11 @@
         // Match official tuning's down/arrival holds; do not retry the drag.
         await sleep(100);
         for (let i = 1; i <= 10; i++) {
-          this.moveTo(start[0] + (end[0] - start[0]) * i / 10, start[1] + (end[1] - start[1]) * i / 10);
+          this.requireMatchTime();
+          // Interpolation stays inside the two validated endpoints.
+          GameCaptureRegion.GameRegion1080PPosMove(
+            Math.round(start[0] + (end[0] - start[0]) * i / 10),
+            Math.round(start[1] + (end[1] - start[1]) * i / 10));
           await sleep(15);
         }
         await sleep(100);
@@ -309,6 +317,7 @@
     async inputSwitch(action,before,memory) {
       /* @include src/shared/input.inc.js#bgi-host.switchInputBody */
     }
+    /* @include src/shared/input.inc.js#bgi-host.requireSwitchTarget */
     async inputEnd() {
       /* @include src/shared/input.inc.js#bgi-host.endRoundInputBody */
     }

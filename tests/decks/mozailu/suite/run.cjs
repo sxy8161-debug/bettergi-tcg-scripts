@@ -12,6 +12,19 @@ const board=(ids=[],active=0)=>({phase:"board",turn:"user",active,diceKnown:true
   characters:T.team.map(c=>({hp:c.maxHp,energy:0,dead:false,frozen:false})),enemies:[enemy(30)]});
 const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id===id),target});
 
+  await test("payable finish precedes equipment-loss preparation without synthetic defense fields",()=>{
+    const s=board(["boar","draw","wolf"],2),m=memory();
+    s.dice={Omni:3};s.characters[2].hp=3;
+    s.enemies=[{hp:2,dead:false,active:true,aura:[],auraKnown:false}];
+    m.round=3;m.used=[1,0,3];m.weapons[2]=true;m.weaponKinds[2]="wolf";
+    const a=T.choose(clone(s),clone(m));
+    assert.equal(a.type,"skill");assert.equal(a.planning.terminal,true);
+    assert.equal(a.planning.sequence.length,1);
+    assert.equal(T.project(s,m,a).terminal,true);
+    s.enemies[0].shield=20;
+    assert.equal(T.choose(s,clone(m)).planning.terminal,false,"known shielding must prevent a false finish preference");
+  });
+
   await test("Diluc second and third E discount, third E damage, reset, and four-die Q",()=>{
     const s=board([],2),m=memory();m.talents[2]=true;s.characters[2].energy=3;
     const costs=[],damage=[];
@@ -88,7 +101,9 @@ const card=(s,id,target=null)=>({type:"card",id,index:s.hand.findIndex(h=>h.id==
     const c=loadContext({Date:Clock,sleep:async ms=>{time+=ms;},...nativeInput((x,y)=>{
       assert.ok(x===967&&y===1041||x===1190&&y===545,"confirmation must not resubmit the action");
     })}),t=c.TCG;
-    const h=new c.TCGBetterGI.BetterGIHost({}),s=board(["shift"],2),a=card(s,"shift"),m=memory();
+    const bank=root?require("../../../shared/harness.cjs").bank(root,"hand-bank.json","mozailu"):
+      JSON.parse(require("../../../../tools/build.cjs").packageFiles("mozailu").files.get("hand-bank.json")).decks.mozailu;
+    const {Host}=c.TCGHandRecognition.classes(c,bank),h=new Host({}),s=board(["shift"],2),a=card(s,"shift"),m=memory();
     h.trace=()=>{};h.frame=fn=>fn({});h.phaseIn=()=>({phase:"board",turn:"user"});
     h.board=()=>({...clone(s),hand:null});h.boardReady=true;h.expectedDice=t.total(s.dice);
     h.handCountIn=()=>null;h.phase=()=>h.phaseIn();

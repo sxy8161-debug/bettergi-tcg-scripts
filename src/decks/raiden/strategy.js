@@ -155,7 +155,7 @@
     const next=copy(s),mem=copy(m),cost=actionCost(a,s,m),
       pay=T.payment(s.dice,cost,T.team[a.type==="switch"?a.target:s.active].element);
     if(!pay)return null;
-    next.dice=pay.remaining;let benefit=0,combat=false,leaf=false,guaranteedCombat=true;
+    next.dice=pay.remaining;let benefit=0,combat=false,leaf=false;
     const active=next.characters[s.active];
     function gain(who,amount){const x=next.characters[who];if(T.alive(x))x.energy=Math.min(T.team[who].maxEnergy,x.energy+amount);}
     if(a.type==="switch") {
@@ -200,7 +200,6 @@
     if(cast){
       combat=true;const who=cast.who,skill=cast.skill;next.active=who;
       const d=damageEstimate(s,m,who,skill,a.type==="card"&&a.id==="floralSidewinder");
-      guaranteedCombat=!d.uncertainReaction;
       // Credit HP actually removed, not overkill. Unknown enemy replies and
       // replacement choices end this branch instead of inventing a new target.
       benefit+=(d.target?Math.min(d.target.hp,d.direct):d.direct*.5)*.95;
@@ -255,9 +254,8 @@
       if(d.coreConsumed)next.dendroCore={known:true,charges:0};
     }
     T.commit(mem,a,s,next);
-    const provenFinish=guaranteedCombat&&T.enemyCount(s)>0&&T.enemyCount(next)===0&&
-      s.enemies.filter(T.alive).every(e=>e.defenseKnown===true&&e.auraKnown===true);
-    return {state:next,memory:mem,benefit,combat,leaf,provenFinish,
+    const estimatedFinish=T.enemyCount(s)>0&&T.enemyCount(next)===0;
+    return {state:next,memory:mem,benefit,combat,leaf,estimatedFinish,
       passesTurn:combat || a.type==="switch"&&!m.fastSwitch};
   }
   function evaluation(s,m,baseline){
@@ -277,10 +275,10 @@
   }
   function betterPlan(candidate,best) {
     if(!best)return true;
-    const finish=candidate.provenFinish===true,previousFinish=best.provenFinish===true;
+    const finish=candidate.estimatedFinish===true,previousFinish=best.estimatedFinish===true;
     if(finish!==previousFinish)return finish;
     // Score estimates may reward healing or setup earlier in the path. A
-    // known finish has no such future; choose fewer real inputs before value.
+    // projected finish has no such future; choose fewer real inputs before value.
     if(finish && candidate.path.length!==best.path.length)return candidate.path.length<best.path.length;
     return candidate.value>best.value;
   }
@@ -400,7 +398,7 @@
     const worthwhile=best && (best.value>.08 || T.enemyCount(best.state)===0),
       status=!T.projectionBudget.available()?"budget-exhausted":worthwhile?"action":"no-worthwhile-action";
     if(!worthwhile)return {action:null,status,expanded};
-    return {action:best.path[0],status,sequence:best.path,value:best.value,expanded,terminal:best.provenFinish===true};
+    return {action:best.path[0],status,sequence:best.path,value:best.value,expanded,terminal:best.estimatedFinish===true};
   }
   function needProbe(s,m){
     if(!["shatterbolt","sharpkernel"].includes(m.thundergrassSupport) || s.quicken?.known)return null;
@@ -422,9 +420,17 @@
     if(!T.legalState(s))return {type:"stop",reason:"回合、手牌、血量、状态或充能存在未知值，禁止猜测执行"};
     const probe=needProbe(s,m);if(probe)return probe;
     const p=plan(s,m);
-    if(p.action)return {...p.action,score:Math.round(p.value*10),planning:{depth:6,expanded:p.expanded,status:p.status,
-      value:Number(p.value.toFixed(3)),sequence:p.sequence.map(a=>T.actionKey(a)),terminal:p.terminal===true},
-      reason:"比较出牌/调和/切人/技能组合，选择当前可核实收益最高的首步"};
+    if(p.action){
+      const casts=p.sequence.map(a=>cardSkill(a,s)).filter(Boolean),first=casts[0],
+        intent=p.terminal?"当前路线准备收尾，先把伤害兑现，省去多余铺垫":
+          casts.filter(a=>a.skill==="Q").length>1?"把已经衔接起来的大招依次打出去，形成全队接力爆发":
+          first?.who===0?(first.skill==="Q"?"先用雷神大招给后台补能，把输出交给后续角色":"先完成雷神的启动与充能，为全队大招接力铺垫"):
+          first?.who===1?"让柯莱接上草伤，为后续雷伤与激化铺垫":
+          first?.who===2?"让刻晴接手雷伤，把当前附魔与充能转成持续输出":null;
+      return {...p.action,intent,score:Math.round(p.value*10),planning:{depth:6,expanded:p.expanded,status:p.status,
+        value:Number(p.value.toFixed(3)),sequence:p.sequence.map(a=>T.actionKey(a)),terminal:p.terminal===true},
+        reason:"比较出牌/调和/切人/技能组合，选择当前可核实收益最高的首步"};
+    }
     return {type:"end",planning:{depth:6,expanded:p.expanded,status:p.status},
       reason:p.status==="budget-exhausted"?"搜索预算用尽，已完整评估的路线中没有值得执行的动作，结束本轮":"没有可支付且值得执行的动作，结束本轮"};
   }

@@ -117,7 +117,7 @@
 
   // Separate observed facts, selected intentions and explicitly labelled estimates.
   // This formatter performs no recognition and does not modify the plan.
-  function actionCommentary(action, state, memory) {
+  function actionDescription(action, state, memory) {
     const who = T.team[action.who]?.name || "角色";
     const target = T.team[action.target]?.name || "角色";
     const skill = { NA: "普通攻击", E: "元素战技", Q: "元素爆发" }[action.skill];
@@ -247,6 +247,7 @@
 
     /* @include src/shared/lifecycle.inc.js#lifecycle.run */
   }
+  /* @include src/shared/commentary.inc.js#commentary.actionCommentary */
   root.TCGPlayer = {Player, playerOptions, actionCommentary};
   Object.assign(T, { Player, playerOptions, actionCommentary, version: VERSION });
 })(globalThis);

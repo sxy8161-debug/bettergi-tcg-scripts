@@ -6,26 +6,38 @@
   /* @include src/shared/lifecycle.inc.js#lifecycle.BUDGET_FIELDS */
   /* @include src/shared/lifecycle.inc.js#lifecycle.playerOptions */
   /* @include src/shared/lifecycle.inc.js#lifecycle.ELEMENT_NAMES */
-  function actionCommentary(a,s,m) {
+  function actionDescription(a,s,m) {
     let text;
     if(a.type==="skill") {
+      const blocks=s.hand.filter(h=>h.id==="block").length;
       text=T.team[a.who].name+"使用「"+T.team[a.who].skills[a.skill]+"」";
       if(a.who===1&&a.skill==="E")text+="，补伤害、抽牌"+(s.characters[1].energy<2?"，为爆发积累充能":"");
-      else if(a.who===1&&a.skill==="Q")text+="，消耗能量块集中打出爆发伤害";
+      else if(a.who===1&&a.skill==="Q"){
+        text+=blocks>0?"，消耗"+blocks+"张能量块，集中打出爆发伤害":"，兑现现有爆发，接着补能续攻";
+      }
       else if(a.skill==="NA")text+="，压低对手血线"+(s.characters[a.who].energy<T.team[a.who].maxEnergy?"并积累充能":"");
+      else if(a.who===0&&a.skill==="E")text+="，补雷伤并向牌库前段补入能量块，准备后续供块";
+      else if(a.who===0&&a.skill==="Q")text+=blocks>0?"，消耗"+Math.min(3,blocks)+"张能量块布置雷锥，接着靠陷阱补伤害":"，先打出雷伤，接续当前进攻";
+      else if(a.who===2&&a.skill==="E")text+="，打水伤、置底最高费手牌并补充能量块";
+      else if(a.who===2&&a.skill==="Q")text+=blocks>0?"，用水伤续攻并消耗能量块，为受伤队友治疗、提高生命上限":"，直接用水伤接续当前进攻";
     }else if(a.type==="switch")text="切换"+T.team[a.target].name+(a.endTurnRelay?"承伤，让当前角色留在后台休整":"接力");
     else if(a.type==="card") {
       const purpose={scorpionTalent:"补充能量块，启动毒蝎的抽牌联动",serpentTalent:"补充能量块，为后续切换准备返骰",
         crocodileTalent:"补充能量块，准备打块后的治疗",emblem:"提高飞蛇的爆发伤害",adeptus:"为接下来的爆发增伤",
         stars:"补充出战角色的充能",block:"用能量块换取万能骰",harbor:"为后续回合补充手牌",lair:"检索天赋牌",
-        whiteGlove:"准备清洁工作，为后续攻击增伤",cleanup:"提高下一次攻击的伤害",liben:"收集回合末剩余骰子，准备后续资源",draw:"补充手牌",revel:"补充手牌",shift:"省下接力所需的切换骰子"}[a.id];
+        whiteGlove:"准备清洁工作，为后续攻击增伤",cleanup:"提高下一次攻击的伤害",liben:"收集回合末剩余骰子，准备后续资源",draw:"补充手牌",revel:"补充手牌",shift:"省下接力所需的切换骰子",
+        nre:"检索料理，为后续增伤与过牌准备",sand:"选择检索关键组件或换掉当前不合用的手牌",
+        countdown3:"补充手牌，寻找充能与爆发组件",countdown2:"补充手牌，寻找充能与爆发组件",
+        countdown1:"补充手牌，寻找充能与爆发组件",show:"补充手牌，衔接后续输出",
+        disperse:"检索天赋与秘传，补齐启动组件",sanctify:"将不合用的手牌换底，重新寻找输出组件"}[a.id];
       text="使用「"+T.byId[a.id].name+"」"+(a.target!=null?"，目标"+T.team[a.target].name:"")+(purpose?"，"+purpose:"");
     }else if(a.type==="tune")text="调和「"+(T.byId[a.id]?.name||s.hand[a.index].name)+"」，补充"+(ELEMENT_NAMES[a.element]||"当前角色所需元素")+"骰";
     else if(a.type==="probe")return a.scope==="card"?"查看「"+T.byId[a.id].name+"」的费用，安排能量块的弃牌与产骰。":"查看技能费用，安排接下来的输出。";
-    else return "结束回合，准备下一轮。";
-    const next=a.followup||a.plan?.terminal;
-    if(next?.type==="skill"&&!(a.type==="skill"&&a.who===next.who&&a.skill===next.skill))
-      text+="。接下来准备让"+T.team[next.who].name+"使用「"+T.team[next.who].skills[next.skill]+"」";
+    else {
+      if(T.alive(s.characters[1])&&m.bursts[1]===0)
+        return s.characters[1].energy===2?"结束回合，飞蛇已满能，继续攒块准备下一轮爆发。":"结束回合，下一轮继续为飞蛇补能、攒块，准备爆发。";
+      return "结束回合，准备下一轮。";
+    }
     if(a.type==="skill"&&Number.isFinite(a.plan?.estimate?.direct))text+="，预计造成"+a.plan.estimate.direct+"点伤害";
     return text+"。";
   }
@@ -61,5 +73,6 @@
     /* @include src/shared/lifecycle.inc.js#lifecycle.run */
     reportResult(p) {log.info(p.result==="win"?"对局胜利":"对局失败");}
   }
+  /* @include src/shared/commentary.inc.js#commentary.actionCommentary */
   root.TCGPlayer={Player,playerOptions,actionCommentary};
 })(globalThis);

@@ -7,19 +7,43 @@
   const OPENING_DEFAULT="优先装备与启动牌";
   /* @include src/shared/lifecycle.inc.js#lifecycle.playerOptions */
   /* @include src/shared/lifecycle.inc.js#lifecycle.ELEMENT_NAMES */
-  function actionCommentary(a,s,m) {
+  const CARD_PURPOSES={
+    flowingFlame:"装备迪卢克天赋并发动战技，准备连续战技输出",
+    skivingNewAndImproved:"装备早柚天赋并发动战技，接续准备踢与扩散",
+    wolf:"提高后续攻击伤害，强化低血量目标的补刀",gambler:"准备击倒后的返骰，衔接下一次攻击",
+    gilded:"补充元素骰，准备反应后的过牌",troupe:"让后台角色积蓄战技减费",
+    house:"为后续装备减费",timaeus:"积累材料，为圣遗物减费并补牌",
+    liben:"收集回合末余骰，为后续补骰与过牌准备",dunyarzad:"为后续伙伴减费并检索伙伴",
+    garden:"为接下来的装备减费",shift:"省下接力所需的切换骰子",draw:"补充手牌，寻找装备与输出组件",
+    lyre:"回收圣遗物，为下一张圣遗物减费",boar:"准备替换装备时返骰",
+    countdown3:"补充手牌，寻找后续资源",countdown2:"补充手牌，寻找后续资源",
+    countdown1:"补充手牌，寻找后续资源",show:"补充手牌，衔接后续进攻"
+  };
+  const SKILL_PURPOSES=[
+    {NA:"挂水补伤害，为后续反应铺垫",E:"挂水并留下虚影，为接力反应铺垫",Q:"留下泡影，放大后续角色攻击的伤害"},
+    {NA:"用普攻补伤害",E:"发动战技，接续风风轮舞踢",Q:"召唤不倒貉貉，接续伤害与治疗"},
+    {NA:"用普攻衔接输出",E:"用战技衔接输出",Q:"集中打出火伤并获得火附魔，准备后续进攻"}
+  ];
+  function attackPurpose(s,m,who,skill){
+    const hit=T.damageEstimate(s,m,who,skill),reasons=[SKILL_PURPOSES[who][skill]],
+      reaction={swirl:"扩散",vaporize:"蒸发",freeze:"冻结"}[hit.reaction.name];
+    if(hit.target&&hit.direct>=hit.target.hp)return "对手只剩"+hit.target.hp+"点生命，优先用这次攻击补刀";
+    if(reaction)reasons.push("借当前附着打"+reaction);
+    if(who===2&&skill==="E"&&m.dilucE===2)reasons.push("打出第三段战技的额外伤害");
+    if(skill!=="Q"&&s.characters[who].energy<T.team[who].maxEnergy)
+      reasons.push(s.characters[who].energy===T.team[who].maxEnergy-1?"用这次攻击补齐充能，准备接大招":"积累充能，为大招做准备");
+    return reasons.join("，");
+  }
+  function actionDescription(a,s,m) {
     let text;
     if(a.type==="skill") {
       text=T.team[a.who].name+"使用「"+T.team[a.who].skills[a.skill]+"」";
-      const purpose={"0:E":"先挂水，为后续扩散或蒸发铺垫", "1:E":"衔接扩散与风风轮舞踢", "2:E":"用战技衔接输出"}[a.who+":"+a.skill];
-      if(purpose)text+="，"+purpose;
+      text+="，"+attackPurpose(s,m,a.who,a.skill);
     }else if(a.type==="switch")text="切换"+T.team[a.target].name+"接力";
-    else if(a.type==="card")text="使用「"+T.byId[a.id].name+"」"+(a.target!=null?"，目标"+T.team[a.target].name:"");
+    else if(a.type==="card")text="使用「"+T.byId[a.id].name+"」"+(a.target!=null?"，目标"+T.team[a.target].name:"")+"，"+CARD_PURPOSES[a.id];
     else if(a.type==="tune")text="调和「"+(T.byId[a.id]?.name||s.hand[a.index].name)+"」，补充"+(ELEMENT_NAMES[a.element]||"当前角色所需元素")+"骰";
     else if(a.type==="probe")return "查看技能费用，安排接下来的输出。";
     else return "结束回合，准备下一轮。";
-    const next=a.planning?.sequence?.slice(1).find(key=>key.startsWith("skill:"));
-    if(next){const [,who,skill]=next.split(":");text+="。接下来准备让"+T.team[who].name+"使用「"+T.team[who].skills[skill]+"」";}
     return text+"。";
   }
   // One owner for lifecycle/progress. Host owns native evidence and input;
@@ -55,5 +79,6 @@
     /* @include src/shared/lifecycle.inc.js#lifecycle.act */
     /* @include src/shared/lifecycle.inc.js#lifecycle.run */
   }
+  /* @include src/shared/commentary.inc.js#commentary.actionCommentary */
   root.TCGPlayer = { Player, playerOptions, actionCommentary };
 })(globalThis);
